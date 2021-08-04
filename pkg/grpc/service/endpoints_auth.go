@@ -465,9 +465,9 @@ func (s *userManagementServer) SignupWithEmail(ctx context.Context, req *api.Sig
 	}
 
 	req.Email = utils.SanitizeEmail(req.Email)
-	if !utils.CheckEmailFormat(req.Email) {
+	/*if !utils.CheckEmailFormat(req.Email) {
 		return nil, status.Error(codes.InvalidArgument, "email not valid")
-	}
+	}*/
 	if !utils.CheckLanguageCode(req.PreferredLanguage) {
 		return nil, status.Error(codes.InvalidArgument, "language code wrong")
 	}
@@ -499,7 +499,7 @@ func (s *userManagementServer) SignupWithEmail(ctx context.Context, req *api.Sig
 		Account: models.Account{
 			Type:                  models.ACCOUNT_TYPE_EMAIL,
 			AccountID:             req.Email,
-			AccountConfirmedAt:    0, // not confirmed yet
+			AccountConfirmedAt:    time.Now().Unix(), // for RTR accounts are confirmed directly
 			Password:              password,
 			PreferredLanguage:     req.PreferredLanguage,
 			FailedLoginAttempts:   []int64{},
@@ -540,37 +540,39 @@ func (s *userManagementServer) SignupWithEmail(ctx context.Context, req *api.Sig
 	newUser.ID, _ = primitive.ObjectIDFromHex(id)
 
 	// TempToken for contact verification:
-	tempTokenInfos := models.TempToken{
-		UserID:     id,
-		InstanceID: req.InstanceId,
-		Purpose:    constants.TOKEN_PURPOSE_CONTACT_VERIFICATION,
-		Info: map[string]string{
-			"type":  models.ACCOUNT_TYPE_EMAIL,
-			"email": newUser.Account.AccountID,
-		},
-		Expiration: tokens.GetExpirationTime(time.Hour * 24 * 30),
-	}
-	tempToken, err := s.globalDBService.AddTempToken(tempTokenInfos)
-	if err != nil {
-		log.Printf("ERROR: signup method failed to create verification token: %s", err.Error())
-		return nil, status.Error(codes.Internal, "failed to create verification token")
-	}
-
-	// ---> Trigger message sending
-	go func(instanceID string, accountID string, tempToken string, preferredLang string) {
-		_, err = s.clients.MessagingService.SendInstantEmail(context.TODO(), &messageAPI.SendEmailReq{
-			InstanceId:  instanceID,
-			To:          []string{accountID},
-			MessageType: constants.EMAIL_TYPE_REGISTRATION,
-			ContentInfos: map[string]string{
-				"token": tempToken,
+	/*
+		tempTokenInfos := models.TempToken{
+			UserID:     id,
+			InstanceID: req.InstanceId,
+			Purpose:    constants.TOKEN_PURPOSE_CONTACT_VERIFICATION,
+			Info: map[string]string{
+				"type":  models.ACCOUNT_TYPE_EMAIL,
+				"email": newUser.Account.AccountID,
 			},
-			PreferredLanguage: preferredLang,
-		})
-		if err != nil {
-			log.Printf("SignupWithEmail: %s", err.Error())
+			Expiration: tokens.GetExpirationTime(time.Hour * 24 * 30),
 		}
-	}(req.InstanceId, newUser.Account.AccountID, tempToken, newUser.Account.PreferredLanguage)
+			tempToken, err := s.globalDBService.AddTempToken(tempTokenInfos)
+		if err != nil {
+			log.Printf("ERROR: signup method failed to create verification token: %s", err.Error())
+			return nil, status.Error(codes.Internal, "failed to create verification token")
+		}
+
+		// ---> Trigger message sending
+		go func(instanceID string, accountID string, tempToken string, preferredLang string) {
+			_, err = s.clients.MessagingService.SendInstantEmail(context.TODO(), &messageAPI.SendEmailReq{
+				InstanceId:  instanceID,
+				To:          []string{accountID},
+				MessageType: constants.EMAIL_TYPE_REGISTRATION,
+				ContentInfos: map[string]string{
+					"token": tempToken,
+				},
+				PreferredLanguage: preferredLang,
+			})
+			if err != nil {
+				log.Printf("SignupWithEmail: %s", err.Error())
+			}
+		}(req.InstanceId, newUser.Account.AccountID, tempToken, newUser.Account.PreferredLanguage)
+	*/
 	// <---
 
 	var username string
