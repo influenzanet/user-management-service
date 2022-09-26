@@ -2,6 +2,7 @@ package utils
 
 import (
 	"fmt"
+	"math/rand"
 	"strconv"
 	"strings"
 )
@@ -16,6 +17,11 @@ type Interval struct {
 type Weight struct {
 	total     int        // Total of cumulated weights
 	intervals []Interval // Range of weight for each entry
+}
+
+type WeekDayStrategy struct {
+	useWeight bool
+	weights   Weight
 }
 
 // CreateWeight creates a weighted structure to handle the weighted assignation
@@ -69,7 +75,7 @@ func parseTuple(str string) (string, string) {
 
 // ParseWeeklyWeight parse a string attributing a weight for each day of the week
 // Expected format is a comma separated assignation with [DayName]=Weight with DayName = Mon,Tue,Web,Thu,Frid,Sat,Sun (case insensitive)
-// Weight is an integer (0 or positive)
+// Weight is a positive integer value or Zero
 func ParseWeeklyWeight(str string) ([]int, error) {
 	weights := make([]int, 7)
 	wdays := strings.Split(str, ",")
@@ -92,4 +98,24 @@ func ParseWeeklyWeight(str string) ([]int, error) {
 		weights[dayIndex] = w
 	}
 	return weights, nil
+}
+
+func CreateWeekdayWeightedStrategy(weights []int) WeekDayStrategy {
+	return WeekDayStrategy{useWeight: true, weights: CreateWeight(weights)}
+}
+
+func CreateWeekdayDefaultStrategy() WeekDayStrategy {
+	return WeekDayStrategy{useWeight: false}
+}
+
+// Assign a new weekday using the assignation strategy
+func (s *WeekDayStrategy) Weekday() int {
+	var weekday int
+	if s.useWeight {
+		value := rand.Intn(s.weights.total)
+		weekday = s.weights.Lookup(value)
+	} else {
+		weekday = rand.Intn(7)
+	}
+	return weekday
 }

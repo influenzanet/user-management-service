@@ -30,6 +30,7 @@ type UserRequest struct {
 	use2FA     bool   `yaml:"use2FA"`
 	instanceID string `yaml:"instance"`
 	language   string `yaml:"language"`
+	weekday    int    `yaml:"weekday"`
 }
 
 var userDBService *userdb.UserDBService
@@ -39,12 +40,13 @@ func reqfromCLI() (UserRequest, error) {
 	instanceF := flag.String("instance", "", "Defines the instance ID.")
 	language := flag.String("language", "en", "Define the default language for the new user")
 	use2FA := flag.Bool("use2FA", false, "If the account should be creating with auth type 2FA.")
-
+	weekday := flag.Int("weekday", rand.Intn(7), "Weekday to assign to the user")
 	flag.Parse()
 
 	req.instanceID = *instanceF
 	req.language = *language
 	req.use2FA = *use2FA
+	req.weekday = *weekday
 
 	if req.instanceID == "" {
 		return req, fmt.Errorf("instance must be provided")
@@ -115,7 +117,7 @@ func main() {
 	newUser.ContactPreferences.SubscribedToNewsletter = true
 	newUser.ContactPreferences.SendNewsletterTo = []string{newUser.ContactInfos[0].ID.Hex()}
 	newUser.ContactPreferences.SubscribedToWeekly = true
-	newUser.ContactPreferences.ReceiveWeeklyMessageDayOfWeek = int32(rand.Intn(7))
+	newUser.ContactPreferences.ReceiveWeeklyMessageDayOfWeek = int32(req.weekday)
 
 	instanceID := req.instanceID
 	id, err := userDBService.AddUser(instanceID, newUser)

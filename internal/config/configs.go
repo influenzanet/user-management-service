@@ -9,6 +9,7 @@ import (
 
 	"github.com/coneno/logger"
 	"github.com/influenzanet/user-management-service/pkg/models"
+	"github.com/influenzanet/user-management-service/pkg/utils"
 )
 
 // Config is the structure that holds all global configuration data
@@ -25,6 +26,7 @@ type Config struct {
 	NewUserCountLimit                 int64
 	CleanUpUnverifiedUsersAfter       int64
 	ReminderToUnverifiedAccountsAfter int64
+	WeekDayStrategy                   utils.WeekDayStrategy
 }
 
 func InitConfig() Config {
@@ -55,7 +57,22 @@ func InitConfig() Config {
 		log.Fatal(ENV_SEND_REMINDER_TO_UNVERIFIED_USERS_AFTER + ": " + err.Error())
 	}
 	conf.ReminderToUnverifiedAccountsAfter = int64(reminderToUnverifiedAccountsAfter)
+
+	conf.WeekDayStrategy = getWeekDayStrategy()
 	return conf
+}
+
+func getWeekDayStrategy() utils.WeekDayStrategy {
+
+	wday := os.Getenv(ENV_WEEKDAY_ASSIGNATION_WEIGHTS)
+	if wday == "" {
+		return utils.CreateWeekdayDefaultStrategy()
+	}
+	w, err := utils.ParseWeeklyWeight(wday)
+	if err != nil {
+		log.Fatalf("%s : %s", ENV_WEEKDAY_ASSIGNATION_WEIGHTS, err)
+	}
+	return utils.CreateWeekdayWeightedStrategy(w)
 }
 
 func getLogLevel() logger.LogLevel {

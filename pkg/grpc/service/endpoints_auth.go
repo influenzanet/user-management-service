@@ -374,7 +374,7 @@ func (s *userManagementServer) LoginWithExternalIDP(ctx context.Context, req *ap
 
 		// on which weekday the user will receive the reminder emails
 		user.ContactPreferences.SubscribedToWeekly = false
-		user.ContactPreferences.ReceiveWeeklyMessageDayOfWeek = int32(rand.Intn(7))
+		user.ContactPreferences.ReceiveWeeklyMessageDayOfWeek = int32(s.weekdayStrategy.Weekday())
 
 		id, err := s.userDBservice.AddUser(req.InstanceId, user)
 		if err != nil {
@@ -530,7 +530,7 @@ func (s *userManagementServer) SignupWithEmail(ctx context.Context, req *api.Sig
 	}
 	// on which weekday the user will receive the reminder emails
 	newUser.ContactPreferences.SubscribedToWeekly = true
-	newUser.ContactPreferences.ReceiveWeeklyMessageDayOfWeek = int32(rand.Intn(7))
+	newUser.ContactPreferences.ReceiveWeeklyMessageDayOfWeek = int32(s.weekdayStrategy.Weekday())
 
 	id, err := s.userDBservice.AddUser(req.InstanceId, newUser)
 	if err != nil {
