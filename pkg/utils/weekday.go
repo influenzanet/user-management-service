@@ -5,12 +5,13 @@ import (
 	"math/rand"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Interval struct {
 	min   int
 	max   int
-	entry int
+	entry time.Weekday
 }
 
 // Weekday assignation strategy
@@ -24,15 +25,26 @@ type WeekDayStrategy struct {
 	weights   Weight
 }
 
+var days = map[string]time.Weekday{
+	"mon": time.Monday,
+	"tue": time.Tuesday,
+	"wed": time.Wednesday,
+	"thu": time.Thursday,
+	"fri": time.Friday,
+	"sat": time.Saturday,
+	"sun": time.Sunday,
+}
+
 // CreateWeight creates a weighted structure to handle the weighted assignation
 func CreateWeight(w []int) Weight {
 	var cumulated int = 0
 	intervals := make([]Interval, 0)
 	for entry, w := range w {
+		weekday := time.Weekday(entry)
 		if w > 0 {
 			var min = cumulated
 			cumulated = cumulated + w
-			i := Interval{entry: entry, min: min, max: cumulated - 1}
+			i := Interval{entry: weekday, min: min, max: cumulated - 1}
 			intervals = append(intervals, i)
 		}
 	}
@@ -48,21 +60,21 @@ func (w *Weight) Lookup(value int) int {
 	var last int = 0
 	for _, interval := range w.intervals {
 		if value >= interval.min && value <= interval.max {
-			return interval.entry
+			return int(interval.entry)
 		}
-		last = interval.entry
+		last = int(interval.entry)
 	}
 	return last
 }
 
-var days = map[string]int{
-	"mon": 1,
-	"tue": 2,
-	"wed": 3,
-	"thu": 4,
-	"fri": 5,
-	"sat": 6,
-	"sun": 0,
+func (w *Weight) String() string {
+	s := make([]string, 0, len(w.intervals)+1)
+	s = append(s, fmt.Sprintf("Wt=%d", w.total))
+	for _, i := range w.intervals {
+		lab := fmt.Sprintf("%s=[%d,%d]", i.entry.String(), i.min, i.max)
+		s = append(s, lab)
+	}
+	return strings.Join(s, ", ")
 }
 
 func parseTuple(str string) (string, string) {
@@ -114,8 +126,16 @@ func (s *WeekDayStrategy) Weekday() int {
 	if s.useWeight {
 		value := rand.Intn(s.weights.total)
 		weekday = s.weights.Lookup(value)
+		fmt.Printf(" %d=>%d ", value, weekday)
 	} else {
 		weekday = rand.Intn(7)
 	}
 	return weekday
+}
+
+func (s *WeekDayStrategy) String() string {
+	if s.useWeight {
+		return "Weighted strategy : " + s.weights.String()
+	}
+	return "Random strategy"
 }
