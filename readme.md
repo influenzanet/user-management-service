@@ -37,7 +37,7 @@ An example to run your created docker image - with the set environment variables
 
 ## Config
 
-The available environment variables to configure the services are available in the docker example file.
+The available environment variables to configure the services are available in the docker example file in build/docker/example/user-management-env.list
 
 ### JWT_TOKEN_KEY
 The private key JWT_TOKEN_KEY can be generated using the `key-generator` tool provided. It obviously needs to be stored in a secured way once generated.
@@ -48,6 +48,17 @@ Maximum ten devices can get a refresh token at the same time - see pkg/models/us
 Create a database index on user collection for:
 - account.accountID
 - account.accountConfirmedAt + timestamps.createdAt
+
+## Tools
+
+Several tools are provided with the services to handle some management tasks:
+
+- create-admin-user : To create the initial admin user when installing the system (*)
+- key-generator
+- db_config_tester : Test database configuration and performances (*)
+- weekday-assign : Test or apply weekday assignation to users (*)
+
+(*) These tools expect configuration (to access DB for example) in env variables (the same as the service itself), an example is given for each
 
 ## Github Actions
 
@@ -63,4 +74,4 @@ The action is a manually triggered workflow dispatch that requires the following
 
 Once this is configured, navigate to the Actions tab on Github > Docker Image CI > Run Workflow
 
-By default the version to be tagged is picked from the latest release version, but it can also be overriden by a user specified tag name.
+By default the version to be tagged is picked from the latest release version, but it can also be overridden by a user specified tag name.
