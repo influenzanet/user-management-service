@@ -41,6 +41,10 @@ ARGON2_MEMORY=65536
 ARGON2_ITERATIONS=4
 ARGON2_PARALLELISM=2
 
+####
+# Parameters for User services behaviors
+####
+
 # Maximum number of new created accounts, during the signupRateLimitWindow (5 minutes)
 NEW_USER_RATE_LIMIT=100
 
@@ -49,6 +53,15 @@ CLEAN_UP_UNVERIFIED_USERS_AFTER=129000
 
 # Lifetime in seconds for verification code of a new account. Default is 15 minutes
 VERIFICATION_CODE_LIFETIME=900
+
+# WeekDay assignation as the comma separated values of [Day]=Weight. 
+# Where [Day] is 3 letter abbreviated day name (Mon, Tue, Wed,...) case insensitive
+# Weight is a positive integer value (value only matters relative to the sum of all weights)
+# In the following example Wednesday and Thursday will have probability to be picked 3 times than the others days
+# Zero weight means the day is excluded for the assignation and wont be picked up.
+# Empty value (or missing) will apply the legacy random strategy (pick one day randomly for each user with same probability) 
+# For example : Mon=1,Tue=3,Wed=3,Thu=3,Fri=1,Sat=1,Sun=0
+WEEKDAY_ASSIGNATION_WEIGHTS=
 
 #################
 # grpc services

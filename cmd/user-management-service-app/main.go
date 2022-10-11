@@ -57,6 +57,7 @@ func main() {
 		globalDBService,
 		conf.Intervals,
 		conf.NewUserCountLimit,
+		conf.WeekDayStrategy,
 	); err != nil {
 		log.Fatal(err)
 	}
