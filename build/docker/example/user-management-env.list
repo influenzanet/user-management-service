@@ -50,6 +50,16 @@ CLEAN_UP_UNVERIFIED_USERS_AFTER=129000
 # Lifetime in seconds for verification code of a new account. Default is 15 minutes
 VERIFICATION_CODE_LIFETIME=900
 
+# Token lifetime for Invitation message
+# This variable handle the time.Duration format (value + unit, e.g. "5h" for 5 hours), without unit it's interpreted as minutes
+# Default is 7 days (168h)
+INVITATION_TOKEN_LIFETIME=168h
+
+# Token lifetime for Invitation message
+# This variable handle the time.Duration format (value + unit, e.g. "5h" for 5 hours), without unit it's interpreted as minutes
+# Default is 30 days (720 hours)
+CONTACT_VERIFICATION_TOKEN_LIFETIME=720h
+
 #################
 # grpc services
 #################

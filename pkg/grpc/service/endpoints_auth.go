@@ -548,7 +548,7 @@ func (s *userManagementServer) SignupWithEmail(ctx context.Context, req *api.Sig
 			"type":  models.ACCOUNT_TYPE_EMAIL,
 			"email": newUser.Account.AccountID,
 		},
-		Expiration: tokens.GetExpirationTime(time.Hour * 24 * 30),
+		Expiration: tokens.GetExpirationTime(s.Intervals.ContactVerificationTokenLifetime),
 	}
 	tempToken, err := s.globalDBService.AddTempToken(tempTokenInfos)
 	if err != nil {
@@ -693,7 +693,7 @@ func (s *userManagementServer) ResendContactVerification(ctx context.Context, re
 			"type":  models.ACCOUNT_TYPE_EMAIL,
 			"email": ci.Email,
 		},
-		Expiration: tokens.GetExpirationTime(time.Hour * 24 * 30),
+		Expiration: tokens.GetExpirationTime(s.Intervals.ContactVerificationTokenLifetime),
 	}
 	tempToken, err := s.globalDBService.AddTempToken(tempTokenInfos)
 	if err != nil {
