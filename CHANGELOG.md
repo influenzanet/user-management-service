@@ -3,7 +3,8 @@
 ## [unreleased]
 
 ### Added
-
+- Makefile accepts TAG variable to customize the version tag
+- [PR #14](https://github.com/influenzanet/user-management-service/pull/14) make token duration configurable using environment variables
 - [PR #12](https://github.com/influenzanet/user-management-service/pull/12) implements the possibility to use weighted probablities for weekday assignments. Default behaviour unchanged.
 -
 
