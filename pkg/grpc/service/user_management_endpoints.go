@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"log"
-	"math/rand"
 	"time"
 
 	"github.com/coneno/logger"
@@ -92,7 +91,7 @@ func (s *userManagementServer) CreateUser(ctx context.Context, req *api.CreateUs
 	newUser.ContactPreferences.SubscribedToNewsletter = false
 	newUser.ContactPreferences.SendNewsletterTo = []string{newUser.ContactInfos[0].ID.Hex()}
 	newUser.ContactPreferences.SubscribedToWeekly = false
-	newUser.ContactPreferences.ReceiveWeeklyMessageDayOfWeek = int32(rand.Intn(7))
+	newUser.ContactPreferences.ReceiveWeeklyMessageDayOfWeek = int32(s.weekdayStrategy.Weekday())
 
 	instanceID := req.Token.InstanceId
 	id, err := s.userDBservice.AddUser(instanceID, newUser)

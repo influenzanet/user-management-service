@@ -9,6 +9,7 @@ import (
 
 	"github.com/coneno/logger"
 	"github.com/influenzanet/user-management-service/pkg/models"
+	"github.com/influenzanet/user-management-service/pkg/utils"
 )
 
 // Config is the structure that holds all global configuration data
@@ -25,6 +26,7 @@ type Config struct {
 	NewUserCountLimit                 int64
 	CleanUpUnverifiedUsersAfter       int64
 	ReminderToUnverifiedAccountsAfter int64
+	WeekDayStrategy                   utils.WeekDayStrategy
 }
 
 func InitConfig() Config {
@@ -34,8 +36,8 @@ func InitConfig() Config {
 	conf.ServiceURLs.LoggingService = os.Getenv("ADDR_LOGGING_SERVICE")
 
 	conf.LogLevel = getLogLevel()
-	conf.UserDBConfig = getUserDBConfig()
-	conf.GlobalDBConfig = getGlobalDBConfig()
+	conf.UserDBConfig = GetUserDBConfig()
+	conf.GlobalDBConfig = GetGlobalDBConfig()
 	conf.Intervals = getIntervalsConfig()
 
 	rl, err := strconv.Atoi(os.Getenv("NEW_USER_RATE_LIMIT"))
@@ -55,7 +57,26 @@ func InitConfig() Config {
 		log.Fatal(ENV_SEND_REMINDER_TO_UNVERIFIED_USERS_AFTER + ": " + err.Error())
 	}
 	conf.ReminderToUnverifiedAccountsAfter = int64(reminderToUnverifiedAccountsAfter)
+
+	conf.WeekDayStrategy = GetWeekDayStrategy()
 	return conf
+}
+
+// Get Weekday attribution strategy
+func GetWeekDayStrategy() utils.WeekDayStrategy {
+
+	wday := os.Getenv(ENV_WEEKDAY_ASSIGNATION_WEIGHTS)
+	if wday == "" {
+		return utils.CreateWeekdayDefaultStrategy()
+	}
+	w, err := utils.ParseWeeklyWeight(wday)
+	if err != nil {
+		log.Fatalf("%s : %s", ENV_WEEKDAY_ASSIGNATION_WEIGHTS, err)
+	}
+
+	strategy := utils.CreateWeekdayWeightedStrategy(w)
+	fmt.Println("Weekday Strategy: ", strategy.String())
+	return strategy
 }
 
 func getLogLevel() logger.LogLevel {
@@ -98,79 +119,4 @@ func getIntervalsConfig() models.Intervals {
 	intervals.ContactVerificationTokenLifetime = parseEnvDuration(ENV_TOKEN_CONTACT_VERIFICATION_LIFETIME, defaultContactVerificationTokenLifetime, "m")
 
 	return intervals
-}
-
-func getUserDBConfig() models.DBConfig {
-	connStr := os.Getenv("USER_DB_CONNECTION_STR")
-	username := os.Getenv("USER_DB_USERNAME")
-	password := os.Getenv("USER_DB_PASSWORD")
-	prefix := os.Getenv("USER_DB_CONNECTION_PREFIX") // Used in test mode
-	if connStr == "" || username == "" || password == "" {
-		log.Fatal("Couldn't read DB credentials.")
-	}
-	URI := fmt.Sprintf(`mongodb%s://%s:%s@%s`, prefix, username, password, connStr)
-
-	var err error
-	Timeout, err := strconv.Atoi(os.Getenv("DB_TIMEOUT"))
-	if err != nil {
-		log.Fatal("DB_TIMEOUT: " + err.Error())
-	}
-	IdleConnTimeout, err := strconv.Atoi(os.Getenv("DB_IDLE_CONN_TIMEOUT"))
-	if err != nil {
-		log.Fatal("DB_IDLE_CONN_TIMEOUT" + err.Error())
-	}
-	mps, err := strconv.Atoi(os.Getenv("DB_MAX_POOL_SIZE"))
-	MaxPoolSize := uint64(mps)
-	if err != nil {
-		log.Fatal("DB_MAX_POOL_SIZE: " + err.Error())
-	}
-
-	noCursorTimeout := os.Getenv(ENV_USE_NO_CURSOR_TIMEOUT) == "true"
-
-	DBNamePrefix := os.Getenv("DB_DB_NAME_PREFIX")
-
-	return models.DBConfig{
-		URI:             URI,
-		Timeout:         Timeout,
-		IdleConnTimeout: IdleConnTimeout,
-		NoCursorTimeout: noCursorTimeout,
-		MaxPoolSize:     MaxPoolSize,
-		DBNamePrefix:    DBNamePrefix,
-	}
-}
-
-func getGlobalDBConfig() models.DBConfig {
-	connStr := os.Getenv("GLOBAL_DB_CONNECTION_STR")
-	username := os.Getenv("GLOBAL_DB_USERNAME")
-	password := os.Getenv("GLOBAL_DB_PASSWORD")
-	prefix := os.Getenv("GLOBAL_DB_CONNECTION_PREFIX") // Used in test mode
-	if connStr == "" || username == "" || password == "" {
-		log.Fatal("Couldn't read DB credentials.")
-	}
-	URI := fmt.Sprintf(`mongodb%s://%s:%s@%s`, prefix, username, password, connStr)
-
-	var err error
-	Timeout, err := strconv.Atoi(os.Getenv("DB_TIMEOUT"))
-	if err != nil {
-		log.Fatal("DB_TIMEOUT: " + err.Error())
-	}
-	IdleConnTimeout, err := strconv.Atoi(os.Getenv("DB_IDLE_CONN_TIMEOUT"))
-	if err != nil {
-		log.Fatal("DB_IDLE_CONN_TIMEOUT" + err.Error())
-	}
-	mps, err := strconv.Atoi(os.Getenv("DB_MAX_POOL_SIZE"))
-	MaxPoolSize := uint64(mps)
-	if err != nil {
-		log.Fatal("DB_MAX_POOL_SIZE: " + err.Error())
-	}
-
-	DBNamePrefix := os.Getenv("DB_DB_NAME_PREFIX")
-
-	return models.DBConfig{
-		URI:             URI,
-		Timeout:         Timeout,
-		IdleConnTimeout: IdleConnTimeout,
-		MaxPoolSize:     MaxPoolSize,
-		DBNamePrefix:    DBNamePrefix,
-	}
 }

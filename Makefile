@@ -1,4 +1,4 @@
-.PHONY: build test install-dev mock docker api user-management-service-app create-user key-generator
+.PHONY: build test install-dev mock docker api user-management-service-app create-user key-generator weekday-assign
 
 PROTO_BUILD_DIR = intermediate
 DOCKER_OPTS ?= --rm
@@ -39,7 +39,10 @@ create-admin-user:
 user-management-service-app:
 	go build -o $(TARGET_DIR) ./cmd/user-management-service-app
 
-build: user-management-service-app key-generator create-admin-user
+weekday-assign:
+	go build -o $(TARGET_DIR) ./tools/weekday-assign
+
+build: user-management-service-app key-generator create-admin-user weekday-assign
 
 test:
 	./test/test.sh $(TEST_ARGS)

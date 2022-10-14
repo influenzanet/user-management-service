@@ -1,5 +1,12 @@
 # Changelog
 
+## [unreleased]
+
+### Added
+
+- [PR #12](https://github.com/influenzanet/user-management-service/pull/12) implements the possibility to use weighted probablities for weekday assignments. Default behaviour unchanged.
+-
+
 ## [v1.0.0] - 2022-03-08
 
 ### Added
@@ -12,8 +19,6 @@
 - `PerfomActionForUsers` improved context handling to avoid unnecessary timeouts for long lasting jobs. Also now returned error of the callback will stop the iteration. Improved logging output of this method.
 - Modified tool for creating admin users, to accept username and password throught command line input, hiding the password from history.
 - updated gRPC version and proto build tools
-
-
 
 ## [v0.20.4] - 2021-12-07
 
@@ -28,46 +33,43 @@
 - Optimise TempToken cleanup by only performing the action only once in ten minutes and not on every request. Add debug log message when TempTokens are cleaned up.
 - Project dependencies updated.
 
-
 ## [v0.20.2] - 2021-07-27
 
-### Security Update:
+### Security Update
 
 - Migrating to `github.com/golang-jwt/jwt`
 - Updating other dependencies
 
 ## [v0.20.1] - 2021-07-01
 
-### Changed:
+### Changed
 
 - LoginWithExternalIDP: user newly created user object to handle first time login.
 
-
 ## [v0.20.0] - 2021-07-01
 
-### Added:
+### Added
 
 - New endpoint: LoginWithExternalIDP. This method handles logic for login process when a user is using an external identity provider (IDP) to login. If user did not exist in the system before, an account with type "external" will be created. If an account of type "email" already exists, the method will fail.
 
-### Changed:
+### Changed
 
 - LoginWithEmail endpoint will check account type, if external account is accessed through this endpoint, login will fail - use the external IDP instead.
 - minor code improvements to use globally defined constants instead of locally hard-coded strings
 
 ## [v0.19.4] - 2021-06-16
 
-### Changed:
+### Changed
 
 - Changing endpoint for auto verificiation code generation through temp token received by email. There were occasional reports of people not able to login with email link. After catching one of such instances, it is likely that somehow a double request to that endpoint caused the replacement of the verification code. With this update, if the user identified by temp token, has a recently generated valid verification code in the DB, we won't replace it, but send this one back (agian).
 
-
 ## [v0.19.3] - 2021-06-03
 
-### Added:
+### Added
 
 - New tool to create an admin user. This is located in [here](tools/create-admin-user)
 
-### Changed:
+### Changed
 
 - Include user role "service account", when looking up non-participant users.
 - Adding context for timer event's run method, to prepare logic for graceful shutdown.

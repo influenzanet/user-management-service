@@ -9,11 +9,11 @@ The CLI application accepts the following arguments:
 - use2FA: boolean flag to define if auth type should be "2FA".
 
 ```sh
-./run.sh --instace <INSTANCE_ID> --language <preferredLanguage>
+./run.sh --instance <INSTANCE_ID> --language <preferredLanguage>
 ```
 
 or:
 
 ```sh
-./run.sh --instace <INSTANCE_ID> --language <preferredLanguage> --use2FA
+./run.sh --instance <INSTANCE_ID> --language <preferredLanguage> --use2FA
 ```

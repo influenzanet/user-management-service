@@ -11,6 +11,7 @@ import (
 	"github.com/influenzanet/user-management-service/pkg/dbs/globaldb"
 	"github.com/influenzanet/user-management-service/pkg/dbs/userdb"
 	"github.com/influenzanet/user-management-service/pkg/models"
+	"github.com/influenzanet/user-management-service/pkg/utils"
 	"google.golang.org/grpc"
 )
 
@@ -26,6 +27,7 @@ type userManagementServer struct {
 	globalDBService   *globaldb.GlobalDBService
 	Intervals         models.Intervals
 	newUserCountLimit int64
+	weekdayStrategy   utils.WeekDayStrategy
 }
 
 // NewUserManagementServer creates a new service instance
@@ -35,6 +37,7 @@ func NewUserManagementServer(
 	globalDBservice *globaldb.GlobalDBService,
 	intervals models.Intervals,
 	newUserCountLimit int64,
+	weekdayStrategy utils.WeekDayStrategy,
 ) api.UserManagementApiServer {
 	return &userManagementServer{
 		clients:           clients,
@@ -42,6 +45,7 @@ func NewUserManagementServer(
 		globalDBService:   globalDBservice,
 		Intervals:         intervals,
 		newUserCountLimit: newUserCountLimit,
+		weekdayStrategy:   weekdayStrategy,
 	}
 }
 
@@ -52,6 +56,7 @@ func RunServer(ctx context.Context, port string,
 	globalDBservice *globaldb.GlobalDBService,
 	intervals models.Intervals,
 	newUserCountLimit int64,
+	weekdayStrategy utils.WeekDayStrategy,
 ) error {
 	lis, err := net.Listen("tcp", ":"+port)
 	if err != nil {
@@ -66,6 +71,7 @@ func RunServer(ctx context.Context, port string,
 		globalDBservice,
 		intervals,
 		newUserCountLimit,
+		weekdayStrategy,
 	))
 
 	// graceful shutdown
