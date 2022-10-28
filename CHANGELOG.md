@@ -11,6 +11,7 @@
 ### Changed
 
 - Improve logging by using the custom logger at more places.
+- Updating project dependencies.
 
 ## [v1.0.0] - 2022-03-08
 
