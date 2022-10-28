@@ -2,7 +2,6 @@ package config
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"strconv"
 	"time"
@@ -42,19 +41,19 @@ func InitConfig() Config {
 
 	rl, err := strconv.Atoi(os.Getenv("NEW_USER_RATE_LIMIT"))
 	if err != nil {
-		log.Fatal("NEW_USER_RATE_LIMIT: " + err.Error())
+		logger.Error.Fatal("NEW_USER_RATE_LIMIT: " + err.Error())
 	}
 	conf.NewUserCountLimit = int64(rl)
 
 	cleanUpThreshold, err := strconv.Atoi(os.Getenv("CLEAN_UP_UNVERIFIED_USERS_AFTER"))
 	if err != nil {
-		log.Fatal("CLEAN_UP_UNVERIFIED_USERS_AFTER: " + err.Error())
+		logger.Error.Fatal("CLEAN_UP_UNVERIFIED_USERS_AFTER: " + err.Error())
 	}
 	conf.CleanUpUnverifiedUsersAfter = int64(cleanUpThreshold)
 
 	reminderToUnverifiedAccountsAfter, err := strconv.Atoi(os.Getenv(ENV_SEND_REMINDER_TO_UNVERIFIED_USERS_AFTER))
 	if err != nil {
-		log.Fatal(ENV_SEND_REMINDER_TO_UNVERIFIED_USERS_AFTER + ": " + err.Error())
+		logger.Error.Fatal(ENV_SEND_REMINDER_TO_UNVERIFIED_USERS_AFTER + ": " + err.Error())
 	}
 	conf.ReminderToUnverifiedAccountsAfter = int64(reminderToUnverifiedAccountsAfter)
 
@@ -71,7 +70,7 @@ func GetWeekDayStrategy() utils.WeekDayStrategy {
 	}
 	w, err := utils.ParseWeeklyWeight(wday)
 	if err != nil {
-		log.Fatalf("%s : %s", ENV_WEEKDAY_ASSIGNATION_WEIGHTS, err)
+		logger.Error.Fatalf("%s : %s", ENV_WEEKDAY_ASSIGNATION_WEIGHTS, err)
 	}
 
 	strategy := utils.CreateWeekdayWeightedStrategy(w)
@@ -102,14 +101,14 @@ func getIntervalsConfig() models.Intervals {
 
 	accessTokenExpiration, err := strconv.Atoi(os.Getenv(ENV_TOKEN_EXPIRATION_MIN))
 	if err != nil {
-		log.Println("using default token expiration")
+		logger.Info.Printf("using default token expiration: %s", intervals.TokenExpiryInterval)
 	} else {
 		intervals.TokenExpiryInterval = time.Minute * time.Duration(accessTokenExpiration)
 	}
 
 	newVerificationCodeLifetime, err := strconv.Atoi(os.Getenv(ENV_VERIFICATION_CODE_LIFETIME))
 	if err != nil {
-		log.Println("using default verification code lifetime")
+		logger.Info.Println("using default verification code lifetime")
 	} else {
 		intervals.VerificationCodeLifetime = int64(newVerificationCodeLifetime)
 	}

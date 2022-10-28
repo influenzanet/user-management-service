@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"log"
 
 	"github.com/coneno/logger"
 	"github.com/influenzanet/user-management-service/internal/config"
@@ -59,6 +58,6 @@ func main() {
 		conf.NewUserCountLimit,
 		conf.WeekDayStrategy,
 	); err != nil {
-		log.Fatal(err)
+		logger.Error.Fatal(err)
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/coneno/logger"
 	"github.com/golang/protobuf/ptypes/empty"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"google.golang.org/grpc/codes"
@@ -97,19 +98,20 @@ func (s *userManagementServer) AutoValidateTempToken(ctx context.Context, req *a
 
 	if err != nil {
 		if err.Error() == "wrong token" {
-			log.Printf("SECURITY WARNING: temptoken cannot be found %s", req.TempToken)
+			logger.Warning.Printf("SECURITY WARNING: temptoken cannot be found %s", req.TempToken)
 		} else if err.Error() == "wrong token purpose" {
-			log.Printf("SECURITY WARNING: temptoken with wrong prupose found: %s - by user %s in instance %s", tokenInfos.Purpose, tokenInfos.UserID, tokenInfos.InstanceID)
+			logger.Warning.Printf("SECURITY WARNING: temptoken with wrong prupose found: %s - by user %s in instance %s", tokenInfos.Purpose, tokenInfos.UserID, tokenInfos.InstanceID)
 		} else if err.Error() == "token expired" {
-			log.Printf("SECURITY WARNING: temptoken is expired - by user %s in instance %s", tokenInfos.UserID, tokenInfos.InstanceID)
+			logger.Warning.Printf("SECURITY WARNING: temptoken is expired - by user %s in instance %s", tokenInfos.UserID, tokenInfos.InstanceID)
 		} else {
-			log.Printf("SECURITY WARNING: unexpected error for autovalidating temp token - by user %s in instance %s", tokenInfos.UserID, tokenInfos.InstanceID)
+			logger.Warning.Printf("SECURITY WARNING: unexpected error for autovalidating temp token - by user %s in instance %s", tokenInfos.UserID, tokenInfos.InstanceID)
 		}
 		return nil, status.Error(codes.InvalidArgument, "invalid token")
 	}
 
 	user, err := s.userDBservice.GetUserByID(tokenInfos.InstanceID, tokenInfos.UserID)
 	if err != nil {
+		logger.Error.Printf("unexpected error when retrieving user: %v", err)
 		return nil, status.Error(codes.InvalidArgument, "user not found")
 	}
 
@@ -117,7 +119,7 @@ func (s *userManagementServer) AutoValidateTempToken(ctx context.Context, req *a
 	if len(req.AccessToken) > 0 {
 		validatedToken, _, err := tokens.ValidateToken(req.AccessToken)
 		if err != nil && !strings.Contains(err.Error(), "token is expired by") {
-			log.Printf("AutoValidateTempToken: unexpected error when parsing token -> %v", err)
+			logger.Error.Printf("AutoValidateTempToken: unexpected error when parsing token -> %v", err)
 		}
 		if validatedToken.ID == tokenInfos.UserID && validatedToken.InstanceID == tokenInfos.InstanceID {
 			sameUser = true
@@ -125,13 +127,13 @@ func (s *userManagementServer) AutoValidateTempToken(ctx context.Context, req *a
 	}
 
 	if user.Account.VerificationCode.ExpiresAt > time.Now().Unix()+loginVerificationCodeCooldown {
-		log.Printf("AutoValidateTempToken: verification code re-used for %s", user.ID.Hex())
+		logger.Debug.Printf("AutoValidateTempToken: verification code re-used for %s", user.ID.Hex())
 		return &api.AutoValidateResponse{AccountId: user.Account.AccountID, IsSameUser: sameUser, VerificationCode: user.Account.VerificationCode.Code, InstanceId: tokenInfos.InstanceID}, nil
 	}
 
 	vc, err := tokens.GenerateVerificationCode(6)
 	if err != nil {
-		log.Printf("unexpected error while generating verification code: %v", err)
+		logger.Error.Printf("unexpected error while generating verification code for %s: %v", user.ID.Hex(), err)
 		return nil, status.Error(codes.Internal, "error while generating verification code")
 	}
 
@@ -141,15 +143,15 @@ func (s *userManagementServer) AutoValidateTempToken(ctx context.Context, req *a
 	}
 	user, err = s.userDBservice.UpdateUser(tokenInfos.InstanceID, user)
 	if err != nil {
-		log.Printf("AutoValidateTempToken: unexpected error when saving user -> %v", err)
+		logger.Error.Printf("AutoValidateTempToken: unexpected error when saving user [%s] -> %v", user.ID.Hex(), err)
 		return nil, status.Error(codes.Internal, "user couldn't be updated")
 	}
 
 	if err := s.globalDBService.DeleteAllTempTokenForUser(tokenInfos.InstanceID, user.ID.Hex(), constants.TOKEN_PURPOSE_INVITATION); err != nil {
-		log.Printf("AutoValidateTempToken: %s", err.Error())
+		logger.Error.Printf("unexpected error: %s", err.Error())
 	}
 	if err := s.globalDBService.DeleteAllTempTokenForUser(tokenInfos.InstanceID, user.ID.Hex(), constants.TOKEN_PURPOSE_PASSWORD_RESET); err != nil {
-		log.Printf("AutoValidateTempToken: %s", err.Error())
+		logger.Error.Printf("unexpected error: %s", err.Error())
 	}
 
 	return &api.AutoValidateResponse{AccountId: user.Account.AccountID, IsSameUser: sameUser, VerificationCode: vc, InstanceId: tokenInfos.InstanceID}, nil

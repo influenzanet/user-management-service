@@ -2,9 +2,10 @@ package main
 
 import (
 	"crypto/rand"
-	"fmt"
-	"log"
 	b64 "encoding/base64"
+	"fmt"
+
+	"github.com/coneno/logger"
 )
 
 func main() {
@@ -14,7 +15,7 @@ func main() {
 
 	_, err := rand.Read(secret)
 	if err != nil {
-		log.Fatal(err)
+		logger.Error.Fatal(err)
 	}
 	secretStr := b64.StdEncoding.EncodeToString(secret)
 	fmt.Println(secretStr)

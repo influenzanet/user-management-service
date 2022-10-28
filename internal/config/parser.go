@@ -2,10 +2,11 @@ package config
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/coneno/logger"
 )
 
 // parseDuration
@@ -25,14 +26,14 @@ func parseDuration(value string, defaultUnit string) (time.Duration, error) {
 func parseEnvDuration(name string, defaultValue time.Duration, defaultUnit string) time.Duration {
 	value := os.Getenv(name)
 	if value == "" {
-		log.Printf("%s : not provided using default value %s", name, defaultValue.String())
+		logger.Info.Printf("%s : not provided using default value %s", name, defaultValue)
 		return defaultValue
 	}
 	d, err := parseDuration(value, defaultUnit)
 	if err != nil {
-		log.Printf("%s : default value used, %s", name, err.Error())
+		logger.Error.Printf("%s : unexpected error - default value used, %s", name, err.Error())
 		return defaultValue
 	}
-	log.Printf("%s : using value %s", name, d.String())
+	logger.Info.Printf("%s : using value %s", name, d)
 	return d
 }

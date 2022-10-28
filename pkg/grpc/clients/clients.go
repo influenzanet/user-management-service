@@ -1,8 +1,7 @@
 package clients
 
 import (
-	"log"
-
+	"github.com/coneno/logger"
 	loggingAPI "github.com/influenzanet/logging-service/pkg/api"
 	messageAPI "github.com/influenzanet/messaging-service/pkg/api/messaging_service"
 	"google.golang.org/grpc"
@@ -11,7 +10,7 @@ import (
 func connectToGRPCServer(addr string) *grpc.ClientConn {
 	conn, err := grpc.Dial(addr, grpc.WithInsecure())
 	if err != nil {
-		log.Fatalf("failed to connect to %s: %v", addr, err)
+		logger.Error.Fatalf("failed to connect to %s: %v", addr, err)
 	}
 	return conn
 }

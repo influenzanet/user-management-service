@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 
+	"github.com/coneno/logger"
 	"github.com/influenzanet/user-management-service/pkg/api"
 	"github.com/influenzanet/user-management-service/pkg/dbs/globaldb"
 	"github.com/influenzanet/user-management-service/pkg/dbs/userdb"
@@ -60,7 +61,7 @@ func RunServer(ctx context.Context, port string,
 ) error {
 	lis, err := net.Listen("tcp", ":"+port)
 	if err != nil {
-		log.Fatalf("failed to listen: %v", err)
+		logger.Error.Fatalf("failed to listen: %v", err)
 	}
 
 	// register service

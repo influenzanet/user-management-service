@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/coneno/logger"
 	"github.com/influenzanet/user-management-service/pkg/models"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
@@ -30,23 +31,23 @@ func setupTestDBService() {
 	password := os.Getenv("USER_DB_PASSWORD")
 	prefix := os.Getenv("USER_DB_CONNECTION_PREFIX") // Used in test mode
 	if connStr == "" || username == "" || password == "" {
-		log.Fatal("Couldn't read DB credentials.")
+		logger.Error.Fatal("Couldn't read DB credentials.")
 	}
 	URI := fmt.Sprintf(`mongodb%s://%s:%s@%s`, prefix, username, password, connStr)
 
 	var err error
 	Timeout, err := strconv.Atoi(os.Getenv("DB_TIMEOUT"))
 	if err != nil {
-		log.Fatal("DB_TIMEOUT: " + err.Error())
+		logger.Error.Fatal("DB_TIMEOUT: " + err.Error())
 	}
 	IdleConnTimeout, err := strconv.Atoi(os.Getenv("DB_IDLE_CONN_TIMEOUT"))
 	if err != nil {
-		log.Fatal("DB_IDLE_CONN_TIMEOUT" + err.Error())
+		logger.Error.Fatal("DB_IDLE_CONN_TIMEOUT" + err.Error())
 	}
 	mps, err := strconv.Atoi(os.Getenv("DB_MAX_POOL_SIZE"))
 	MaxPoolSize := uint64(mps)
 	if err != nil {
-		log.Fatal("DB_MAX_POOL_SIZE: " + err.Error())
+		logger.Error.Fatal("DB_MAX_POOL_SIZE: " + err.Error())
 	}
 	testDBService = NewUserDBService(
 		models.DBConfig{
@@ -66,7 +67,7 @@ func dropTestDB() {
 
 	err := testDBService.DBClient.Database(testDBNamePrefix + testInstanceID + "_users").Drop(ctx)
 	if err != nil {
-		log.Fatal(err)
+		logger.Error.Fatal(err)
 	}
 }
 
@@ -229,7 +230,7 @@ func TestDbPerformActionForUsers(t *testing.T) {
 	for _, u := range testUsers {
 		_, err := testDBService.AddUser(testInstanceID, u)
 		if err != nil {
-			log.Fatal(err)
+			logger.Error.Fatal(err)
 		}
 	}
 
@@ -290,7 +291,7 @@ func TestDeleteUnverfiedUsers(t *testing.T) {
 	for _, u := range testUsers {
 		_, err := testDBService.AddUser(testInstanceID, u)
 		if err != nil {
-			log.Fatal(err)
+			logger.Error.Fatal(err)
 		}
 	}
 
