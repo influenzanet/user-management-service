@@ -114,5 +114,9 @@ func getIntervalsConfig() models.Intervals {
 		intervals.VerificationCodeLifetime = int64(newVerificationCodeLifetime)
 	}
 
+	intervals.InvitationTokenLifetime = parseEnvDuration(ENV_TOKEN_INVITATION_LIFETIME, defaultInvitationTokenLifetime, "m")
+
+	intervals.ContactVerificationTokenLifetime = parseEnvDuration(ENV_TOKEN_CONTACT_VERIFICATION_LIFETIME, defaultContactVerificationTokenLifetime, "m")
+
 	return intervals
 }

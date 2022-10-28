@@ -63,6 +63,16 @@ VERIFICATION_CODE_LIFETIME=900
 # For example : Mon=1,Tue=3,Wed=3,Thu=3,Fri=1,Sat=1,Sun=0
 WEEKDAY_ASSIGNATION_WEIGHTS=
 
+# Token lifetime for Invitation message
+# This variable handle the time.Duration format (value + unit, e.g. "5h" for 5 hours), without unit it's interpreted as minutes
+# Default is 7 days (168h)
+INVITATION_TOKEN_LIFETIME=168h
+
+# Token lifetime for Invitation message
+# This variable handle the time.Duration format (value + unit, e.g. "5h" for 5 hours), without unit it's interpreted as minutes
+# Default is 30 days (720 hours)
+CONTACT_VERIFICATION_TOKEN_LIFETIME=720h
+
 #################
 # grpc services
 #################

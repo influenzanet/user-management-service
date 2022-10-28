@@ -10,6 +10,8 @@ TARGET_DIR ?= ./
 
 VERSION := $(shell git describe --tags --abbrev=0)
 
+TAG ?= $(VERSION)
+
 help:
 	@echo "Service building targets"
 	@echo "  build : build service command"
@@ -55,4 +57,4 @@ mock:
 	mockgen github.com/influenzanet/logging-service/pkg/api LoggingServiceApiClient > test/mocks/logging_service/logging_service.go
 
 docker:
-	docker build -t  github.com/influenzanet/user-management-service:$(VERSION)  -f build/docker/Dockerfile $(DOCKER_OPTS) .
+	docker build -t  github.com/influenzanet/user-management-service:$(TAG)  -f build/docker/Dockerfile $(DOCKER_OPTS) .
