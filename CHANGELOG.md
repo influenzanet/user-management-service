@@ -1,5 +1,11 @@
 # Changelog
 
+## [v1.1.1] - 2022-10-28
+
+### Changed
+
+- Increase minimum go version, since it's required by dependecies.
+
 ## [v1.1.0] - 2022-10-28
 
 ### Added
