@@ -1,5 +1,11 @@
 # Changelog
 
+## ????
+
+### Changed
+
+- Improve logging by using the custom logger for all log lines.
+
 ## [v1.1.1] - 2022-10-28
 
 ### Changed
