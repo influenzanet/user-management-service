@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"strconv"
 	"testing"
@@ -61,7 +60,7 @@ func setupTestDBService() {
 }
 
 func dropTestDB() {
-	log.Println("Drop test database: userdb package")
+	logger.Info.Println("Drop test database: userdb package")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -198,7 +197,7 @@ func TestDbInterfaceMethods(t *testing.T) {
 			return
 
 		}
-		log.Println(count)
+		logger.Debug.Println(count)
 		if count < 1 {
 			t.Error("at least one user should be found")
 		}
@@ -301,7 +300,7 @@ func TestDeleteUnverfiedUsers(t *testing.T) {
 			t.Errorf("unexpected error: %v", err)
 			return
 		}
-		log.Printf("deleted %d users", count)
+		logger.Debug.Printf("deleted %d users", count)
 		err = AssertNumberOfNonParticipantUsers(testInstanceID, 3)
 		if err != nil {
 			t.Errorf("unexpected error: %v", err)
@@ -315,7 +314,7 @@ func TestDeleteUnverfiedUsers(t *testing.T) {
 			t.Errorf("unexpected error: %v", err)
 			return
 		}
-		log.Printf("deleted %d users", count)
+		logger.Debug.Printf("deleted %d users", count)
 		err = AssertNumberOfNonParticipantUsers(testInstanceID, 2)
 		if err != nil {
 			t.Errorf("unexpected error: %v", err)
@@ -329,7 +328,7 @@ func TestDeleteUnverfiedUsers(t *testing.T) {
 			t.Errorf("unexpected error: %v", err)
 			return
 		}
-		log.Printf("deleted %d users", count)
+		logger.Debug.Printf("deleted %d users", count)
 		err = AssertNumberOfNonParticipantUsers(testInstanceID, 1)
 		if err != nil {
 			t.Errorf("unexpected error: %v", err)
