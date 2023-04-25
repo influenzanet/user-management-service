@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"log"
 	"math/rand"
 	"strings"
 	"time"
@@ -45,28 +44,28 @@ func (s *userManagementServer) SendVerificationCode(ctx context.Context, req *ap
 	req.Email = utils.SanitizeEmail(req.Email)
 	user, err := s.userDBservice.GetUserByAccountID(req.InstanceId, req.Email)
 	if err != nil {
-		log.Printf("SECURITY WARNING: login step 1 attempt with wrong email address for %s", req.Email)
+		logger.Warning.Printf("SECURITY WARNING: login step 1 attempt with wrong email address for %s", req.Email)
 		return nil, status.Error(codes.InvalidArgument, "invalid username and/or password")
 	}
 
 	if utils.HasMoreAttemptsRecently(user.Account.FailedLoginAttempts, allowedPasswordAttempts, loginFailedAttemptWindow) {
 		s.SaveLogEvent(req.InstanceId, user.ID.Hex(), loggingAPI.LogEventType_SECURITY, constants.LOG_EVENT_LOGIN_ATTEMPT_ON_BLOCKED_ACCOUNT, "send verification code endpoint")
-		log.Printf("SECURITY WARNING: login attempt blocked for email address for %s - too many wrong tries recently", user.ID.Hex())
+		logger.Warning.Printf("SECURITY WARNING: login attempt blocked for email address for %s - too many wrong tries recently", user.ID.Hex())
 		time.Sleep(time.Duration(rand.Intn(10)) * time.Second)
 		return nil, status.Error(codes.InvalidArgument, "invalid username and/or password")
 	}
 
 	if user.Account.VerificationCode.CreatedAt > time.Now().Unix()-loginVerificationCodeCooldown {
 		s.SaveLogEvent(req.InstanceId, user.ID.Hex(), loggingAPI.LogEventType_SECURITY, constants.LOG_EVENT_LOGIN_ATTEMPT_ON_BLOCKED_ACCOUNT, "try resending verification code too often")
-		log.Printf("SECURITY WARNING: resend verification code %s - too many wrong tries recently", req.Email)
+		logger.Warning.Printf("SECURITY WARNING: resend verification code %s - too many wrong tries recently", req.Email)
 		return nil, status.Error(codes.InvalidArgument, "cannot generate verification code so often")
 	}
 
 	match, err := pwhash.ComparePasswordWithHash(user.Account.Password, req.Password)
 	if err != nil || !match {
-		log.Printf("SECURITY WARNING: login step 1 attempt with wrong password for %s", user.ID.Hex())
+		logger.Warning.Printf("SECURITY WARNING: login step 1 attempt with wrong password for %s", user.ID.Hex())
 		if err2 := s.userDBservice.SaveFailedLoginAttempt(req.InstanceId, user.ID.Hex()); err != nil {
-			log.Printf("DB ERROR: unexpected error when updating user: %s ", err2.Error())
+			logger.Error.Printf("DB ERROR: unexpected error when updating user: %s ", err2.Error())
 		}
 		s.SaveLogEvent(req.InstanceId, user.ID.Hex(), loggingAPI.LogEventType_SECURITY, constants.LOG_EVENT_AUTH_WRONG_PASSWORD, "send verification code endpoint")
 		return nil, status.Error(codes.InvalidArgument, "invalid username and/or password")
@@ -169,34 +168,34 @@ func (s *userManagementServer) LoginWithEmail(ctx context.Context, req *api.Logi
 	req.Email = utils.SanitizeEmail(req.Email)
 	user, err := s.userDBservice.GetUserByAccountID(req.InstanceId, req.Email)
 	if err != nil {
-		log.Printf("SECURITY WARNING: login attempt with wrong email address for %s", req.Email)
+		logger.Warning.Printf("SECURITY WARNING: login attempt with wrong email address for %s", req.Email)
 		s.SaveLogEvent(req.InstanceId, "", loggingAPI.LogEventType_SECURITY, constants.LOG_EVENT_AUTH_WRONG_ACCOUNT_ID, req.Email)
 		return nil, status.Error(codes.InvalidArgument, "invalid username and/or password")
 	}
 
 	if utils.HasMoreAttemptsRecently(user.Account.FailedLoginAttempts, allowedPasswordAttempts, loginFailedAttemptWindow) {
-		log.Printf("SECURITY WARNING: login attempt blocked for email address for %s - too many wrong tries recently", req.Email)
+		logger.Warning.Printf("SECURITY WARNING: login attempt blocked for email address for %s - too many wrong tries recently", req.Email)
 
 		s.SaveLogEvent(req.InstanceId, user.ID.Hex(), loggingAPI.LogEventType_SECURITY, constants.LOG_EVENT_LOGIN_ATTEMPT_ON_BLOCKED_ACCOUNT, "")
 		if err2 := s.userDBservice.SaveFailedLoginAttempt(req.InstanceId, user.ID.Hex()); err != nil {
-			log.Printf("DB ERROR: unexpected error when updating user: %s ", err2.Error())
+			logger.Error.Printf("DB ERROR: unexpected error when updating user: %s ", err2.Error())
 		}
 		time.Sleep(time.Duration(rand.Intn(10)) * time.Second)
 		return nil, status.Error(codes.InvalidArgument, "invalid username and/or password")
 	}
 
 	if user.Account.Type == models.ACCOUNT_TYPE_EXTERNAL {
-		log.Printf("[SECURITY WARNING]: invalid login attempt for external account (%s)", req.Email)
+		logger.Warning.Printf("[SECURITY WARNING]: invalid login attempt for external account (%s)", req.Email)
 		s.SaveLogEvent(req.InstanceId, user.ID.Hex(), loggingAPI.LogEventType_SECURITY, constants.LOG_EVENT_AUTH_WRONG_ACCOUNT_ID, "reason: account id used for external user")
 		return nil, status.Error(codes.InvalidArgument, "invalid username and/or password")
 	}
 
 	match, err := pwhash.ComparePasswordWithHash(user.Account.Password, req.Password)
 	if err != nil || !match {
-		log.Printf("SECURITY WARNING: login attempt with wrong password for %s", user.ID.Hex())
+		logger.Warning.Printf("SECURITY WARNING: login attempt with wrong password for %s", user.ID.Hex())
 		s.SaveLogEvent(req.InstanceId, user.ID.Hex(), loggingAPI.LogEventType_SECURITY, constants.LOG_EVENT_AUTH_WRONG_PASSWORD, "")
 		if err2 := s.userDBservice.SaveFailedLoginAttempt(req.InstanceId, user.ID.Hex()); err != nil {
-			log.Printf("DB ERROR: unexpected error when updating user: %s ", err2.Error())
+			logger.Error.Printf("DB ERROR: unexpected error when updating user: %s ", err2.Error())
 		}
 		return nil, status.Error(codes.InvalidArgument, "invalid username and/or password")
 	}
@@ -207,12 +206,12 @@ func (s *userManagementServer) LoginWithEmail(ctx context.Context, req *api.Logi
 			if user.Account.VerificationCode.Code == "" || user.Account.VerificationCode.CreatedAt == 0 || user.Account.VerificationCode.ExpiresAt < time.Now().Unix() {
 				if user.Account.VerificationCode.CreatedAt > time.Now().Unix()-loginVerificationCodeCooldown {
 					s.SaveLogEvent(req.InstanceId, user.ID.Hex(), loggingAPI.LogEventType_SECURITY, constants.LOG_EVENT_LOGIN_ATTEMPT_ON_BLOCKED_ACCOUNT, "try resending verification code too often")
-					log.Printf("SECURITY WARNING: resend verification code %s - too many wrong tries recently", user.ID.Hex())
+					logger.Warning.Printf("SECURITY WARNING: resend verification code %s - too many wrong tries recently", user.ID.Hex())
 					return nil, status.Error(codes.InvalidArgument, "cannot generate verification code so often")
 				}
 				err = s.generateAndSendVerificationCode(req.InstanceId, user)
 				if err != nil {
-					log.Printf("login: unexpected error %v", err)
+					logger.Error.Printf("login: unexpected error %v", err)
 					return nil, status.Error(codes.InvalidArgument, "code generation error")
 				}
 			}
@@ -228,28 +227,28 @@ func (s *userManagementServer) LoginWithEmail(ctx context.Context, req *api.Logi
 		} else {
 			// user tries second step
 			if user.Account.VerificationCode.ExpiresAt < time.Now().Unix() || user.Account.VerificationCode.Code != req.VerificationCode {
-				log.Printf("SECURITY WARNING: login attempt with wrong or expired verification code for %s", user.ID.Hex())
+				logger.Warning.Printf("SECURITY WARNING: login attempt with wrong or expired verification code for %s", user.ID.Hex())
 				s.SaveLogEvent(req.InstanceId, user.ID.Hex(), loggingAPI.LogEventType_SECURITY, constants.LOG_EVENT_AUTH_WRONG_VERIFICATION_CODE, "")
 				if err2 := s.userDBservice.SaveFailedLoginAttempt(req.InstanceId, user.ID.Hex()); err != nil {
-					log.Printf("DB ERROR: unexpected error when updating user: %s ", err2.Error())
+					logger.Error.Printf("DB ERROR: unexpected error when updating user: %s ", err2.Error())
 				}
 
 				if user.Account.VerificationCode.Attempts <= allowedVerificationCodeAttempts {
 					user.Account.VerificationCode.Attempts += 1
 					user, err = s.userDBservice.UpdateUser(req.InstanceId, user)
 					if err != nil {
-						log.Printf("LoginWithEmail: unexpected error when saving user -> %v", err)
+						logger.Error.Printf("LoginWithEmail: unexpected error when saving user -> %v", err)
 					}
 					return nil, status.Error(codes.InvalidArgument, "wrong verfication code")
 				} else {
 					if user.Account.VerificationCode.CreatedAt > time.Now().Unix()-loginVerificationCodeCooldown {
 						s.SaveLogEvent(req.InstanceId, user.ID.Hex(), loggingAPI.LogEventType_SECURITY, constants.LOG_EVENT_LOGIN_ATTEMPT_ON_BLOCKED_ACCOUNT, "try resending verification code too often")
-						log.Printf("SECURITY WARNING: resend verification code %s - too many wrong tries recently", user.ID.Hex())
+						logger.Warning.Printf("SECURITY WARNING: resend verification code %s - too many wrong tries recently", user.ID.Hex())
 						return nil, status.Error(codes.InvalidArgument, "cannot generate verification code so often")
 					}
 					err = s.generateAndSendVerificationCode(req.InstanceId, user)
 					if err != nil {
-						log.Printf("login: unexpected error %v", err)
+						logger.Error.Printf("login: unexpected error %v", err)
 						return nil, status.Error(codes.InvalidArgument, "code generation error")
 					}
 					return nil, status.Error(codes.InvalidArgument, "new verification code")
@@ -285,14 +284,14 @@ func (s *userManagementServer) LoginWithEmail(ctx context.Context, req *api.Logi
 		otherProfileIDs,
 	)
 	if err != nil {
-		log.Printf("LoginWithEmail: unexpected error during token generation -> %v", err)
+		logger.Error.Printf("LoginWithEmail: unexpected error during token generation -> %v", err)
 		return nil, status.Error(codes.Internal, "token generation error")
 	}
 
 	// Refresh Token
 	rt, err := tokens.GenerateUniqueTokenString()
 	if err != nil {
-		log.Printf("LoginWithEmail: unexpected error during refresh token generation -> %v", err)
+		logger.Error.Printf("LoginWithEmail: unexpected error during refresh token generation -> %v", err)
 		return nil, status.Error(codes.Internal, "token generation error")
 	}
 	user.AddRefreshToken(rt)
@@ -303,13 +302,13 @@ func (s *userManagementServer) LoginWithEmail(ctx context.Context, req *api.Logi
 
 	user, err = s.userDBservice.UpdateUser(req.InstanceId, user)
 	if err != nil {
-		log.Printf("LoginWithEmail: unexpected error when saving user -> %v", err)
+		logger.Error.Printf("LoginWithEmail: unexpected error when saving user -> %v", err)
 		return nil, status.Error(codes.Internal, "user couldn't be updated")
 	}
 
 	// remove all temptokens for password reset:
 	if err := s.globalDBService.DeleteAllTempTokenForUser(req.InstanceId, user.ID.Hex(), constants.TOKEN_PURPOSE_PASSWORD_RESET); err != nil {
-		log.Printf("LoginWithEmail: %s", err.Error())
+		logger.Error.Printf("LoginWithEmail: %s", err.Error())
 	}
 
 	s.SaveLogEvent(req.InstanceId, apiUser.Id, loggingAPI.LogEventType_LOG, constants.LOG_EVENT_LOGIN_SUCCESS, "")
@@ -331,7 +330,7 @@ func (s *userManagementServer) LoginWithEmail(ctx context.Context, req *api.Logi
 
 func (s *userManagementServer) LoginWithExternalIDP(ctx context.Context, req *api.LoginWithExternalIDPMsg) (*api.LoginResponse, error) {
 	if req == nil || req.Email == "" || req.InstanceId == "" {
-		log.Printf("[ERROR] LoginWithExternalIDP: invalid request - %v", req)
+		logger.Error.Printf("[ERROR] LoginWithExternalIDP: invalid request - %v", req)
 		return nil, status.Error(codes.InvalidArgument, "invalid request")
 	}
 
@@ -341,7 +340,7 @@ func (s *userManagementServer) LoginWithExternalIDP(ctx context.Context, req *ap
 		// user does not exists - create user
 		randomPW, err := tokens.GenerateUniqueTokenString()
 		if err != nil {
-			log.Printf("[ERROR] LoginWithExternalIDP: random pw error - %v", err)
+			logger.Error.Printf("[ERROR] LoginWithExternalIDP: random pw error - %v", err)
 		}
 		// Create user DB object from request:
 		user = models.User{
@@ -380,14 +379,14 @@ func (s *userManagementServer) LoginWithExternalIDP(ctx context.Context, req *ap
 
 		id, err := s.userDBservice.AddUser(req.InstanceId, user)
 		if err != nil {
-			log.Printf("ERROR: when creating new user: %s", err.Error())
+			logger.Error.Printf("ERROR: when creating new user: %s", err.Error())
 			return nil, status.Error(codes.Internal, "user creation failed")
 		}
 		user.ID, _ = primitive.ObjectIDFromHex(id)
 
 	} else {
 		if user.Account.Type != models.ACCOUNT_TYPE_EXTERNAL {
-			log.Printf("[ERROR] LoginWithExternalIDP: wrong account type '%s' for %v", user.Account.Type, req)
+			logger.Error.Printf("[ERROR] LoginWithExternalIDP: wrong account type '%s' for %v", user.Account.Type, req)
 			s.SaveLogEvent(req.InstanceId, user.ID.Hex(), loggingAPI.LogEventType_ERROR, constants.LOG_EVENT_AUTH_WRONG_ACCOUNT_ID, "wrong account type for external login: "+user.Account.Type)
 			return nil, status.Error(codes.PermissionDenied, "wrong account type")
 		}
@@ -417,14 +416,14 @@ func (s *userManagementServer) LoginWithExternalIDP(ctx context.Context, req *ap
 		otherProfileIDs,
 	)
 	if err != nil {
-		log.Printf("[ERROR] LoginWithExternalIDP: unexpected error during token generation -> %v", err)
+		logger.Error.Printf("[ERROR] LoginWithExternalIDP: unexpected error during token generation -> %v", err)
 		return nil, status.Error(codes.Internal, "token generation error")
 	}
 
 	// Refresh Token
 	rt, err := tokens.GenerateUniqueTokenString()
 	if err != nil {
-		log.Printf("[ERROR] LoginWithExternalIDP: unexpected error during refresh token generation -> %v", err)
+		logger.Error.Printf("[ERROR] LoginWithExternalIDP: unexpected error during refresh token generation -> %v", err)
 		return nil, status.Error(codes.Internal, "token generation error")
 	}
 	user.AddRefreshToken(rt)
@@ -435,13 +434,13 @@ func (s *userManagementServer) LoginWithExternalIDP(ctx context.Context, req *ap
 
 	user, err = s.userDBservice.UpdateUser(req.InstanceId, user)
 	if err != nil {
-		log.Printf("[ERROR] LoginWithExternalIDP: unexpected error when saving user -> %v", err)
+		logger.Error.Printf("[ERROR] LoginWithExternalIDP: unexpected error when saving user -> %v", err)
 		return nil, status.Error(codes.Internal, "user couldn't be updated")
 	}
 
 	// remove all temptokens for password reset:
 	if err := s.globalDBService.DeleteAllTempTokenForUser(req.InstanceId, user.ID.Hex(), constants.TOKEN_PURPOSE_PASSWORD_RESET); err != nil {
-		log.Printf("[ERROR] LoginWithExternalIDP: %s", err.Error())
+		logger.Error.Printf("[ERROR] LoginWithExternalIDP: %s", err.Error())
 	}
 
 	msg := fmt.Sprintf("User: %s\nIDP: %s\nGroup info: %s", req.Idp, req.GroupInfo, user.Account.AccountID)
@@ -483,10 +482,10 @@ func (s *userManagementServer) SignupWithEmail(ctx context.Context, req *api.Sig
 
 	newUserCount, err := s.userDBservice.CountRecentlyCreatedUsers(req.InstanceId, signupRateLimitWindow)
 	if err != nil {
-		log.Printf("ERROR: signup - unexpected error when counting: %v", err)
+		logger.Error.Printf("ERROR: signup - unexpected error when counting: %v", err)
 	} else {
 		if newUserCount > s.newUserCountLimit {
-			log.Println("ERROR: user creation blocked due to too many registations")
+			logger.Warning.Println("ERROR: user creation blocked due to too many registations")
 			return nil, status.Error(codes.Internal, "user creation failed, please try in some minutes again")
 		}
 	}
@@ -536,7 +535,7 @@ func (s *userManagementServer) SignupWithEmail(ctx context.Context, req *api.Sig
 
 	id, err := s.userDBservice.AddUser(req.InstanceId, newUser)
 	if err != nil {
-		log.Printf("ERROR: when creating new user: %s", err.Error())
+		logger.Error.Printf("ERROR: when creating new user: %s", err.Error())
 		return nil, status.Error(codes.Internal, "user creation failed")
 	}
 	newUser.ID, _ = primitive.ObjectIDFromHex(id)
@@ -554,7 +553,7 @@ func (s *userManagementServer) SignupWithEmail(ctx context.Context, req *api.Sig
 	}
 	tempToken, err := s.globalDBService.AddTempToken(tempTokenInfos)
 	if err != nil {
-		log.Printf("ERROR: signup method failed to create verification token: %s", err.Error())
+		logger.Error.Printf("ERROR: signup method failed to create verification token: %s", err.Error())
 		return nil, status.Error(codes.Internal, "failed to create verification token")
 	}
 
@@ -570,7 +569,7 @@ func (s *userManagementServer) SignupWithEmail(ctx context.Context, req *api.Sig
 			PreferredLanguage: preferredLang,
 		})
 		if err != nil {
-			log.Printf("SignupWithEmail: %s", err.Error())
+			logger.Error.Printf("SignupWithEmail: %s", err.Error())
 		}
 	}(req.InstanceId, newUser.Account.AccountID, tempToken, newUser.Account.PreferredLanguage)
 	// <---
@@ -594,14 +593,14 @@ func (s *userManagementServer) SignupWithEmail(ctx context.Context, req *api.Sig
 		[]string{},
 	)
 	if err != nil {
-		log.Printf("ERROR: signup method failed to generate jwt: %s", err.Error())
+		logger.Error.Printf("ERROR: signup method failed to generate jwt: %s", err.Error())
 		return nil, status.Error(codes.Internal, "token creation failed")
 	}
 
 	// Refresh Token
 	rt, err := tokens.GenerateUniqueTokenString()
 	if err != nil {
-		log.Printf("ERROR: signup method failed to generate refresh token: %s", err.Error())
+		logger.Error.Printf("ERROR: signup method failed to generate refresh token: %s", err.Error())
 		return nil, status.Error(codes.Internal, "token creation failed")
 	}
 	newUser.AddRefreshToken(rt)
@@ -609,7 +608,7 @@ func (s *userManagementServer) SignupWithEmail(ctx context.Context, req *api.Sig
 
 	newUser, err = s.userDBservice.UpdateUser(req.InstanceId, newUser)
 	if err != nil {
-		log.Printf("ERROR: signup method failed to save refresh token: %s", err.Error())
+		logger.Error.Printf("ERROR: signup method failed to save refresh token: %s", err.Error())
 		return nil, status.Error(codes.Internal, "user created, but token could not be saved")
 	}
 
@@ -636,13 +635,13 @@ func (s *userManagementServer) VerifyContact(ctx context.Context, req *api.TempT
 		constants.TOKEN_PURPOSE_INVITATION,
 	})
 	if err != nil {
-		log.Printf("VerifyContact: %s", err.Error())
+		logger.Error.Printf("VerifyContact: %s", err.Error())
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
 	user, err := s.userDBservice.GetUserByID(tokenInfos.InstanceID, tokenInfos.UserID)
 	if err != nil {
-		log.Printf("VerifyContact: %s", err.Error())
+		logger.Error.Printf("VerifyContact: %s", err.Error())
 		return nil, status.Error(codes.InvalidArgument, "no user found")
 	}
 
@@ -653,7 +652,7 @@ func (s *userManagementServer) VerifyContact(ctx context.Context, req *api.TempT
 	}
 
 	if err := user.ConfirmContactInfo(cType, email); err != nil {
-		log.Printf("VerifyContact: %s", err.Error())
+		logger.Error.Printf("VerifyContact: %s", err.Error())
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
@@ -673,7 +672,7 @@ func (s *userManagementServer) ResendContactVerification(ctx context.Context, re
 
 	user, err := s.userDBservice.GetUserByID(req.Token.InstanceId, req.Token.Id)
 	if err != nil {
-		log.Printf("ResendContactVerification: %s", err.Error())
+		logger.Error.Printf("ResendContactVerification: %s", err.Error())
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
@@ -713,7 +712,7 @@ func (s *userManagementServer) ResendContactVerification(ctx context.Context, re
 		PreferredLanguage: user.Account.PreferredLanguage,
 	})
 	if err != nil {
-		log.Printf("ResendContactVerification: %s", err.Error())
+		logger.Error.Printf("ResendContactVerification: %s", err.Error())
 	}
 	// <---
 
@@ -721,7 +720,7 @@ func (s *userManagementServer) ResendContactVerification(ctx context.Context, re
 	user.SetContactInfoVerificationSent("email", req.Address)
 	_, err = s.userDBservice.UpdateUser(req.Token.InstanceId, user)
 	if err != nil {
-		log.Printf("ResendContactVerification: %s", err.Error())
+		logger.Error.Printf("ResendContactVerification: %s", err.Error())
 	}
 
 	return &api.ServiceStatus{

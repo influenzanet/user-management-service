@@ -34,7 +34,7 @@ func (s *userManagementServer) InitiatePasswordReset(ctx context.Context, req *a
 	}
 
 	if utils.HasMoreAttemptsRecently(user.Account.PasswordResetTriggers, 5, passwordResetAttemptWindow) {
-		logger.Error.Printf("SECURITY WARNING: password reset attempt blocked for email address for %s - too many tries recently", req.AccountId)
+		logger.Warning.Printf("SECURITY WARNING: password reset attempt blocked for email address for %s - too many tries recently", req.AccountId)
 		time.Sleep(5 * time.Second)
 		return nil, status.Error(codes.InvalidArgument, "account blocked for a while")
 	}

@@ -28,7 +28,7 @@ func (s *userManagementServer) GetUser(ctx context.Context, req *api.UserReferen
 	}
 
 	if req.Token.Id != req.UserId { // Later can be overwritten
-		logger.Error.Printf("SECURITY WARNING: not authorized GetUser(): %s tried to access %s", req.Token.Id, req.UserId)
+		logger.Warning.Printf("SECURITY WARNING: not authorized GetUser(): %s tried to access %s", req.Token.Id, req.UserId)
 		return nil, status.Error(codes.PermissionDenied, "not authorized")
 	}
 
@@ -250,7 +250,7 @@ func (s *userManagementServer) DeleteAccount(ctx context.Context, req *api.UserR
 
 	// TODO: check if user auth is from admin - to remove user by admin
 	if req.Token.Id != req.UserId {
-		logger.Error.Printf("unauthorized request: user %s initiated account removal for user id %s", req.Token.Id, req.UserId)
+		logger.Warning.Printf("unauthorized request: user %s initiated account removal for user id %s", req.Token.Id, req.UserId)
 		return nil, status.Error(codes.PermissionDenied, "not authorized")
 	}
 	logger.Info.Printf("user %s initiated account removal for user id %s", req.Token.Id, req.UserId)
