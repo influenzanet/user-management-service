@@ -2,9 +2,9 @@ package service
 
 import (
 	"context"
-	"log"
 	"time"
 
+	"github.com/coneno/logger"
 	"github.com/influenzanet/go-utils/pkg/constants"
 	loggingAPI "github.com/influenzanet/logging-service/pkg/api"
 	messageAPI "github.com/influenzanet/messaging-service/pkg/api/messaging_service"
@@ -29,12 +29,12 @@ func (s *userManagementServer) InitiatePasswordReset(ctx context.Context, req *a
 
 	user, err := s.userDBservice.GetUserByAccountID(req.InstanceId, req.AccountId)
 	if err != nil {
-		log.Printf("InitiatePasswordReset: %s", err.Error())
+		logger.Error.Printf("InitiatePasswordReset: %s", err.Error())
 		return nil, status.Error(codes.InvalidArgument, "invalid account id")
 	}
 
 	if utils.HasMoreAttemptsRecently(user.Account.PasswordResetTriggers, 5, passwordResetAttemptWindow) {
-		log.Printf("SECURITY WARNING: password reset attempt blocked for email address for %s - too many tries recently", req.AccountId)
+		logger.Error.Printf("SECURITY WARNING: password reset attempt blocked for email address for %s - too many tries recently", req.AccountId)
 		time.Sleep(5 * time.Second)
 		return nil, status.Error(codes.InvalidArgument, "account blocked for a while")
 	}
@@ -71,7 +71,7 @@ func (s *userManagementServer) InitiatePasswordReset(ctx context.Context, req *a
 	// <---
 
 	if err2 := s.userDBservice.SavePasswordResetTrigger(req.InstanceId, user.ID.Hex()); err != nil {
-		log.Printf("DB ERROR: unexpected error when updating user: %s ", err2.Error())
+		logger.Error.Printf("DB ERROR: unexpected error when updating user: %s ", err2.Error())
 	}
 
 	// ---> Log Event
@@ -94,13 +94,13 @@ func (s *userManagementServer) GetInfosForPasswordReset(ctx context.Context, req
 		constants.TOKEN_PURPOSE_INVITATION,
 	})
 	if err != nil {
-		log.Printf("GetInfosForPasswordReset: %s", err.Error())
+		logger.Error.Printf("GetInfosForPasswordReset: %s", err.Error())
 		return nil, status.Error(codes.InvalidArgument, "wrong token")
 	}
 
 	user, err := s.userDBservice.GetUserByID(tokenInfos.InstanceID, tokenInfos.UserID)
 	if err != nil {
-		log.Printf("GetInfosForPasswordReset: %s", err.Error())
+		logger.Error.Printf("GetInfosForPasswordReset: %s", err.Error())
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
@@ -121,7 +121,7 @@ func (s *userManagementServer) ResetPassword(ctx context.Context, req *api.Reset
 		})
 
 	if err != nil {
-		log.Printf("GetInfosForPasswordReset: %s", err.Error())
+		logger.Error.Printf("GetInfosForPasswordReset: %s", err.Error())
 		return nil, status.Error(codes.InvalidArgument, "wrong token")
 	}
 
@@ -138,7 +138,7 @@ func (s *userManagementServer) ResetPassword(ctx context.Context, req *api.Reset
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-	log.Printf("user %s initiated password change", tokenInfos.UserID)
+	logger.Info.Printf("user %s initiated password change", tokenInfos.UserID)
 
 	user, err := s.userDBservice.GetUserByID(tokenInfos.InstanceID, tokenInfos.UserID)
 	if err != nil {
@@ -151,7 +151,7 @@ func (s *userManagementServer) ResetPassword(ctx context.Context, req *api.Reset
 		newContactPrefs.SubscribedToWeekly = true
 		_, err = s.userDBservice.UpdateContactPreferences(tokenInfos.InstanceID, tokenInfos.UserID, newContactPrefs)
 		if err != nil {
-			log.Printf("unexpected error when updating contact preferences: %v", err)
+			logger.Error.Printf("unexpected error when updating contact preferences: %v", err)
 		}
 	}
 
@@ -164,13 +164,13 @@ func (s *userManagementServer) ResetPassword(ctx context.Context, req *api.Reset
 		UseLowPrio:        true,
 	})
 	if err != nil {
-		log.Printf("ChangePassword: %s", err.Error())
+		logger.Error.Printf("ChangePassword: %s", err.Error())
 	}
 	// ---
 
 	// remove all temptokens for password reset:
 	if err := s.globalDBService.DeleteAllTempTokenForUser(tokenInfos.InstanceID, tokenInfos.UserID, constants.TOKEN_PURPOSE_PASSWORD_RESET); err != nil {
-		log.Printf("ChangePassword: %s", err.Error())
+		logger.Error.Printf("ChangePassword: %s", err.Error())
 	}
 
 	// ---> Log Event

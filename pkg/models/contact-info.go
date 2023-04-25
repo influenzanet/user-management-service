@@ -1,8 +1,7 @@
 package models
 
 import (
-	"log"
-
+	"github.com/coneno/logger"
 	"github.com/influenzanet/user-management-service/pkg/api"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
@@ -36,7 +35,7 @@ func ContactInfoFromAPI(obj *api.ContactInfo) ContactInfo {
 	case nil:
 		// The field is not set.
 	default:
-		log.Printf("api.ContactInfo has unexpected type %T", x)
+		logger.Warning.Printf("api.ContactInfo has unexpected type %T", x)
 	}
 	return res
 }

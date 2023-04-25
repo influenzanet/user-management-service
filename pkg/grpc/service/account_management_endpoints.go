@@ -2,10 +2,10 @@ package service
 
 import (
 	"context"
-	"log"
 	"strconv"
 	"time"
 
+	"github.com/coneno/logger"
 	"github.com/influenzanet/go-utils/pkg/constants"
 	loggingAPI "github.com/influenzanet/logging-service/pkg/api"
 	messageAPI "github.com/influenzanet/messaging-service/pkg/api/messaging_service"
@@ -28,7 +28,7 @@ func (s *userManagementServer) GetUser(ctx context.Context, req *api.UserReferen
 	}
 
 	if req.Token.Id != req.UserId { // Later can be overwritten
-		log.Printf("SECURITY WARNING: not authorized GetUser(): %s tried to access %s", req.Token.Id, req.UserId)
+		logger.Error.Printf("SECURITY WARNING: not authorized GetUser(): %s tried to access %s", req.Token.Id, req.UserId)
 		return nil, status.Error(codes.PermissionDenied, "not authorized")
 	}
 
@@ -68,7 +68,7 @@ func (s *userManagementServer) ChangePassword(ctx context.Context, req *api.Pass
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-	log.Printf("user %s initiated password change", req.Token.Id)
+	logger.Info.Printf("user %s initiated password change", req.Token.Id)
 
 	// Trigger message sending
 	_, err = s.clients.MessagingService.SendInstantEmail(ctx, &messageAPI.SendEmailReq{
@@ -79,13 +79,13 @@ func (s *userManagementServer) ChangePassword(ctx context.Context, req *api.Pass
 		UseLowPrio:        true,
 	})
 	if err != nil {
-		log.Printf("ChangePassword: %s", err.Error())
+		logger.Error.Printf("ChangePassword: %s", err.Error())
 	}
 	// ---
 
 	// remove all temptokens for password reset:
 	if err := s.globalDBService.DeleteAllTempTokenForUser(req.Token.InstanceId, req.Token.Id, constants.TOKEN_PURPOSE_PASSWORD_RESET); err != nil {
-		log.Printf("ChangePassword: %s", err.Error())
+		logger.Error.Printf("ChangePassword: %s", err.Error())
 	}
 
 	s.SaveLogEvent(req.Token.InstanceId, req.Token.Id, loggingAPI.LogEventType_LOG, constants.LOG_EVENT_PASSWORD_CHANGED, "")
@@ -163,7 +163,7 @@ func (s *userManagementServer) ChangeAccountIDEmail(ctx context.Context, req *ap
 			UseLowPrio: true,
 		})
 		if err != nil {
-			log.Printf("ChangeAccountIDEmail: %s", err.Error())
+			logger.Error.Printf("ChangeAccountIDEmail: %s", err.Error())
 		}
 		// <---
 	}
@@ -220,7 +220,7 @@ func (s *userManagementServer) ChangeAccountIDEmail(ctx context.Context, req *ap
 			},
 		})
 		if err != nil {
-			log.Printf("ChangeAccountIDEmail: %s", err.Error())
+			logger.Error.Printf("ChangeAccountIDEmail: %s", err.Error())
 		}
 		// <---
 	}
@@ -228,7 +228,7 @@ func (s *userManagementServer) ChangeAccountIDEmail(ctx context.Context, req *ap
 	if !req.KeepOldEmail {
 		err := user.RemoveContactInfo(oldCI.ID.Hex())
 		if err != nil {
-			log.Println(err.Error())
+			logger.Error.Println(err.Error())
 		}
 	}
 
@@ -250,10 +250,10 @@ func (s *userManagementServer) DeleteAccount(ctx context.Context, req *api.UserR
 
 	// TODO: check if user auth is from admin - to remove user by admin
 	if req.Token.Id != req.UserId {
-		log.Printf("unauthorized request: user %s initiated account removal for user id %s", req.Token.Id, req.UserId)
+		logger.Error.Printf("unauthorized request: user %s initiated account removal for user id %s", req.Token.Id, req.UserId)
 		return nil, status.Error(codes.PermissionDenied, "not authorized")
 	}
-	log.Printf("user %s initiated account removal for user id %s", req.Token.Id, req.UserId)
+	logger.Info.Printf("user %s initiated account removal for user id %s", req.Token.Id, req.UserId)
 
 	user, err := s.userDBservice.GetUserByID(req.Token.InstanceId, req.UserId)
 	if err != nil {
@@ -269,7 +269,7 @@ func (s *userManagementServer) DeleteAccount(ctx context.Context, req *api.UserR
 		UseLowPrio:        true,
 	})
 	if err != nil {
-		log.Printf("DeleteAccount: %s", err.Error())
+		logger.Error.Printf("DeleteAccount: %s", err.Error())
 	}
 	// <---
 
@@ -279,12 +279,12 @@ func (s *userManagementServer) DeleteAccount(ctx context.Context, req *api.UserR
 
 	// remove all TempTokens for the given user ID using auth-service
 	if err := s.globalDBService.DeleteAllTempTokenForUser(req.Token.InstanceId, req.Token.Id, ""); err != nil {
-		log.Printf("error, when trying to remove temp-tokens: %s", err.Error())
+		logger.Error.Printf("error, when trying to remove temp-tokens: %s", err.Error())
 	}
 
 	s.SaveLogEvent(req.Token.InstanceId, req.Token.Id, loggingAPI.LogEventType_LOG, constants.LOG_EVENT_ACCOUNT_DELETED, user.Account.AccountID)
 
-	log.Printf("user account with id %s successfully removed", req.UserId)
+	logger.Info.Printf("user account with id %s successfully removed", req.UserId)
 	return &api.ServiceStatus{
 		Status: api.ServiceStatus_NORMAL,
 		Msg:    "user deleted",
@@ -379,13 +379,13 @@ func (s *userManagementServer) UseUnsubscribeToken(ctx context.Context, req *api
 	}
 	tokenInfos, err := s.ValidateTempToken(req.Token, []string{constants.TOKEN_PURPOSE_UNSUBSCRIBE_NEWSLETTER})
 	if err != nil {
-		log.Printf("UseUnsubscribeToken: %s", err.Error())
+		logger.Error.Printf("UseUnsubscribeToken: %s", err.Error())
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
 	user, err := s.userDBservice.GetUserByID(tokenInfos.InstanceID, tokenInfos.UserID)
 	if err != nil {
-		log.Printf("UseUnsubscribeToken: %s", err.Error())
+		logger.Error.Printf("UseUnsubscribeToken: %s", err.Error())
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
@@ -393,7 +393,7 @@ func (s *userManagementServer) UseUnsubscribeToken(ctx context.Context, req *api
 
 	_, err = s.userDBservice.UpdateContactPreferences(tokenInfos.InstanceID, user.ID.Hex(), user.ContactPreferences)
 	if err != nil {
-		log.Printf("UseUnsubscribeToken: %s", err.Error())
+		logger.Error.Printf("UseUnsubscribeToken: %s", err.Error())
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	return &api.ServiceStatus{
@@ -451,7 +451,7 @@ func (s *userManagementServer) AddEmail(ctx context.Context, req *api.ContactInf
 		PreferredLanguage: user.Account.PreferredLanguage,
 	})
 	if err != nil {
-		log.Printf("AddEmail: %s", err.Error())
+		logger.Error.Printf("AddEmail: %s", err.Error())
 	}
 	// <---
 

@@ -3,7 +3,6 @@ package timer_event
 import (
 	"context"
 	"errors"
-	"log"
 	"time"
 
 	"github.com/coneno/logger"
@@ -18,7 +17,7 @@ func (s *UserManagementTimerService) ReminderToConfirmAccount() {
 	logger.Debug.Println("Check if reminders to confirm accounts need to be sent out.")
 	instances, err := s.globalDBService.GetAllInstances()
 	if err != nil {
-		log.Printf("unexpected error: %s", err.Error())
+		logger.Error.Printf("unexpected error: %s", err.Error())
 	}
 	sendReminderToConfirmAfter := s.ReminderTimeThreshold
 
@@ -65,7 +64,7 @@ func (s *UserManagementTimerService) ReminderToConfirmAccount() {
 		ctx := context.Background()
 		err := s.userDBService.SendReminderToConfirmAccountLoop(ctx, instance.InstanceID, time.Now().Unix()-sendReminderToConfirmAfter, sendReminderToUser, &count)
 		if err != nil {
-			log.Printf("unexpected error: %s", err.Error())
+			logger.Error.Printf("unexpected error: %s", err.Error())
 			continue
 		}
 		if count > 0 {
