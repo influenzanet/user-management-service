@@ -57,3 +57,12 @@ func (s *userManagementServer) sendVerificationEmail(instanceID string, accountI
 		log.Printf("SendVerificationCode: %s", err.Error())
 	}
 }
+
+func (s *userManagementServer) isInstanceIDAllowed(instanceID string) bool {
+	for _, id := range s.instanceIDs {
+		if id == instanceID {
+			return true
+		}
+	}
+	return false
+}

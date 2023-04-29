@@ -42,6 +42,11 @@ func (s *userManagementServer) SendVerificationCode(ctx context.Context, req *ap
 		req.InstanceId = "default"
 	}
 
+	if !s.isInstanceIDAllowed(req.InstanceId) {
+		logger.Warning.Printf("SendVerificationCode: instance ID not allowed: %s", req.InstanceId)
+		return nil, status.Error(codes.InvalidArgument, "invalid instance ID")
+	}
+
 	req.Email = utils.SanitizeEmail(req.Email)
 	user, err := s.userDBservice.GetUserByAccountID(req.InstanceId, req.Email)
 	if err != nil {
@@ -164,6 +169,11 @@ func (s *userManagementServer) LoginWithEmail(ctx context.Context, req *api.Logi
 
 	if req.InstanceId == "" {
 		req.InstanceId = "default"
+	}
+
+	if !s.isInstanceIDAllowed(req.InstanceId) {
+		logger.Warning.Printf("LoginWithEmail: instance ID not allowed: %s", req.InstanceId)
+		return nil, status.Error(codes.InvalidArgument, "invalid instance ID")
 	}
 
 	req.Email = utils.SanitizeEmail(req.Email)
@@ -335,6 +345,11 @@ func (s *userManagementServer) LoginWithExternalIDP(ctx context.Context, req *ap
 		return nil, status.Error(codes.InvalidArgument, "invalid request")
 	}
 
+	if !s.isInstanceIDAllowed(req.InstanceId) {
+		logger.Warning.Printf("LoginWithExternalIDP: instance ID not allowed: %s", req.InstanceId)
+		return nil, status.Error(codes.InvalidArgument, "invalid instance ID")
+	}
+
 	req.Email = utils.SanitizeEmail(req.Email)
 	user, err := s.userDBservice.GetUserByAccountID(req.InstanceId, req.Email)
 	if err != nil {
@@ -479,6 +494,11 @@ func (s *userManagementServer) SignupWithEmail(ctx context.Context, req *api.Sig
 
 	if req.InstanceId == "" {
 		req.InstanceId = "default"
+	}
+
+	if !s.isInstanceIDAllowed(req.InstanceId) {
+		logger.Warning.Printf("SignupWithEmail: instance ID not allowed: %s", req.InstanceId)
+		return nil, status.Error(codes.InvalidArgument, "invalid instance ID")
 	}
 
 	newUserCount, err := s.userDBservice.CountRecentlyCreatedUsers(req.InstanceId, signupRateLimitWindow)

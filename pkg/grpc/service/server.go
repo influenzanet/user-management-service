@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"log"
 	"net"
 	"os"
 	"os/signal"
@@ -29,6 +28,7 @@ type userManagementServer struct {
 	Intervals         models.Intervals
 	newUserCountLimit int64
 	weekdayStrategy   utils.WeekDayStrategy
+	instanceIDs       []string
 }
 
 // NewUserManagementServer creates a new service instance
@@ -39,6 +39,7 @@ func NewUserManagementServer(
 	intervals models.Intervals,
 	newUserCountLimit int64,
 	weekdayStrategy utils.WeekDayStrategy,
+	instanceIDs []string,
 ) api.UserManagementApiServer {
 	return &userManagementServer{
 		clients:           clients,
@@ -47,6 +48,7 @@ func NewUserManagementServer(
 		Intervals:         intervals,
 		newUserCountLimit: newUserCountLimit,
 		weekdayStrategy:   weekdayStrategy,
+		instanceIDs:       instanceIDs,
 	}
 }
 
@@ -58,6 +60,7 @@ func RunServer(ctx context.Context, port string,
 	intervals models.Intervals,
 	newUserCountLimit int64,
 	weekdayStrategy utils.WeekDayStrategy,
+	instanceIDs []string,
 ) error {
 	lis, err := net.Listen("tcp", ":"+port)
 	if err != nil {
@@ -73,6 +76,7 @@ func RunServer(ctx context.Context, port string,
 		intervals,
 		newUserCountLimit,
 		weekdayStrategy,
+		instanceIDs,
 	))
 
 	// graceful shutdown
@@ -81,14 +85,14 @@ func RunServer(ctx context.Context, port string,
 	go func() {
 		for range c {
 			// sig is a ^C, handle it
-			log.Println("shutting down gRPC server...")
+			logger.Debug.Println("shutting down gRPC server...")
 			server.GracefulStop()
 			<-ctx.Done()
 		}
 	}()
 
 	// start gRPC server
-	log.Println("starting gRPC server...")
-	log.Println("wait connections on port " + port)
+	logger.Debug.Println("starting gRPC server...")
+	logger.Debug.Println("wait connections on port " + port)
 	return server.Serve(lis)
 }
