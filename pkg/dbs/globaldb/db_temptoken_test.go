@@ -2,10 +2,10 @@ package globaldb
 
 import (
 	"context"
-	"log"
 	"testing"
 	"time"
 
+	"github.com/coneno/logger"
 	"github.com/influenzanet/user-management-service/pkg/models"
 	"github.com/influenzanet/user-management-service/pkg/tokens"
 	"go.mongodb.org/mongo-driver/bson"
@@ -105,7 +105,7 @@ func TestDbInterfaceMethodsForTempToken(t *testing.T) {
 			t.Error(err)
 			return
 		}
-		log.Println(tt)
+		logger.Debug.Println(tt)
 		if len(tt) < 2 {
 			t.Error("tokens should be found")
 			return

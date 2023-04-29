@@ -1,8 +1,9 @@
 package tokens
 
 import (
-	"log"
 	"testing"
+
+	"github.com/coneno/logger"
 )
 
 func TestGenerateVerificationCode(t *testing.T) {
@@ -14,7 +15,7 @@ func TestGenerateVerificationCode(t *testing.T) {
 		}
 		if len(code) != 4 {
 			t.Errorf("unexpected length: %d", len(code))
-			log.Println(code)
+			logger.Error.Println(code)
 		}
 	})
 

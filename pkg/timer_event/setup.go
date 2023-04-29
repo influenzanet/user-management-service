@@ -2,9 +2,9 @@ package timer_event
 
 import (
 	"context"
-	"log"
 	"time"
 
+	"github.com/coneno/logger"
 	"github.com/influenzanet/user-management-service/pkg/dbs/globaldb"
 	"github.com/influenzanet/user-management-service/pkg/dbs/userdb"
 	"github.com/influenzanet/user-management-service/pkg/models"
@@ -43,7 +43,7 @@ func (s *UserManagementTimerService) Run(ctx context.Context) {
 }
 
 func (s *UserManagementTimerService) startTimerThread(ctx context.Context, timeCheckInterval int64) {
-	log.Printf("Starting timer thread with frequecy %d seconds", timeCheckInterval)
+	logger.Info.Printf("Starting timer thread with frequecy %d seconds", timeCheckInterval)
 	for {
 		select {
 		case <-time.After(time.Duration(timeCheckInterval) * time.Second):

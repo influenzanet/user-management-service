@@ -3,7 +3,6 @@ package globaldb
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"strconv"
 	"testing"
@@ -67,7 +66,7 @@ func setupTestDBService() {
 }
 
 func dropTestDB() {
-	log.Println("Drop test database: globaldb package")
+	logger.Info.Println("Drop test database: globaldb package")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 

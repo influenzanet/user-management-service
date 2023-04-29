@@ -3,9 +3,9 @@ package service
 import (
 	"context"
 	"fmt"
-	"log"
 	"time"
 
+	"github.com/coneno/logger"
 	constants "github.com/influenzanet/go-utils/pkg/constants"
 	messageAPI "github.com/influenzanet/messaging-service/pkg/api/messaging_service"
 	"github.com/influenzanet/user-management-service/pkg/models"
@@ -17,7 +17,7 @@ import (
 func (s *userManagementServer) generateAndSendVerificationCode(instanceID string, user models.User) error {
 	vc, err := tokens.GenerateVerificationCode(6)
 	if err != nil {
-		log.Printf("unexpected error while generating verification code: %v", err)
+		logger.Error.Printf("unexpected error while generating verification code: %v", err)
 		return status.Error(codes.Internal, "error while generating verification code")
 	}
 
@@ -29,7 +29,7 @@ func (s *userManagementServer) generateAndSendVerificationCode(instanceID string
 	}
 	user, err = s.userDBservice.UpdateUser(instanceID, user)
 	if err != nil {
-		log.Printf("generateAndSendVerificationCode: unexpected error when saving user -> %v", err)
+		logger.Error.Printf("generateAndSendVerificationCode: unexpected error when saving user -> %v", err)
 		return status.Error(codes.Internal, "user couldn't be updated")
 	}
 
@@ -54,7 +54,7 @@ func (s *userManagementServer) sendVerificationEmail(instanceID string, accountI
 		PreferredLanguage: preferredLang,
 	})
 	if err != nil {
-		log.Printf("SendVerificationCode: %s", err.Error())
+		logger.Error.Printf("SendVerificationCode: %s", err.Error())
 	}
 }
 

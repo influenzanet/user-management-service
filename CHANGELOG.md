@@ -1,5 +1,12 @@
 # Changelog
 
+## [v1.1.2] - 2023-04-29
+
+### Changed
+
+- Reading instanceID list form globalDB's `instance` collection then use the list of instanceIDs to filter unauthenticated requests directed toward non-listed instances.
+- Improve logging by using the custom logger for all log lines.
+
 ## [v1.1.1] - 2022-10-28
 
 ### Changed
