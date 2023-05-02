@@ -135,6 +135,7 @@ func TestChangePasswordEndpoint(t *testing.T) {
 	s := userManagementServer{
 		userDBservice:   testUserDBService,
 		globalDBService: testGlobalDBService,
+		instanceIDs:     []string{testInstanceID},
 		Intervals: models.Intervals{
 			TokenExpiryInterval:      time.Second * 2,
 			VerificationCodeLifetime: 60,

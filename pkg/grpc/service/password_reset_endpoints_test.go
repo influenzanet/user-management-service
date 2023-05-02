@@ -24,6 +24,7 @@ func TestInitiatePasswordResetEndpoint(t *testing.T) {
 	s := userManagementServer{
 		userDBservice:   testUserDBService,
 		globalDBService: testGlobalDBService,
+		instanceIDs:     []string{testInstanceID},
 		Intervals: models.Intervals{
 			TokenExpiryInterval:      time.Second * 2,
 			VerificationCodeLifetime: 60,
@@ -73,7 +74,8 @@ func TestInitiatePasswordResetEndpoint(t *testing.T) {
 
 	t.Run("with wrong account id", func(t *testing.T) {
 		_, err := s.InitiatePasswordReset(context.Background(), &api.InitiateResetPasswordMsg{
-			AccountId: "wrong@test.test",
+			InstanceId: testInstanceID,
+			AccountId:  "wrong@test.test",
 		})
 		ok, msg := shouldHaveGrpcErrorStatus(err, "invalid account id")
 		if !ok {

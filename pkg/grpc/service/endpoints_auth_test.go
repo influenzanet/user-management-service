@@ -27,6 +27,7 @@ func TestSendVerificationCode(t *testing.T) {
 	s := userManagementServer{
 		userDBservice:   testUserDBService,
 		globalDBService: testGlobalDBService,
+		instanceIDs:     []string{testInstanceID},
 		clients: &models.APIClients{
 			MessagingService: mockMessagingClient,
 			LoggingService:   mockLoggingClient,
@@ -320,6 +321,7 @@ func TestLogin(t *testing.T) {
 	s := userManagementServer{
 		userDBservice:   testUserDBService,
 		globalDBService: testGlobalDBService,
+		instanceIDs:     []string{testInstanceID},
 		Intervals: models.Intervals{
 			TokenExpiryInterval:      time.Second * 2,
 			VerificationCodeLifetime: 60,
@@ -585,6 +587,7 @@ func TestSignupWithEmail(t *testing.T) {
 	s := userManagementServer{
 		userDBservice:   testUserDBService,
 		globalDBService: testGlobalDBService,
+		instanceIDs:     []string{testInstanceID},
 		Intervals: models.Intervals{
 			TokenExpiryInterval:      time.Second * 2,
 			VerificationCodeLifetime: 60,
