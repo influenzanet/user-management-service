@@ -20,7 +20,12 @@ func CheckEmailFormat(email string) bool {
 		return false
 	}
 	_, err := mail.ParseAddress(email)
-	return err == nil
+	if err != nil {
+		return false
+	}
+	// additional regex check for correct email format
+	emailRule := regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`)
+	return emailRule.MatchString(email)
 }
 
 // BlurEmailAddress transforms an email address to reduce exposed personal info

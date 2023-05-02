@@ -80,7 +80,7 @@ func TestCheckPasswordFormat(t *testing.T) {
 
 func TestCheckEmailFormat(t *testing.T) {
 	t.Run("with missing @", func(t *testing.T) {
-		if CheckEmailFormat("t.t.t") {
+		if CheckEmailFormat("t.t.com") {
 			t.Error("should be false")
 		}
 	})
@@ -91,32 +91,38 @@ func TestCheckEmailFormat(t *testing.T) {
 		}
 	})
 
+	t.Run("with missing top level domain", func(t *testing.T) {
+		if CheckEmailFormat("t@com") {
+			t.Error("should be false")
+		}
+	})
+
 	t.Run("with wrong local format", func(t *testing.T) {
-		if CheckEmailFormat("@t.t") {
+		if CheckEmailFormat("@t.com") {
 			t.Error("should be false")
 		}
 	})
 
 	t.Run("with too many @", func(t *testing.T) {
-		if CheckEmailFormat("t@@t.t") {
+		if CheckEmailFormat("t@@t.com") {
 			t.Error("should be false")
 		}
 	})
 
 	t.Run("with ..", func(t *testing.T) {
-		if CheckEmailFormat("t..t@t.t") {
+		if CheckEmailFormat("t..t@t.com") {
 			t.Error("should be false")
 		}
 	})
 
 	t.Run("with correct format", func(t *testing.T) {
-		if !CheckEmailFormat("t@t.t") {
+		if !CheckEmailFormat("t@t.com") {
 			t.Error("should be true")
 		}
 	})
 
 	t.Run("with correct format", func(t *testing.T) {
-		if !CheckEmailFormat("t+1@t.t") {
+		if !CheckEmailFormat("t+1@t.com") {
 			t.Error("should be true")
 		}
 	})
