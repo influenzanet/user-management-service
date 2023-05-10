@@ -23,10 +23,11 @@ func InstanceIdInterceptor(instanceIDs []string) func(ctx context.Context,
 
 		reqValue := reflect.ValueOf(req).Elem()
 		instanceId := reqValue.FieldByName("InstanceId")
+		token := reqValue.FieldByName("Token")
 
 		allowed := true
 
-		if instanceId.IsValid() {
+		if !token.IsValid() && instanceId.IsValid() {
 			allowed = false
 			for _, allowedId := range instanceIDs {
 				if instanceId.String() == allowedId {
