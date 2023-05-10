@@ -5,7 +5,6 @@ import (
 	"log"
 	"time"
 
-	"github.com/coneno/logger"
 	"github.com/influenzanet/go-utils/pkg/constants"
 	loggingAPI "github.com/influenzanet/logging-service/pkg/api"
 	messageAPI "github.com/influenzanet/messaging-service/pkg/api/messaging_service"
@@ -26,10 +25,7 @@ func (s *userManagementServer) InitiatePasswordReset(ctx context.Context, req *a
 	if req.InstanceId == "" {
 		req.InstanceId = "default"
 	}
-	if !s.isInstanceIDAllowed(req.InstanceId) {
-		logger.Warning.Printf("InitiatePasswordReset: instance ID not allowed: %s", req.InstanceId)
-		return nil, status.Error(codes.InvalidArgument, "invalid instance ID")
-	}
+
 	req.AccountId = utils.SanitizeEmail(req.AccountId)
 
 	user, err := s.userDBservice.GetUserByAccountID(req.InstanceId, req.AccountId)

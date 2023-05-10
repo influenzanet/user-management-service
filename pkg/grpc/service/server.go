@@ -10,6 +10,7 @@ import (
 	"github.com/influenzanet/user-management-service/pkg/api"
 	"github.com/influenzanet/user-management-service/pkg/dbs/globaldb"
 	"github.com/influenzanet/user-management-service/pkg/dbs/userdb"
+	itc "github.com/influenzanet/user-management-service/pkg/grpc/interceptors"
 	"github.com/influenzanet/user-management-service/pkg/models"
 	"github.com/influenzanet/user-management-service/pkg/utils"
 	"google.golang.org/grpc"
@@ -68,7 +69,7 @@ func RunServer(ctx context.Context, port string,
 	}
 
 	// register service
-	server := grpc.NewServer()
+	server := grpc.NewServer(grpc.UnaryInterceptor(itc.InstanceIdInterceptor(instanceIDs)))
 	api.RegisterUserManagementApiServer(server, NewUserManagementServer(
 		clients,
 		userDBservice,
