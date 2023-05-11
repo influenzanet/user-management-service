@@ -46,6 +46,9 @@ func main() {
 		instanceIDs = append(instanceIDs, instanceIDObject.InstanceID)
 	}
 
+	// Ensure indexes
+	ensureDBIndexes(instanceIDs, userDBService)
+
 	// Start timer thread
 	userTimerService := timer_event.NewUserManagmentTimerService(
 		userManagementTimerEventFrequency,
@@ -73,5 +76,14 @@ func main() {
 		instanceIDs,
 	); err != nil {
 		logger.Error.Fatal(err)
+	}
+}
+
+func ensureDBIndexes(instanceIDs []string, udb *userdb.UserDBService) {
+	for _, i := range instanceIDs {
+		logger.Debug.Printf("ensuring indexes for instance %s", i)
+
+		udb.CreateIndexForRenewTokens(i)
+		// TODO: ensure index for users collection as well
 	}
 }

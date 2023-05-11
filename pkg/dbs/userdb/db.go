@@ -56,6 +56,10 @@ func (dbService *UserDBService) collectionRefUsers(instanceID string) *mongo.Col
 	return dbService.DBClient.Database(dbService.DBNamePrefix + instanceID + "_users").Collection("users")
 }
 
+func (dbSerive *UserDBService) collectionRenewTokens(instanceID string) *mongo.Collection {
+	return dbSerive.DBClient.Database(dbSerive.DBNamePrefix + instanceID + "_users").Collection("renewTokens")
+}
+
 // DB utils
 func (dbService *UserDBService) getContext() (ctx context.Context, cancel context.CancelFunc) {
 	return context.WithTimeout(context.Background(), time.Duration(dbService.timeout)*time.Second)
