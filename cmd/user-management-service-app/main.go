@@ -33,6 +33,19 @@ func main() {
 	userDBService := userdb.NewUserDBService(conf.UserDBConfig)
 	globalDBService := globaldb.NewGlobalDBService(conf.GlobalDBConfig)
 
+	// Read instance ID list
+	instanceIDObjects, err := globalDBService.GetAllInstances()
+	if err != nil {
+		logger.Error.Fatalf("Couldn't read instance IDs: %v", err)
+	}
+	if len(instanceIDObjects) == 0 {
+		logger.Error.Fatal("No instance ID found in the database.")
+	}
+	instanceIDs := []string{}
+	for _, instanceIDObject := range instanceIDObjects {
+		instanceIDs = append(instanceIDs, instanceIDObject.InstanceID)
+	}
+
 	// Start timer thread
 	userTimerService := timer_event.NewUserManagmentTimerService(
 		userManagementTimerEventFrequency,
@@ -57,6 +70,7 @@ func main() {
 		conf.Intervals,
 		conf.NewUserCountLimit,
 		conf.WeekDayStrategy,
+		instanceIDs,
 	); err != nil {
 		logger.Error.Fatal(err)
 	}
