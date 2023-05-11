@@ -1,10 +1,13 @@
 # Changelog
 
-## [v1.1.2] - 2023-04-29
+## [v1.2.0] - 2023-05-11
+
+### BREAKING CHANGES
+
+- Reading instanceID list form globalDB's `instances` collection then use the list of instanceIDs to filter unauthenticated requests directed toward non-listed instances. This means that the `instances` collection must be populated with the instanceIDs of all instances that should be accessible by the user management service. This is a breaking change, since the previous behaviour was to allow all requests to all instances. This change is necessary to prevent unauthenticated requests to the user management service from being used to spam / exhaust the database with non-existent instances.
 
 ### Changed
 
-- Reading instanceID list form globalDB's `instance` collection then use the list of instanceIDs to filter unauthenticated requests directed toward non-listed instances.
 - Improve logging by using the custom logger for all log lines.
 - Hardening email validation rules to prevent using invalid emails.
 
