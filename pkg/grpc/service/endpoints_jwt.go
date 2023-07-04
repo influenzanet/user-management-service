@@ -94,6 +94,7 @@ func (s *userManagementServer) RenewJWT(ctx context.Context, req *api.RefreshJWT
 	return &api.TokenResponse{
 		AccessToken:       newToken,
 		RefreshToken:      newRefreshToken,
+		AccountConfirmed:  user.Account.AccountConfirmedAt > 0,
 		ExpiresIn:         int32(s.Intervals.TokenExpiryInterval / time.Minute),
 		SelectedProfileId: parsedToken.ProfileID,
 		Profiles:          user.ToAPI().Profiles,
