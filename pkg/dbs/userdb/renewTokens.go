@@ -2,6 +2,7 @@ package userdb
 
 import (
 	"errors"
+	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -64,7 +65,17 @@ func (dbService *UserDBService) DeleteRenewTokensForUser(instanceID string, user
 	return res.DeletedCount, nil
 }
 
-// TODO: remove all expired tokens
+func (dbService *UserDBService) DeleteExpiredRenewTokens(instanceID string) (int64, error) {
+	filter := bson.M{"expiresAt": bson.M{"$lt": time.Now().Unix()}}
+
+	ctx, cancel := dbService.getContext()
+	defer cancel()
+	res, err := dbService.collectionRenewTokens(instanceID).DeleteMany(ctx, filter, nil)
+	if err != nil {
+		return 0, err
+	}
+	return res.DeletedCount, nil
+}
 
 // TODO: create new renew token object
 
