@@ -145,9 +145,8 @@ func TestRenewJWT(t *testing.T) {
 	testUsers, err := addTestUsers([]models.User{
 		{
 			Account: models.Account{
-				Type:          "email",
-				AccountID:     "test_for_renew_token@test.com",
-				RefreshTokens: []string{refreshToken, refreshToken, refreshToken}, // reuse refresh token for simpler testing
+				Type:      "email",
+				AccountID: "test_for_renew_token@test.com",
 			},
 			Profiles: []models.Profile{
 				{
@@ -161,6 +160,9 @@ func TestRenewJWT(t *testing.T) {
 		t.Errorf("failed to create testusers: %s", err.Error())
 		return
 	}
+
+	testUserDBService.CreateRenewToken(testInstanceID, testUsers[0].ID.Hex(), refreshToken, time.Now().Add(time.Hour).Unix())
+
 	userToken, err := tokens.GenerateNewToken(testUsers[0].ID.Hex(), true, "testprofid", []string{"PARTICIPANT"}, testInstanceID, s.Intervals.TokenExpiryInterval, "", nil, []string{})
 	if err != nil {
 		t.Errorf("unexpected error: %s", err)
@@ -191,7 +193,7 @@ func TestRenewJWT(t *testing.T) {
 			RefreshToken: refreshToken,
 		}
 		_, err := s.RenewJWT(context.Background(), req)
-		ok, msg := shouldHaveGrpcErrorStatus(err, "wrong access token")
+		ok, msg := shouldHaveGrpcErrorStatus(err, "refresh token error")
 		if !ok {
 			t.Error(msg)
 		}
@@ -208,7 +210,7 @@ func TestRenewJWT(t *testing.T) {
 			RefreshToken: userToken + "x",
 		}
 		_, err := s.RenewJWT(context.Background(), req)
-		ok, msg := shouldHaveGrpcErrorStatus(err, "wrong refresh token")
+		ok, msg := shouldHaveGrpcErrorStatus(err, "refresh token error")
 		if !ok {
 			t.Error(msg)
 		}
@@ -281,9 +283,8 @@ func TestRevokeAllRefreshTokens(t *testing.T) {
 	testUsers, err := addTestUsers([]models.User{
 		{
 			Account: models.Account{
-				Type:          "email",
-				AccountID:     "test_for_revoke_refresh_tokens@test.com",
-				RefreshTokens: []string{refreshToken, refreshToken, refreshToken}, // reuse refresh token for simpler testing
+				Type:      "email",
+				AccountID: "test_for_revoke_refresh_tokens@test.com",
 			},
 			Profiles: []models.Profile{
 				{
@@ -297,6 +298,7 @@ func TestRevokeAllRefreshTokens(t *testing.T) {
 		t.Errorf("failed to create testusers: %s", err.Error())
 		return
 	}
+	testUserDBService.CreateRenewToken(testInstanceID, testUsers[0].ID.Hex(), refreshToken, time.Now().Add(time.Hour).Unix())
 
 	t.Run("Testing token refresh without token", func(t *testing.T) {
 		_, err := s.RevokeAllRefreshTokens(context.Background(), nil)
@@ -329,13 +331,10 @@ func TestRevokeAllRefreshTokens(t *testing.T) {
 			t.Errorf("unexpected error: %s", err.Error())
 			return
 		}
-		u, err := s.userDBservice.GetUserByID(testInstanceID, testUsers[0].ID.Hex())
-		if err != nil {
-			t.Errorf("unexpected error: %s", err.Error())
+		_, err = s.userDBservice.FindAndUpdateRenewToken(testInstanceID, testUsers[0].ID.Hex(), refreshToken, "test")
+		if err == nil {
+			t.Error("token should be revoked")
 			return
-		}
-		if len(u.Account.RefreshTokens) > 0 {
-			t.Errorf("unexpected number of refresh tokens: %d", len(u.Account.RefreshTokens))
 		}
 	})
 }

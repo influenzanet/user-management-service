@@ -8,6 +8,7 @@ import (
 	"github.com/coneno/logger"
 	loggingAPI "github.com/influenzanet/logging-service/pkg/api"
 	"github.com/influenzanet/user-management-service/pkg/api"
+	"github.com/influenzanet/user-management-service/pkg/dbs/userdb"
 	"github.com/influenzanet/user-management-service/pkg/tokens"
 	"github.com/influenzanet/user-management-service/pkg/utils"
 	"google.golang.org/grpc/codes"
@@ -47,24 +48,47 @@ func (s *userManagementServer) RenewJWT(ctx context.Context, req *api.RefreshJWT
 	// Parse and validate token
 	parsedToken, _, err := tokens.ValidateToken(req.AccessToken)
 	if err != nil && !strings.Contains(err.Error(), "token is expired by") {
-		logger.Error.Printf("renew token error: %v", err.Error())
-		return nil, status.Error(codes.PermissionDenied, "wrong access token")
+		logger.Error.Printf("token refresh -> issue with acces token: %v", err.Error())
+		return nil, status.Error(codes.PermissionDenied, "refresh token error")
 	}
 
+	// Trigger cleanup of expired renew tokens
+	go s.userDBservice.DeleteExpiredRenewTokens(parsedToken.InstanceID)
+
+	// Check if user exists
 	user, err := s.userDBservice.GetUserByID(parsedToken.InstanceID, parsedToken.ID)
 	if err != nil {
-		logger.Error.Printf("renew token error: %v", err.Error())
-		return nil, status.Error(codes.Internal, "user not found")
+		logger.Error.Printf("token refresh -> retrieving user failed with: %v", err.Error())
+		return nil, status.Error(codes.Internal, "refresh token error")
 	}
 
-	err = user.RemoveRefreshToken(req.RefreshToken)
+	// Generate new refresh token:
+	newRefreshToken, err := tokens.GenerateUniqueTokenString()
 	if err != nil {
-		logger.Error.Printf("renew token error: %v", err.Error())
-		s.SaveLogEvent(parsedToken.InstanceID, parsedToken.ID, loggingAPI.LogEventType_SECURITY, constants.LOG_EVENT_TOKEN_REFRESH_FAILED, "wrong refresh token, cannot renew")
-		return nil, status.Error(codes.Internal, "wrong refresh token")
+		logger.Error.Printf("token refresh -> cannot generate new refresh token: %v", err.Error())
+		return nil, status.Error(codes.Internal, "refresh token error")
 	}
-	user.Timestamps.LastTokenRefresh = time.Now().Unix()
 
+	// Check if refresh token is valid
+	rt, err := s.userDBservice.FindAndUpdateRenewToken(parsedToken.InstanceID, user.ID.Hex(), req.RefreshToken, newRefreshToken)
+	if err != nil {
+		logger.Error.Printf("token refresh -> failed to validate renew token: %v", err.Error())
+		s.SaveLogEvent(parsedToken.InstanceID, parsedToken.ID, loggingAPI.LogEventType_SECURITY, constants.LOG_EVENT_TOKEN_REFRESH_FAILED, "wrong refresh token, cannot renew")
+		return nil, status.Error(codes.Internal, "refresh token error")
+	}
+
+	if rt.NextToken == newRefreshToken {
+		// this is the first time the refresh token is used
+		err := s.userDBservice.CreateRenewToken(parsedToken.InstanceID, user.ID.Hex(), newRefreshToken, time.Now().Unix()+userdb.RENEW_TOKEN_DEFAULT_LIFETIME)
+		if err != nil {
+			logger.Error.Printf("token refresh -> failed to create new renew token object: %v", err.Error())
+			return nil, status.Error(codes.Internal, "refresh token error")
+		}
+	} else {
+		newRefreshToken = rt.NextToken
+	}
+
+	user.Timestamps.LastTokenRefresh = time.Now().Unix()
 	roles := tokens.GetRolesFromPayload(parsedToken.Payload)
 	username := tokens.GetUsernameFromPayload(parsedToken.Payload)
 
@@ -76,12 +100,6 @@ func (s *userManagementServer) RenewJWT(ctx context.Context, req *api.RefreshJWT
 		logger.Error.Printf("renew token error: %v", err.Error())
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-	newRefreshToken, err := tokens.GenerateUniqueTokenString()
-	if err != nil {
-		logger.Error.Printf("renew token error: %v", err.Error())
-		return nil, status.Error(codes.Internal, err.Error())
-	}
-	user.AddRefreshToken(newRefreshToken)
 
 	user, err = s.userDBservice.UpdateUser(parsedToken.InstanceID, user)
 	if err != nil {
@@ -107,16 +125,17 @@ func (s *userManagementServer) RevokeAllRefreshTokens(ctx context.Context, req *
 		return nil, status.Error(codes.InvalidArgument, "missing arguments")
 	}
 
-	user, err := s.userDBservice.GetUserByID(req.Token.InstanceId, req.Token.Id)
+	_, err := s.userDBservice.GetUserByID(req.Token.InstanceId, req.Token.Id)
 	if err != nil {
 		return nil, status.Error(codes.Internal, "user not found")
 	}
-	user.Account.RefreshTokens = []string{}
 
-	_, err = s.userDBservice.UpdateUser(req.Token.InstanceId, user)
+	count, err := s.userDBservice.DeleteRenewTokensForUser(req.Token.InstanceId, req.Token.Id)
 	if err != nil {
-		return nil, status.Error(codes.Internal, "user not found")
+		return nil, status.Error(codes.Internal, "failed to delete tokens")
 	}
+	logger.Debug.Printf("deleted %d renew tokens for user %s", count, req.Token.Id)
+
 	return &api.ServiceStatus{
 		Status:  api.ServiceStatus_NORMAL,
 		Msg:     "refresh tokens revoked",

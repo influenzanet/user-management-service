@@ -1,5 +1,11 @@
 # Changelog
 
+## [v1.3.0] - ???
+
+### BREAKING CHANGES
+
+- Changing renew token procedure to prevent race conditions causing the token renewal to fail. For this, renew tokens are stored in their own DB collection, and allow reusing the same token for a short grace period. This change is a breaking change, since the DB schema is changed and the token renewal procedure is changed, however the API is unchanged and currently there are now additional configuration options.
+
 ## [v1.2.0] - 2023-05-11
 
 ### BREAKING CHANGES

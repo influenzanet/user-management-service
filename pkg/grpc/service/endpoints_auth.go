@@ -16,6 +16,7 @@ import (
 	loggingAPI "github.com/influenzanet/logging-service/pkg/api"
 	messageAPI "github.com/influenzanet/messaging-service/pkg/api/messaging_service"
 	"github.com/influenzanet/user-management-service/pkg/api"
+	"github.com/influenzanet/user-management-service/pkg/dbs/userdb"
 	"github.com/influenzanet/user-management-service/pkg/models"
 	"github.com/influenzanet/user-management-service/pkg/pwhash"
 	"github.com/influenzanet/user-management-service/pkg/tokens"
@@ -304,7 +305,12 @@ func (s *userManagementServer) LoginWithEmail(ctx context.Context, req *api.Logi
 		logger.Error.Printf("LoginWithEmail: unexpected error during refresh token generation -> %v", err)
 		return nil, status.Error(codes.Internal, "token generation error")
 	}
-	user.AddRefreshToken(rt)
+	err = s.userDBservice.CreateRenewToken(req.InstanceId, user.ID.Hex(), rt, time.Now().Unix()+userdb.RENEW_TOKEN_DEFAULT_LIFETIME)
+	if err != nil {
+		logger.Error.Printf("LoginWithEmail: unexpected error during refresh token creation -> %v", err)
+		return nil, status.Error(codes.Internal, "token generation error")
+	}
+
 	user.Timestamps.LastLogin = time.Now().Unix()
 	user.Account.VerificationCode = models.VerificationCode{}
 	user.Account.FailedLoginAttempts = utils.RemoveAttemptsOlderThan(user.Account.FailedLoginAttempts, 3600)
@@ -441,7 +447,12 @@ func (s *userManagementServer) LoginWithExternalIDP(ctx context.Context, req *ap
 		logger.Error.Printf("[ERROR] LoginWithExternalIDP: unexpected error during refresh token generation -> %v", err)
 		return nil, status.Error(codes.Internal, "token generation error")
 	}
-	user.AddRefreshToken(rt)
+	err = s.userDBservice.CreateRenewToken(req.InstanceId, user.ID.Hex(), rt, time.Now().Unix()+userdb.RENEW_TOKEN_DEFAULT_LIFETIME)
+	if err != nil {
+		logger.Error.Printf("LoginWithEmail: unexpected error during refresh token creation -> %v", err)
+		return nil, status.Error(codes.Internal, "token generation error")
+	}
+
 	user.Timestamps.LastLogin = time.Now().Unix()
 	user.Account.VerificationCode = models.VerificationCode{}
 	user.Account.FailedLoginAttempts = utils.RemoveAttemptsOlderThan(user.Account.FailedLoginAttempts, 3600)
@@ -623,7 +634,12 @@ func (s *userManagementServer) SignupWithEmail(ctx context.Context, req *api.Sig
 		logger.Error.Printf("ERROR: signup method failed to generate refresh token: %s", err.Error())
 		return nil, status.Error(codes.Internal, "token creation failed")
 	}
-	newUser.AddRefreshToken(rt)
+	err = s.userDBservice.CreateRenewToken(req.InstanceId, newUser.ID.Hex(), rt, time.Now().Unix()+userdb.RENEW_TOKEN_DEFAULT_LIFETIME)
+	if err != nil {
+		logger.Error.Printf("LoginWithEmail: unexpected error during refresh token creation -> %v", err)
+		return nil, status.Error(codes.Internal, "token generation error")
+	}
+
 	newUser.Timestamps.LastLogin = time.Now().Unix()
 
 	newUser, err = s.userDBservice.UpdateUser(req.InstanceId, newUser)

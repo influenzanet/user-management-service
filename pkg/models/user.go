@@ -211,35 +211,6 @@ func (u *User) RemoveProfile(id string) error {
 	return errors.New("profile with given ID not found")
 }
 
-// AddRefreshToken add a new refresh token to the user's list
-func (u *User) AddRefreshToken(token string) {
-	u.Account.RefreshTokens = append(u.Account.RefreshTokens, token)
-	if len(u.Account.RefreshTokens) > 10 {
-		_, u.Account.RefreshTokens = u.Account.RefreshTokens[0], u.Account.RefreshTokens[1:]
-	}
-}
-
-// HasRefreshToken checks weather a user has a particular refresh token
-func (u *User) HasRefreshToken(token string) bool {
-	for _, t := range u.Account.RefreshTokens {
-		if t == token {
-			return true
-		}
-	}
-	return false
-}
-
-// RemoveRefreshToken deletes a refresh token from the user's list
-func (u *User) RemoveRefreshToken(token string) error {
-	for i, t := range u.Account.RefreshTokens {
-		if t == token {
-			u.Account.RefreshTokens = append(u.Account.RefreshTokens[:i], u.Account.RefreshTokens[i+1:]...)
-			return nil
-		}
-	}
-	return errors.New("token was missing")
-}
-
 // Timestamps describes metadata for the User
 // createdAt contains the account creation time, an offset is added if this account is created by admin, to reduce
 // risk this account to be deleled if account verification is not done in time (use case of migration when users are invited from previous platfom).
