@@ -64,4 +64,19 @@ func TestRenewTokenDBMethods(t *testing.T) {
 		}
 	})
 
+	t.Run("Testing finding renew token which expired", func(t *testing.T) {
+		tokenValue := "TEST_RENEW_TOKEN_EXPIRED"
+		err := testDBService.CreateRenewToken(testInstanceID, testToken.UserID, tokenValue, time.Now().Unix()-1000)
+		if err != nil {
+			t.Errorf(err.Error())
+			return
+		}
+
+		_, err = testDBService.FindAndUpdateRenewToken(testInstanceID, testToken.UserID, tokenValue, secondNextToken)
+		if err == nil {
+			t.Error("should return error")
+			return
+		}
+	})
+
 }
