@@ -1,6 +1,8 @@
 package userdb
 
 import (
+	"errors"
+
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -35,14 +37,32 @@ func (dbService *UserDBService) CreateIndexForRenewTokens(instanceID string) err
 	return err
 }
 
-// TODO: create index for renewTokens collection
-// index for RenewToken (unique)
-// index for ExpiresAt
-// index for UserID and ExpiresAt and RenewToken
+func (dbService *UserDBService) DeleteRenewTokenByToken(instanceID string, token string) error {
+	filter := bson.M{"renewToken": token}
 
-// TODO: remove renew token object by token
+	ctx, cancel := dbService.getContext()
+	defer cancel()
+	res, err := dbService.collectionRenewTokens(instanceID).DeleteOne(ctx, filter, nil)
+	if err != nil {
+		return err
+	}
+	if res.DeletedCount < 1 {
+		return errors.New("no renew token oject found with the given token value")
+	}
+	return nil
+}
 
-// TODO: revoke all tokens for a user
+func (dbService *UserDBService) DeleteRenewTokensForUser(instanceID string, userID string) (int64, error) {
+	filter := bson.M{"userID": userID}
+
+	ctx, cancel := dbService.getContext()
+	defer cancel()
+	res, err := dbService.collectionRenewTokens(instanceID).DeleteMany(ctx, filter, nil)
+	if err != nil {
+		return 0, err
+	}
+	return res.DeletedCount, nil
+}
 
 // TODO: remove all expired tokens
 
