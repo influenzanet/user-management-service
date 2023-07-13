@@ -1,16 +1,12 @@
 # Changelog
 
-## [v1.3.0] - ???
-
-### BREAKING CHANGES
-
-- Changing renew token procedure to prevent race conditions causing the token renewal to fail. For this, renew tokens are stored in their own DB collection, and allow reusing the same token for a short grace period. This change is a breaking change, since the DB schema is changed and the token renewal procedure is changed, however the API is unchanged and currently there are now additional configuration options.
-
-## [v1.2.0] - 2023-05-11
+## [v1.2.0] -
 
 ### BREAKING CHANGES
 
 - Reading instanceID list form globalDB's `instances` collection then use the list of instanceIDs to filter unauthenticated requests directed toward non-listed instances. This means that the `instances` collection must be populated with the instanceIDs of all instances that should be accessible by the user management service. This is a breaking change, since the previous behaviour was to allow all requests to all instances. This change is necessary to prevent unauthenticated requests to the user management service from being used to spam / exhaust the database with non-existent instances.
+
+- Changing renew token procedure to prevent race conditions causing the token renewal to fail. For this, renew tokens are stored in their own DB collection, and allow reusing the same token for a short grace period. This change is a breaking change, since the DB schema is changed and the token renewal procedure is changed, however the API is unchanged and currently there are now additional configuration options.
 
 ### Changed
 
