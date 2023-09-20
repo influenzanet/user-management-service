@@ -269,6 +269,51 @@ func (dbService *UserDBService) FindNonParticipantUsers(instanceID string) (user
 	return users, nil
 }
 
+func (dbService *UserDBService) FindInactiveUsers(instanceID string, dT1 int64) (users []models.User, err error) {
+	ctx, cancel := dbService.getContext()
+	defer cancel()
+
+	filter := bson.M{}
+	filter["$and"] = bson.A{
+		bson.M{ //TODO test if works as expected
+			"roles": bson.M{"$nin": bson.A{
+				constants.USER_ROLE_SERVICE_ACCOUNT,
+				constants.USER_ROLE_RESEARCHER,
+				constants.USER_ROLE_ADMIN,
+			}},
+		},
+		bson.M{"timestamps.lastLogin": bson.M{"$lt": time.Now().Unix() - dT1}},
+		bson.M{"timestamps.lastTokenRefresh": bson.M{"$lt": time.Now().Unix() - dT1}},
+		bson.M{"timestamps.markedForDeletion": bson.M{"$eq": 0}},
+	}
+
+	cur, err := dbService.collectionRefUsers(instanceID).Find(
+		ctx,
+		filter,
+	)
+
+	if err != nil {
+		return users, err
+	}
+	defer cur.Close(ctx)
+
+	users = []models.User{}
+	for cur.Next(ctx) {
+		var result models.User
+		err := cur.Decode(&result)
+		if err != nil {
+			return users, err
+		}
+
+		users = append(users, result)
+	}
+	if err := cur.Err(); err != nil {
+		return users, err
+	}
+
+	return users, nil
+}
+
 type UserFilter struct {
 	OnlyConfirmed   bool
 	ReminderWeekDay int32
