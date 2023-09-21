@@ -222,6 +222,7 @@ type Timestamps struct {
 	UpdatedAt               int64 `bson:"updatedAt"`
 	LastPasswordChange      int64 `bson:"lastPasswordChange"`
 	ReminderToConfirmSentAt int64 `bson:"reminderToConfirmSentAt"`
+	MarkedForDeletion       int64 `bson:"markedForDeletion"`
 }
 
 // ToAPI converts the object from DB to API format
