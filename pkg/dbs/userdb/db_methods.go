@@ -189,6 +189,39 @@ func (dbService *UserDBService) UpdateReminderToConfirmSentAtTime(instanceID str
 	return nil
 }
 
+func (dbService *UserDBService) UpdateMarkedForDeletionTime(instanceID string, id string, dT2 int64, reset bool) (bool, error) {
+	ctx, cancel := dbService.getContext()
+	defer cancel()
+
+	_id, _ := primitive.ObjectIDFromHex(id)
+	if reset {
+		filter := bson.M{"_id": _id}
+		update := bson.M{"$set": bson.M{"timestamps.markedForDeletion": 0}}
+		res, err := dbService.collectionRefUsers(instanceID).UpdateOne(ctx, filter, update)
+		if err != nil {
+			return false, err
+		}
+		if res.MatchedCount > 0 {
+			return true, nil
+		}
+		return false, nil
+	}
+	filter := bson.M{}
+	filter["$and"] = bson.A{
+		bson.M{"_id": _id},
+		bson.M{"timestamps.markedForDeletion": 0},
+	}
+	update := bson.M{"$set": bson.M{"timestamps.markedForDeletion": time.Now().Unix() + dT2}}
+	res, err := dbService.collectionRefUsers(instanceID).UpdateOne(ctx, filter, update)
+	if err != nil {
+		return false, err
+	}
+	if res.MatchedCount > 0 {
+		return true, nil
+	}
+	return false, nil
+}
+
 func (dbService *UserDBService) CountRecentlyCreatedUsers(instanceID string, interval int64) (count int64, err error) {
 	ctx, cancel := dbService.getContext()
 	defer cancel()
