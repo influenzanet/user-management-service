@@ -25,7 +25,10 @@ type Config struct {
 	NewUserCountLimit                 int64
 	CleanUpUnverifiedUsersAfter       int64
 	ReminderToUnverifiedAccountsAfter int64
-	WeekDayStrategy                   utils.WeekDayStrategy
+	NotifyInactiveUsersAfter          int64
+	DeleteAccountAfterNotifyingUser   int64
+
+	WeekDayStrategy utils.WeekDayStrategy
 }
 
 func InitConfig() Config {
@@ -56,6 +59,18 @@ func InitConfig() Config {
 		logger.Error.Fatal(ENV_SEND_REMINDER_TO_UNVERIFIED_USERS_AFTER + ": " + err.Error())
 	}
 	conf.ReminderToUnverifiedAccountsAfter = int64(reminderToUnverifiedAccountsAfter)
+
+	notifyInactiveUsersAfter, err := strconv.Atoi(os.Getenv(ENV_NOTIFY_INACTIVE_USERS_AFTER))
+	if err != nil {
+		logger.Error.Fatal(ENV_NOTIFY_INACTIVE_USERS_AFTER + ": " + err.Error())
+	}
+	conf.NotifyInactiveUsersAfter = int64(notifyInactiveUsersAfter)
+
+	deleteAccountAfterNotifyingUser, err := strconv.Atoi(os.Getenv(ENV_DELETE_ACCOUNT_AFTER_NOTIFYING_USER))
+	if err != nil {
+		logger.Error.Fatal(ENV_DELETE_ACCOUNT_AFTER_NOTIFYING_USER + ": " + err.Error())
+	}
+	conf.DeleteAccountAfterNotifyingUser = int64(deleteAccountAfterNotifyingUser)
 
 	conf.WeekDayStrategy = GetWeekDayStrategy()
 	return conf
