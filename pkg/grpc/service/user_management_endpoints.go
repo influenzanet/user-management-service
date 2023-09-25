@@ -205,55 +205,6 @@ func (s *userManagementServer) FindNonParticipantUsers(ctx context.Context, req 
 	return &resp, nil
 }
 
-func (s *userManagementServer) DetectAndNotifyInactiveUsers(ctx context.Context, req *api.FindNonParticipantUsersMsg) (*api.UserListMsg, error) {
-	if req == nil || utils.IsTokenEmpty(req.Token) { //TODO change request parameter
-		return nil, status.Error(codes.InvalidArgument, "missing arguments")
-	}
-	if !utils.CheckRoleInToken(req.Token, constants.USER_ROLE_ADMIN) {
-		return nil, status.Error(codes.PermissionDenied, "permission denied")
-	}
-
-	dT1 := int64(1000) //TODO: set dT1
-	dT2 := int64(100)
-	users, err := s.userDBservice.FindInactiveUsers(req.Token.InstanceId, dT1)
-	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
-	}
-
-	for _, u := range users {
-		succcess, err := s.userDBservice.UpdateMarkedForDeletionTime(req.Token.InstanceId, u.Account.AccountID, dT2, false)
-		if err != nil {
-			logger.Error.Printf("unexpected error: %v", err)
-			continue
-		}
-		if !succcess { //markedForDeletion already set by other service
-			continue
-		}
-		//send message
-		// ---> Trigger message sending
-		_, err = s.clients.MessagingService.SendInstantEmail(ctx, &messageAPI.SendEmailReq{
-			InstanceId:  req.Token.InstanceId,
-			To:          []string{u.Account.AccountID},
-			MessageType: "account-inactivity", //TODO: add to constants
-			ContentInfos: map[string]string{
-				"token": req.Token.Id, //TODO: correct token or define new one?
-			},
-			PreferredLanguage: u.Account.PreferredLanguage,
-		})
-		if err != nil {
-			logger.Error.Printf("unexpected error: %v", err)
-			s.userDBservice.UpdateMarkedForDeletionTime(req.Token.InstanceId, u.Account.AccountID, 0, true)
-		}
-	}
-	resp := api.UserListMsg{ //TODO: what return value??
-		Users: make([]*api.User, len(users)),
-	}
-	for i, u := range users {
-		resp.Users[i] = u.ToAPI()
-	}
-	return &resp, nil
-}
-
 func (s *userManagementServer) StreamUsers(req *api.StreamUsersMsg, stream api.UserManagementApi_StreamUsersServer) error {
 	if req == nil || stream == nil || req.InstanceId == "" {
 		return status.Error(codes.InvalidArgument, "missing arguments")
