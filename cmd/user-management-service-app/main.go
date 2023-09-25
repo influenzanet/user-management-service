@@ -57,6 +57,8 @@ func main() {
 		clients,
 		conf.CleanUpUnverifiedUsersAfter,
 		conf.ReminderToUnverifiedAccountsAfter,
+		conf.DeleteAccountAfterNotifyingUser,
+		conf.DeleteAccountAfterNotifyingUser,
 	)
 
 	// Start server thread

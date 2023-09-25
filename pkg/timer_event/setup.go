@@ -12,12 +12,15 @@ import (
 
 // UserManagementTimerService handles background times for user management (cleanup for example).
 type UserManagementTimerService struct {
-	globalDBService       *globaldb.GlobalDBService
-	userDBService         *userdb.UserDBService
-	clients               *models.APIClients
-	TimerEventFrequency   int64 // how often the timer event should be performed (only from one instance of the service) - seconds
-	CleanUpTimeThreshold  int64 // if user account not verified, remove user after this many seconds
-	ReminderTimeThreshold int64 // if user account not verified, send a reminder email to the user after this many seconds
+	globalDBService                      *globaldb.GlobalDBService
+	userDBService                        *userdb.UserDBService
+	clients                              *models.APIClients
+	TimerEventFrequency                  int64 // how often the timer event should be performed (only from one instance of the service) - seconds
+	CleanUpTimeThreshold                 int64 // if user account not verified, remove user after this many seconds
+	ReminderTimeThreshold                int64 // if user account not verified, send a reminder email to the user after this many seconds
+	NotifyInactiveUserThreshold          int64 // if user account is inactive, send a reminder email to the user after this many seconds
+	DeleteAccountAfterNotifyingThershold int64 // if user account is notified by mail, delete account after this many seconds
+
 }
 
 func NewUserManagmentTimerService(
@@ -27,14 +30,18 @@ func NewUserManagmentTimerService(
 	clients *models.APIClients,
 	cleanUpTimeThreshold int64,
 	reminderTimeThreshold int64,
+	notifyInactiveUserThreshold int64,
+	deleteAccountAfterNotifyingThreshold int64,
 ) *UserManagementTimerService {
 	return &UserManagementTimerService{
-		globalDBService:       globalDBService,
-		userDBService:         userDBService,
-		TimerEventFrequency:   frequency,
-		clients:               clients,
-		CleanUpTimeThreshold:  cleanUpTimeThreshold,
-		ReminderTimeThreshold: reminderTimeThreshold,
+		globalDBService:                      globalDBService,
+		userDBService:                        userDBService,
+		TimerEventFrequency:                  frequency,
+		clients:                              clients,
+		CleanUpTimeThreshold:                 cleanUpTimeThreshold,
+		ReminderTimeThreshold:                reminderTimeThreshold,
+		NotifyInactiveUserThreshold:          notifyInactiveUserThreshold,
+		DeleteAccountAfterNotifyingThershold: deleteAccountAfterNotifyingThreshold,
 	}
 }
 
@@ -49,6 +56,7 @@ func (s *UserManagementTimerService) startTimerThread(ctx context.Context, timeC
 		case <-time.After(time.Duration(timeCheckInterval) * time.Second):
 			go s.CleanUpUnverifiedUsers()
 			go s.ReminderToConfirmAccount()
+			go s.DetectAndNotifyInactiveUsers()
 		case <-ctx.Done():
 			return
 		}
