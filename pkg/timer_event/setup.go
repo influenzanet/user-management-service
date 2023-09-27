@@ -19,7 +19,7 @@ type UserManagementTimerService struct {
 	CleanUpTimeThreshold                 int64 // if user account not verified, remove user after this many seconds
 	ReminderTimeThreshold                int64 // if user account not verified, send a reminder email to the user after this many seconds
 	NotifyInactiveUserThreshold          int64 // if user account is inactive, send a reminder email to the user after this many seconds
-	DeleteAccountAfterNotifyingThershold int64 // if user account is notified by mail, delete account after this many seconds
+	DeleteAccountAfterNotifyingThreshold int64 // if user account is notified by mail, delete account after this many seconds
 
 }
 
@@ -41,7 +41,7 @@ func NewUserManagmentTimerService(
 		CleanUpTimeThreshold:                 cleanUpTimeThreshold,
 		ReminderTimeThreshold:                reminderTimeThreshold,
 		NotifyInactiveUserThreshold:          notifyInactiveUserThreshold,
-		DeleteAccountAfterNotifyingThershold: deleteAccountAfterNotifyingThreshold,
+		DeleteAccountAfterNotifyingThreshold: deleteAccountAfterNotifyingThreshold,
 	}
 }
 
