@@ -209,7 +209,7 @@ func (dbService *UserDBService) UpdateMarkedForDeletionTime(instanceID string, i
 	filter := bson.M{}
 	filter["$and"] = bson.A{
 		bson.M{"_id": _id},
-		bson.M{"timestamps.markedForDeletion": 0},
+		bson.M{"timestamps.markedForDeletion": bson.M{"$not": bson.M{"$gt": 0}}},
 	}
 	update := bson.M{"$set": bson.M{"timestamps.markedForDeletion": time.Now().Unix() + dT2}}
 	res, err := dbService.collectionRefUsers(instanceID).UpdateOne(ctx, filter, update)
@@ -262,6 +262,43 @@ func (dbService *UserDBService) DeleteUnverfiedUsers(instanceID string, createdB
 	}
 
 	return res.DeletedCount, nil
+}
+
+func (dbService *UserDBService) FindUsersMarkedForDeletion(instanceID string) (users []models.User, err error) {
+	ctx, cancel := dbService.getContext()
+	defer cancel()
+
+	filter := bson.M{}
+	filter["$and"] = bson.A{
+		bson.M{"timestamps.timestamps.markedForDeletion": bson.M{"$gt": 0}},
+		bson.M{"timestamps.timestamps.markedForDeletion": bson.M{"$lt": time.Now().Unix()}},
+	}
+
+	cur, err := dbService.collectionRefUsers(instanceID).Find(
+		ctx,
+		filter,
+	)
+
+	if err != nil {
+		return users, err
+	}
+	defer cur.Close(ctx)
+
+	users = []models.User{}
+	for cur.Next(ctx) {
+		var result models.User
+		err := cur.Decode(&result)
+		if err != nil {
+			return users, err
+		}
+
+		users = append(users, result)
+	}
+	if err := cur.Err(); err != nil {
+		return users, err
+	}
+
+	return users, nil
 }
 
 func (dbService *UserDBService) FindNonParticipantUsers(instanceID string) (users []models.User, err error) {
@@ -317,7 +354,7 @@ func (dbService *UserDBService) FindInactiveUsers(instanceID string, dT1 int64) 
 		},
 		bson.M{"timestamps.lastLogin": bson.M{"$lt": time.Now().Unix() - dT1}},
 		bson.M{"timestamps.lastTokenRefresh": bson.M{"$lt": time.Now().Unix() - dT1}},
-		bson.M{"timestamps.markedForDeletion": bson.M{"$eq": 0}},
+		bson.M{"timestamps.markedForDeletion": bson.M{"$not": bson.M{"$gt": 0}}},
 	}
 
 	cur, err := dbService.collectionRefUsers(instanceID).Find(
