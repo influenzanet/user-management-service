@@ -29,7 +29,7 @@ func (s *UserManagementTimerService) DetectAndNotifyInactiveUsers() {
 		}
 
 		for _, u := range users {
-			succcess, err := s.userDBService.UpdateMarkedForDeletionTime(instance.InstanceID, u.Account.AccountID, s.DeleteAccountAfterNotifyingThershold, false)
+			succcess, err := s.userDBService.UpdateMarkedForDeletionTime(instance.InstanceID, u.ID.Hex(), s.DeleteAccountAfterNotifyingThreshold, false)
 			if err != nil {
 				logger.Error.Printf("unexpected error: %v", err)
 				continue
