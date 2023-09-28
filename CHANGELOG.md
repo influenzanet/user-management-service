@@ -1,5 +1,11 @@
 # Changelog
 
+## ??
+
+### Changed
+
+- Initiate password reset would return success in case of invalid email address to reduce risk of email enumeration.
+
 ## [v1.2.0] - 2022-07-13
 
 ### BREAKING CHANGES
