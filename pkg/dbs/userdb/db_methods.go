@@ -172,6 +172,10 @@ func (dbService *UserDBService) UpdateLoginTime(instanceID string, id string) er
 	if err != nil {
 		return err
 	}
+	_, err = dbService.UpdateMarkedForDeletionTime(instanceID, id, 0, true)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
