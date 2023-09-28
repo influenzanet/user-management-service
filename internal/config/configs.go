@@ -18,6 +18,7 @@ type Config struct {
 	ServiceURLs struct {
 		MessagingService string
 		LoggingService   string
+		StudyService     string
 	}
 	UserDBConfig                      models.DBConfig
 	GlobalDBConfig                    models.DBConfig
@@ -36,6 +37,7 @@ func InitConfig() Config {
 	conf.Port = os.Getenv("USER_MANAGEMENT_LISTEN_PORT")
 	conf.ServiceURLs.MessagingService = os.Getenv("ADDR_MESSAGING_SERVICE")
 	conf.ServiceURLs.LoggingService = os.Getenv("ADDR_LOGGING_SERVICE")
+	conf.ServiceURLs.StudyService = os.Getenv("ADDR_STUDY_SERVICE")
 
 	conf.LogLevel = getLogLevel()
 	conf.UserDBConfig = GetUserDBConfig()

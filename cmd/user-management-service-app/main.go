@@ -30,6 +30,10 @@ func main() {
 	defer close()
 	clients.LoggingService = loggingClient
 
+	studyClient, close := gc.ConnectToStudyService(conf.ServiceURLs.LoggingService)
+	defer close()
+	clients.StudyService = studyClient
+
 	userDBService := userdb.NewUserDBService(conf.UserDBConfig)
 	globalDBService := globaldb.NewGlobalDBService(conf.GlobalDBConfig)
 
