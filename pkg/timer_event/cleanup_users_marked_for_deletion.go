@@ -64,20 +64,19 @@ func (s *UserManagementTimerService) CleanupUsersMarkedForDeletion() {
 			}
 			_, err = s.clients.StudyService.ProfileDeleted(context.Background(), token)
 
-			// TODO: - add event to logging service + log event locally
-			//	- should include account ID (db id of the deleted object), time, event (account deleted after inactivity)
-
 			_, err = s.clients.LoggingService.SaveLogEvent(context.TODO(), &loggingAPI.NewLogEvent{
 				Origin:     "user-management",
 				InstanceId: instance.InstanceID,
 				UserId:     u.ID.Hex(),
 				EventType:  loggingAPI.LogEventType_LOG,
-				EventName:  constants.LOG_EVENT_ACCOUNT_DELETED,
+				EventName:  constants.LOG_EVENT_ACCOUNT_DELETED_AFTER_INACTIVITY,
 				Msg:        u.Account.AccountID,
 			})
 			if err != nil {
 				logger.Error.Printf("failed to save log: %s", err.Error())
 			}
+			logger.Info.Printf("%s: removed account with user ID %s", instance.InstanceID, u.ID.Hex())
+			count++
 
 		}
 		if count > 0 {

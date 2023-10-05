@@ -40,7 +40,7 @@ func (s *UserManagementTimerService) DetectAndNotifyInactiveUsers() {
 			tempTokenInfos := models.TempToken{
 				UserID:     u.ID.Hex(),
 				InstanceID: instance.InstanceID,
-				Purpose:    constants.TOKEN_PURPOSE_CONTACT_VERIFICATION,
+				Purpose:    constants.TOKEN_PURPOSE_INACTIVE_USER_NOTIFICATION,
 				Info: map[string]string{
 					"type":  models.ACCOUNT_TYPE_EMAIL,
 					"email": u.Account.AccountID,
@@ -57,7 +57,7 @@ func (s *UserManagementTimerService) DetectAndNotifyInactiveUsers() {
 			_, err = s.clients.MessagingService.SendInstantEmail(context.TODO(), &messageAPI.SendEmailReq{
 				InstanceId:  instance.InstanceID,
 				To:          []string{u.Account.AccountID},
-				MessageType: "account-inactivity", //TODO: add to constants
+				MessageType: constants.EMAIL_TYPE_ACCOUNT_INACTIVITY,
 				ContentInfos: map[string]string{
 					"token": tempToken,
 				},

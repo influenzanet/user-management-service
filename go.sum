@@ -81,6 +81,8 @@ github.com/influenzanet/go-utils v0.2.12 h1:kjN5UwymBqOYgvbAf4MLFC3VEd7iz6ntQj+s
 github.com/influenzanet/go-utils v0.2.12/go.mod h1:HXfbMhhFVD74BfTEoSwv2YE65sBcW1ep0OObtniR/jQ=
 github.com/influenzanet/go-utils v0.2.13 h1:xn7o2bEASnfFw/UpMq3QAxwI2owvvZgFSIky7byOYLM=
 github.com/influenzanet/go-utils v0.2.13/go.mod h1:HXfbMhhFVD74BfTEoSwv2YE65sBcW1ep0OObtniR/jQ=
+github.com/influenzanet/go-utils v0.2.14-0.20231005080436-0ff8b63554f5 h1://C8CJfZbWMMaInatjwMPbnN4Oz6qRRN91dLSiiGTyI=
+github.com/influenzanet/go-utils v0.2.14-0.20231005080436-0ff8b63554f5/go.mod h1:HXfbMhhFVD74BfTEoSwv2YE65sBcW1ep0OObtniR/jQ=
 github.com/influenzanet/logging-service v0.2.0 h1:SVcNPhZEGP27Lhl4idzFf1ClCRMpNXfx7TGtstNjqdk=
 github.com/influenzanet/logging-service v0.2.0/go.mod h1:QbzZVLsV4NyW6poTRFONtOuz3MEWuofmfK+hDuibCxM=
 github.com/influenzanet/messaging-service v1.4.0 h1:JK+giUED3Gm4gYZ2i9bBC2EFFhbMJv8KPXtF/MgaqYc=
