@@ -90,6 +90,7 @@ func ensureDBIndexes(instanceIDs []string, udb *userdb.UserDBService) {
 		logger.Debug.Printf("ensuring indexes for instance %s", i)
 
 		udb.CreateIndexForRenewTokens(i)
+		udb.CreateIndexForUser(i)
 		// TODO: ensure index for users collection as well
 	}
 }

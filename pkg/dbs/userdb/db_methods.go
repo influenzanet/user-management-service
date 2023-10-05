@@ -10,6 +10,7 @@ import (
 	"github.com/influenzanet/user-management-service/pkg/models"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
@@ -503,4 +504,28 @@ func (dbService *UserDBService) SendReminderToConfirmAccountLoop(
 		return err
 	}
 	return nil
+}
+
+func (dbService *UserDBService) CreateIndexForUser(instanceID string) error {
+	ctx, cancel := dbService.getContext()
+	defer cancel()
+
+	_, err := dbService.collectionRefUsers(instanceID).Indexes().CreateMany(
+		ctx, []mongo.IndexModel{
+			{
+				Keys: bson.D{
+					{Key: "roles", Value: 1},
+					{Key: "timestamps.lastLogin", Value: 1},
+					{Key: "timestamps.lastTokenRefresh", Value: 1},
+					{Key: "timestamps.markedForDeletion", Value: 1},
+				},
+			},
+			{
+				Keys: bson.D{
+					{Key: "timestamps.markedForDeletion", Value: 1},
+				},
+			},
+		},
+	)
+	return err
 }
