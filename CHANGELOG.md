@@ -1,6 +1,12 @@
 # Changelog
 
-## [v1.2.0] - 2022-07-13
+## v[v1.2.1] - 2023-10-11
+
+### Changed
+
+- allow ' character in email address to cover edge case
+
+## [v1.2.0] - 2023-07-13
 
 ### BREAKING CHANGES
 
