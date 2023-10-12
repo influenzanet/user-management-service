@@ -336,3 +336,134 @@ func TestDeleteUnverfiedUsers(t *testing.T) {
 		}
 	})
 }
+
+func TestFindInactiveUsers(t *testing.T) {
+	notifyAfter := int64(100)
+	deleteAfter := 200
+	testUsers := []models.User{
+		{Account: models.Account{AccountID: "inactive_1"}, Roles: []string{"PARTICIPANT", "ADMIN"},
+			Timestamps: models.Timestamps{CreatedAt: time.Now().Unix() - 100, LastTokenRefresh: time.Now().Unix() - int64(notifyAfter) - 100, LastLogin: time.Now().Unix() - int64(notifyAfter) - 100}},
+		{Account: models.Account{AccountID: "inactive_2"}, Roles: []string{"RESEARCHER"},
+			Timestamps: models.Timestamps{CreatedAt: time.Now().Unix() - 100, LastTokenRefresh: time.Now().Unix() - int64(notifyAfter) - 100, LastLogin: time.Now().Unix() - int64(notifyAfter) - 100}},
+		{Account: models.Account{AccountID: "inactive_3"}, Roles: []string{"PARTICIPANT"},
+			Timestamps: models.Timestamps{CreatedAt: time.Now().Unix() - 100, LastTokenRefresh: time.Now().Unix() - int64(notifyAfter) - 100, LastLogin: time.Now().Unix() - int64(notifyAfter) - 100}},
+		{Account: models.Account{AccountID: "inactive_4"}, Roles: []string{"PARTICIPANT"},
+			Timestamps: models.Timestamps{CreatedAt: time.Now().Unix() - 100, LastTokenRefresh: time.Now().Unix() - int64(notifyAfter) + 10, LastLogin: time.Now().Unix() - int64(notifyAfter) - 100}},
+		{Account: models.Account{AccountID: "inactive_5"}, Roles: []string{"PARTICIPANT"},
+			Timestamps: models.Timestamps{CreatedAt: time.Now().Unix() - 100, LastTokenRefresh: time.Now().Unix() - int64(notifyAfter) - 100, LastLogin: time.Now().Unix() - int64(notifyAfter) + 10}},
+		{Account: models.Account{AccountID: "inactive_6"}, Roles: []string{"PARTICIPANT"},
+			Timestamps: models.Timestamps{CreatedAt: time.Now().Unix() - 100, LastTokenRefresh: time.Now().Unix() - int64(notifyAfter) - 100, LastLogin: time.Now().Unix() - int64(notifyAfter) - 100,
+				MarkedForDeletion: 0}},
+		{Account: models.Account{AccountID: "inactive_7"}, Roles: []string{"PARTICIPANT"},
+			Timestamps: models.Timestamps{CreatedAt: time.Now().Unix() - 100, LastTokenRefresh: time.Now().Unix() - int64(notifyAfter) - 100, LastLogin: time.Now().Unix() - int64(notifyAfter) - 100,
+				MarkedForDeletion: 100}},
+	}
+	for _, u := range testUsers {
+		_, err := testDBService.AddUser(testInstanceID, u)
+		if err != nil {
+			logger.Error.Fatal(err)
+		}
+	}
+
+	t.Run("remove any other user not in the test set", func(t *testing.T) {
+		count, err := testDBService.DeleteUnverfiedUsers(testInstanceID, time.Now().Unix()-105)
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+			return
+		}
+		logger.Debug.Printf("deleted %d users", count)
+	})
+
+	t.Run("Testing finding inactive users", func(t *testing.T) {
+		inactiveUsers, err := testDBService.FindInactiveUsers(testInstanceID, notifyAfter)
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+			return
+		}
+		if len(inactiveUsers) != 2 {
+			t.Errorf("wrong number of inactive users found: %d instead of %d", len(inactiveUsers), 1)
+			return
+		}
+		if inactiveUsers[0].Account.AccountID != "inactive_3" {
+			t.Errorf("wrong user found: %s instead of %s", inactiveUsers[0].Account.AccountID, "inactive_3")
+			return
+		}
+		if inactiveUsers[1].Account.AccountID != "inactive_6" {
+			t.Errorf("wrong user found: %s instead of %s", inactiveUsers[0].Account.AccountID, "inactive_6")
+			return
+		}
+	})
+
+	t.Run("Testing updating markedForDeletionTime", func(t *testing.T) {
+
+		user1, err := testDBService.GetUserByAccountID(testInstanceID, "inactive_2")
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+			return
+		}
+		success, err := testDBService.UpdateMarkedForDeletionTime(testInstanceID, string(user1.ID.Hex()), int64(deleteAfter), false)
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+			return
+		}
+		if success == false {
+			t.Errorf("could not update markedforDeletion Timestamp for user: %s", "inactive_2")
+			return
+		}
+	})
+
+	t.Run("Testing updating and resetting markedForDeletionTime when it is already set", func(t *testing.T) {
+		user2, err := testDBService.GetUserByAccountID(testInstanceID, "inactive_7")
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+			return
+		}
+		success, err := testDBService.UpdateMarkedForDeletionTime(testInstanceID, string(user2.ID.Hex()), int64(deleteAfter), false)
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+			return
+		}
+		if success != false {
+			t.Errorf("update markedforDeletion timestamp that is already set for user: %s", "inactive_7")
+			return
+		}
+		success, err = testDBService.UpdateMarkedForDeletionTime(testInstanceID, user2.ID.Hex(), int64(deleteAfter), true)
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+			return
+		}
+		if success == false {
+			t.Errorf("resetting markedforDeletion timestamp for user failed: %s", "inactive_7")
+			return
+		}
+		updatedUser, err := testDBService.GetUserByID(testInstanceID, user2.ID.Hex())
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+			return
+		}
+		if updatedUser.Timestamps.MarkedForDeletion != 0 {
+			t.Errorf("unexpected markedforDeletion timestamp for user: %s should be zero, but it is %d", "inactive_7", updatedUser.Timestamps.MarkedForDeletion)
+			return
+		}
+	})
+
+	t.Run("Testing finding users marked for deletion", func(t *testing.T) {
+		users, err := testDBService.FindUsersMarkedForDeletion(testInstanceID)
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+			return
+		}
+		if len(users) != 0 {
+			t.Errorf("wrong number of inactive users found: %d instead of %d", len(users), 0)
+			return
+		}
+		/*		if users[0].Account.AccountID != "inactive_3" {
+					t.Errorf("wrong user found: %s instead of %s", users[0].Account.AccountID, "inactive_3")
+					return
+				}
+				if users[1].Account.AccountID != "inactive_6" {
+					t.Errorf("wrong user found: %s instead of %s", users[0].Account.AccountID, "inactive_6")
+					return
+				}*/
+	})
+}
