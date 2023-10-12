@@ -50,7 +50,7 @@ func (s *UserManagementTimerService) Run(ctx context.Context) {
 }
 
 func (s *UserManagementTimerService) startTimerThread(ctx context.Context, timeCheckInterval int64) {
-	logger.Info.Printf("Starting timer thread with frequecy %d seconds", timeCheckInterval)
+	logger.Info.Printf("Starting timer thread with frequency %d seconds", timeCheckInterval)
 	for {
 		select {
 		case <-time.After(time.Duration(timeCheckInterval) * time.Second):
