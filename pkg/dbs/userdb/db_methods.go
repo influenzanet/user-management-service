@@ -194,7 +194,7 @@ func (dbService *UserDBService) UpdateReminderToConfirmSentAtTime(instanceID str
 	return nil
 }
 
-func (dbService *UserDBService) UpdateMarkedForDeletionTime(instanceID string, id string, dT2 int64, reset bool) (bool, error) {
+func (dbService *UserDBService) UpdateMarkedForDeletionTime(instanceID string, id string, dT int64, reset bool) (bool, error) {
 	ctx, cancel := dbService.getContext()
 	defer cancel()
 
@@ -216,7 +216,7 @@ func (dbService *UserDBService) UpdateMarkedForDeletionTime(instanceID string, i
 		bson.M{"_id": _id},
 		bson.M{"timestamps.markedForDeletion": bson.M{"$not": bson.M{"$gt": 0}}},
 	}
-	update := bson.M{"$set": bson.M{"timestamps.markedForDeletion": time.Now().Unix() + dT2}}
+	update := bson.M{"$set": bson.M{"timestamps.markedForDeletion": time.Now().Unix() + dT}}
 	res, err := dbService.collectionRefUsers(instanceID).UpdateOne(ctx, filter, update)
 	if err != nil {
 		return false, err
@@ -344,7 +344,7 @@ func (dbService *UserDBService) FindNonParticipantUsers(instanceID string) (user
 	return users, nil
 }
 
-func (dbService *UserDBService) FindInactiveUsers(instanceID string, dT1 int64) (users []models.User, err error) {
+func (dbService *UserDBService) FindInactiveUsers(instanceID string, dT int64) (users []models.User, err error) {
 	ctx, cancel := dbService.getContext()
 	defer cancel()
 
@@ -357,8 +357,8 @@ func (dbService *UserDBService) FindInactiveUsers(instanceID string, dT1 int64) 
 				constants.USER_ROLE_ADMIN,
 			}},
 		},
-		bson.M{"timestamps.lastLogin": bson.M{"$lt": time.Now().Unix() - dT1}},
-		bson.M{"timestamps.lastTokenRefresh": bson.M{"$lt": time.Now().Unix() - dT1}},
+		bson.M{"timestamps.lastLogin": bson.M{"$lt": time.Now().Unix() - dT}},
+		bson.M{"timestamps.lastTokenRefresh": bson.M{"$lt": time.Now().Unix() - dT}},
 		bson.M{"timestamps.markedForDeletion": bson.M{"$not": bson.M{"$gt": 0}}},
 	}
 
