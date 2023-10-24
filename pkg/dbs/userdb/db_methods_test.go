@@ -457,13 +457,67 @@ func TestFindInactiveUsers(t *testing.T) {
 			t.Errorf("wrong number of inactive users found: %d instead of %d", len(users), 0)
 			return
 		}
-		/*		if users[0].Account.AccountID != "inactive_3" {
-					t.Errorf("wrong user found: %s instead of %s", users[0].Account.AccountID, "inactive_3")
-					return
-				}
-				if users[1].Account.AccountID != "inactive_6" {
-					t.Errorf("wrong user found: %s instead of %s", users[0].Account.AccountID, "inactive_6")
-					return
-				}*/
+		//add User
+		testUser := models.User{
+			Account: models.Account{AccountID: "inactive_8"},
+			Roles:   []string{"PARTICIPANT"},
+			Timestamps: models.Timestamps{
+				CreatedAt:         time.Now().Unix() - 100,
+				MarkedForDeletion: time.Now().Unix() - 10}}
+
+		id, err := testDBService.AddUser(testInstanceID, testUser)
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+			return
+		}
+		if len(id) == 0 {
+			t.Errorf("id is missing")
+			return
+		}
+		_id, _ := primitive.ObjectIDFromHex(id)
+		testUser.ID = _id
+
+		users, err = testDBService.FindUsersMarkedForDeletion(testInstanceID)
+		if len(users) != 1 {
+			t.Errorf("wrong number of inactive users found: %d instead of %d", len(users), 1)
+			return
+		}
+		success, err := testDBService.UpdateMarkedForDeletionTime(testInstanceID, id, 0, true)
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+			return
+		}
+		if success != true {
+			t.Errorf("could not reset MarkedForDeletionTime: %v", err)
+			return
+		}
+		users, err = testDBService.FindUsersMarkedForDeletion(testInstanceID)
+		if len(users) != 0 {
+			t.Errorf("wrong number of inactive users found: %d instead of %d", len(users), 0)
+			return
+		}
+	})
+
+	t.Run("Testing update Login Time", func(t *testing.T) {
+		users, err := testDBService.FindInactiveUsers(testInstanceID, notifyAfter)
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+			return
+		}
+		if len(users) != 4 {
+			t.Errorf("wrong number of inactive users found: %d instead of %d", len(users), 4)
+			return
+		}
+		id := users[0].ID.Hex()
+		testDBService.UpdateLoginTime(testInstanceID, id)
+		users, err = testDBService.FindInactiveUsers(testInstanceID, notifyAfter)
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+			return
+		}
+		if len(users) != 3 {
+			t.Errorf("wrong number of inactive users found: %d instead of %d", len(users), 3)
+			return
+		}
 	})
 }
