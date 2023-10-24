@@ -222,6 +222,12 @@ func TestRenewJWT(t *testing.T) {
 			gomock.Any(),
 		).Return(nil, nil)
 
+		//test if MarkedForDeletionTime is updated
+		succ, err := testUserDBService.UpdateMarkedForDeletionTime(testInstanceID, testUsers[0].ID.Hex(), 100, false)
+		if succ != true {
+			t.Errorf("could not update markedForDeletion Time")
+			return
+		}
 		req := &api.RefreshJWTRequest{
 			AccessToken:  userToken,
 			RefreshToken: refreshToken,
@@ -237,6 +243,15 @@ func TestRenewJWT(t *testing.T) {
 		}
 		if len(resp.AccessToken) < 10 || len(resp.RefreshToken) < 10 {
 			t.Errorf("unexpected response: %s", resp)
+			return
+		}
+		user, err := testUserDBService.GetUserByID(testInstanceID, testUsers[0].ID.Hex())
+		if err != nil {
+			t.Errorf("unexpected error: %s", err.Error())
+			return
+		}
+		if user.Timestamps.MarkedForDeletion != 0 {
+			t.Errorf("timestamp MarkedForDeletion should be 0, but it is: %v", user.Timestamps.MarkedForDeletion)
 			return
 		}
 	})

@@ -100,12 +100,8 @@ func (s *userManagementServer) RenewJWT(ctx context.Context, req *api.RefreshJWT
 		logger.Error.Printf("renew token error: %v", err.Error())
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-
-	_, err = s.userDBservice.UpdateMarkedForDeletionTime(parsedToken.InstanceID, user.ID.Hex(), 0, true)
-	if err != nil {
-		logger.Error.Printf("renew token error: %v", err.Error())
-		return nil, status.Error(codes.Internal, err.Error())
-	}
+	//reset markedForDeletionTime
+	user.Timestamps.MarkedForDeletion = 0
 	user, err = s.userDBservice.UpdateUser(parsedToken.InstanceID, user)
 	if err != nil {
 		logger.Error.Printf("renew token error: %v", err.Error())
