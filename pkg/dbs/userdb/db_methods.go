@@ -275,8 +275,8 @@ func (dbService *UserDBService) FindUsersMarkedForDeletion(instanceID string) (u
 
 	filter := bson.M{}
 	filter["$and"] = bson.A{
-		bson.M{"timestamps.timestamps.markedForDeletion": bson.M{"$gt": 0}},
-		bson.M{"timestamps.timestamps.markedForDeletion": bson.M{"$lt": time.Now().Unix()}},
+		bson.M{"timestamps.markedForDeletion": bson.M{"$gt": 0}},
+		bson.M{"timestamps.markedForDeletion": bson.M{"$lt": time.Now().Unix()}},
 	}
 
 	cur, err := dbService.collectionRefUsers(instanceID).Find(
