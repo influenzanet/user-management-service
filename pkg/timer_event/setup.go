@@ -57,6 +57,7 @@ func (s *UserManagementTimerService) startTimerThread(ctx context.Context, timeC
 			go s.CleanUpUnverifiedUsers()
 			go s.ReminderToConfirmAccount()
 			go s.DetectAndNotifyInactiveUsers()
+			go s.CleanupUsersMarkedForDeletion()
 		case <-ctx.Done():
 			return
 		}
