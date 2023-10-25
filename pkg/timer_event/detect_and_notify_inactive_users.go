@@ -22,7 +22,7 @@ func (s *UserManagementTimerService) DetectAndNotifyInactiveUsers() {
 	for _, instance := range instances {
 
 		users, err := s.userDBService.FindInactiveUsers(instance.InstanceID, s.NotifyInactiveUserThreshold)
-
+		count := 0
 		if err != nil {
 			logger.Error.Printf("unexpected error: %s", err.Error())
 			continue
@@ -37,6 +37,7 @@ func (s *UserManagementTimerService) DetectAndNotifyInactiveUsers() {
 			if !succcess { //markedForDeletion already set by other service
 				continue
 			}
+			count++
 			tempTokenInfos := models.TempToken{
 				UserID:     u.ID.Hex(),
 				InstanceID: instance.InstanceID,
@@ -67,6 +68,9 @@ func (s *UserManagementTimerService) DetectAndNotifyInactiveUsers() {
 				logger.Error.Printf("unexpected error: %v", err)
 				s.userDBService.UpdateMarkedForDeletionTime(instance.InstanceID, u.Account.AccountID, 0, true)
 			}
+		}
+		if count > 0 {
+			logger.Info.Printf("%s: send notification mail to %d inactive accounts", instance.InstanceID, count)
 		}
 	}
 }
