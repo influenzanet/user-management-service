@@ -61,7 +61,7 @@ func main() {
 		clients,
 		conf.CleanUpUnverifiedUsersAfter,
 		conf.ReminderToUnverifiedAccountsAfter,
-		conf.DeleteAccountAfterNotifyingUser,
+		conf.NotifyInactiveUsersAfter,
 		conf.DeleteAccountAfterNotifyingUser,
 	)
 
