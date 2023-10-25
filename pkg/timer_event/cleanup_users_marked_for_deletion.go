@@ -31,7 +31,7 @@ func (s *UserManagementTimerService) CleanupUsersMarkedForDeletion() {
 			_, err = s.clients.MessagingService.SendInstantEmail(context.TODO(), &messageAPI.SendEmailReq{
 				InstanceId:        instance.InstanceID,
 				To:                []string{u.Account.AccountID},
-				MessageType:       constants.EMAIL_TYPE_ACCOUNT_DELETED,
+				MessageType:       constants.EMAIL_TYPE_ACCOUNT_DELETED_AFTER_INACTIVITY,
 				PreferredLanguage: u.Account.PreferredLanguage,
 				UseLowPrio:        true,
 			})
