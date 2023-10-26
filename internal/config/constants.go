@@ -21,4 +21,6 @@ const (
 	defaultTokenExpirationMin               = 55
 	defaultInvitationTokenLifetime          = time.Hour * 24 * 7
 	defaultContactVerificationTokenLifetime = time.Hour * 24 * 30
+	defaultNotifyInactiveUsersAfter         = 0
+	defaultDeleteAccountAfterNotifyingUser  = 0
 )

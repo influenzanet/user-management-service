@@ -56,8 +56,10 @@ func (s *UserManagementTimerService) startTimerThread(ctx context.Context, timeC
 		case <-time.After(time.Duration(timeCheckInterval) * time.Second):
 			go s.CleanUpUnverifiedUsers()
 			go s.ReminderToConfirmAccount()
-			go s.DetectAndNotifyInactiveUsers()
-			go s.CleanupUsersMarkedForDeletion()
+			if s.NotifyInactiveUserThreshold > 0 && s.DeleteAccountAfterNotifyingThreshold > 0 {
+				go s.DetectAndNotifyInactiveUsers()
+				go s.CleanupUsersMarkedForDeletion()
+			}
 		case <-ctx.Done():
 			return
 		}

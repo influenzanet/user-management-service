@@ -64,13 +64,15 @@ func InitConfig() Config {
 
 	notifyInactiveUsersAfter, err := strconv.Atoi(os.Getenv(ENV_NOTIFY_INACTIVE_USERS_AFTER))
 	if err != nil {
-		logger.Error.Fatal(ENV_NOTIFY_INACTIVE_USERS_AFTER + ": " + err.Error())
+		logger.Info.Printf(ENV_NOTIFY_INACTIVE_USERS_AFTER + ": not provided, inactive users will be ignored")
+		conf.NotifyInactiveUsersAfter = defaultNotifyInactiveUsersAfter
 	}
 	conf.NotifyInactiveUsersAfter = int64(notifyInactiveUsersAfter)
 
 	deleteAccountAfterNotifyingUser, err := strconv.Atoi(os.Getenv(ENV_DELETE_ACCOUNT_AFTER_NOTIFYING_USER))
 	if err != nil {
-		logger.Error.Fatal(ENV_DELETE_ACCOUNT_AFTER_NOTIFYING_USER + ": " + err.Error())
+		logger.Info.Printf(ENV_DELETE_ACCOUNT_AFTER_NOTIFYING_USER + ": not provided, inactive users will be ignored")
+		conf.DeleteAccountAfterNotifyingUser = defaultDeleteAccountAfterNotifyingUser
 	}
 	conf.DeleteAccountAfterNotifyingUser = int64(deleteAccountAfterNotifyingUser)
 
