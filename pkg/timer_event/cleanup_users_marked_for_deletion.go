@@ -56,13 +56,20 @@ func (s *UserManagementTimerService) CleanupUsersMarkedForDeletion() {
 
 			//notify study service
 			mainProfileID, otherProfileIDs := utils.GetMainAndOtherProfiles(u)
+			userProfileIDs := []string{mainProfileID}
+			userProfileIDs = append(userProfileIDs, otherProfileIDs...)
 			token := &api_types.TokenInfos{
 				Id:              u.ID.Hex(),
 				InstanceId:      instance.InstanceID,
 				ProfilId:        mainProfileID,
 				OtherProfileIds: otherProfileIDs,
 			}
-			_, err = s.clients.StudyService.ProfileDeleted(context.Background(), token)
+			for _, profileId := range userProfileIDs {
+				token.ProfilId = profileId
+				if _, err := s.clients.StudyService.ProfileDeleted(context.Background(), token); err != nil {
+					logger.Error.Printf("failed to notify study service: %s", err.Error())
+				}
+			}
 
 			_, err = s.clients.LoggingService.SaveLogEvent(context.TODO(), &loggingAPI.NewLogEvent{
 				Origin:     "user-management",
