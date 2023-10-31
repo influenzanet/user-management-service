@@ -10,6 +10,7 @@
 New environment variables:
 - `NOTIFY_INACTIVE_USERS_AFTER`: time after which inactivity notification will be triggered in seconds.
 - `DELETE_ACCOUNT_AFTER_NOTIFYING_USER`: length of interval between user notification and deletion of user account in seconds if user does not react. 
+
 If these variables are not defined or 0, deletion workflow is inactive.
 
 ## ??
