@@ -24,7 +24,7 @@ func CheckEmailFormat(email string) bool {
 		return false
 	}
 	// additional regex check for correct email format
-	emailRule := regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`)
+	emailRule := regexp.MustCompile(`^[a-zA-Z0-9._%+'-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
 	return emailRule.MatchString(email)
 }
 

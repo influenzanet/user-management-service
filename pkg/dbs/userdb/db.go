@@ -10,6 +10,9 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
+const UserCollection = "users"
+const RenewTokenCollection = "renewTokens"
+
 type UserDBService struct {
 	DBClient        *mongo.Client
 	timeout         int
@@ -53,14 +56,30 @@ func NewUserDBService(configs models.DBConfig) *UserDBService {
 
 // Collections
 func (dbService *UserDBService) collectionRefUsers(instanceID string) *mongo.Collection {
-	return dbService.DBClient.Database(dbService.DBNamePrefix + instanceID + "_users").Collection("users")
+	return dbService.DBClient.Database(dbService.DBNamePrefix + instanceID + "_users").Collection(UserCollection)
 }
 
+// collectionRenewTokens get collection for RenewTokens
 func (dbSerive *UserDBService) collectionRenewTokens(instanceID string) *mongo.Collection {
-	return dbSerive.DBClient.Database(dbSerive.DBNamePrefix + instanceID + "_users").Collection("renewTokens")
+	return dbSerive.DBClient.Database(dbSerive.DBNamePrefix + instanceID + "_users").Collection(RenewTokenCollection)
 }
 
 // DB utils
 func (dbService *UserDBService) getContext() (ctx context.Context, cancel context.CancelFunc) {
 	return context.WithTimeout(context.Background(), time.Duration(dbService.timeout)*time.Second)
+}
+
+func (dbService *UserDBService) GetTimeout() time.Duration {
+	return time.Duration(dbService.timeout) * time.Second
+}
+
+// Public version of getContext
+func (dbService *UserDBService) GetContext() (ctx context.Context, cancel context.CancelFunc) {
+	return context.WithTimeout(context.Background(), time.Duration(dbService.timeout)*time.Second)
+}
+
+// GetCollection from userDb service.
+// Generic public function to be useable in migration scripts
+func (dbService *UserDBService) GetCollection(instanceID string, name string) *mongo.Collection {
+	return dbService.DBClient.Database(dbService.DBNamePrefix + instanceID + "_users").Collection(name)
 }

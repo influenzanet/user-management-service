@@ -13,13 +13,14 @@ New environment variables:
 
 If these variables are not defined or 0, deletion workflow is inactive.
 
-## ??
+
+## [v1.2.1] - 2023-10-11
 
 ### Changed
 
-- Initiate password reset would return success in case of invalid email address to reduce risk of email enumeration.
+- allow ' character in email address to cover edge case
 
-## [v1.2.0] - 2022-07-13
+## [v1.2.0] - 2023-07-13
 
 ### BREAKING CHANGES
 
