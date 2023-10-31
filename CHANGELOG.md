@@ -1,5 +1,17 @@
 # Changelog
 
+## ?? - 2023-10-31
+
+### Added
+
+- `DetectAndNotifyInactiveUsers` detects inactive users and sends a reminder message to them to login again.
+- `CleanupUsersMarkedForDeletion` deletes all user accounts that do not react after a certain time. All user tokens are removed and study-service is notified. Users are informed by message about the deletion of their account.
+
+New environment variables:
+- `NOTIFY_INACTIVE_USERS_AFTER`: time after which inactivity notification will be triggered in seconds.
+- `DELETE_ACCOUNT_AFTER_NOTIFYING_USER`: length of interval between user notification and deletion of user account in seconds if user does not react. 
+If these variables are not defined or 0, deletion workflow is inactive.
+
 ## ??
 
 ### Changed
