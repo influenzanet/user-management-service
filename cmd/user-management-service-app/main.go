@@ -30,7 +30,7 @@ func main() {
 	defer close()
 	clients.LoggingService = loggingClient
 
-	studyClient, close := gc.ConnectToStudyService(conf.ServiceURLs.LoggingService)
+	studyClient, close := gc.ConnectToStudyService(conf.ServiceURLs.StudyService)
 	defer close()
 	clients.StudyService = studyClient
 
