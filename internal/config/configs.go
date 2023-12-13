@@ -34,25 +34,25 @@ type Config struct {
 
 func InitConfig() Config {
 	conf := Config{}
-	conf.Port = os.Getenv("USER_MANAGEMENT_LISTEN_PORT")
-	conf.ServiceURLs.MessagingService = os.Getenv("ADDR_MESSAGING_SERVICE")
-	conf.ServiceURLs.LoggingService = os.Getenv("ADDR_LOGGING_SERVICE")
-	conf.ServiceURLs.StudyService = os.Getenv("ADDR_STUDY_SERVICE")
+	conf.Port = os.Getenv(ENV_USER_MANAGEMENT_LISTEN_PORT)
+	conf.ServiceURLs.MessagingService = os.Getenv(ENV_ADDR_MESSAGING_SERVICE)
+	conf.ServiceURLs.LoggingService = os.Getenv(ENV_ADDR_LOGGING_SERVICE)
+	conf.ServiceURLs.StudyService = os.Getenv(ENV_ADDR_STUDY_SERVICE)
 
 	conf.LogLevel = getLogLevel()
 	conf.UserDBConfig = GetUserDBConfig()
 	conf.GlobalDBConfig = GetGlobalDBConfig()
 	conf.Intervals = getIntervalsConfig()
 
-	rl, err := strconv.Atoi(os.Getenv("NEW_USER_RATE_LIMIT"))
+	rl, err := strconv.Atoi(os.Getenv(ENV_NEW_USER_RATE_LIMIT))
 	if err != nil {
-		logger.Error.Fatal("NEW_USER_RATE_LIMIT: " + err.Error())
+		logger.Error.Fatal(ENV_NEW_USER_RATE_LIMIT, ":"+err.Error())
 	}
 	conf.NewUserCountLimit = int64(rl)
 
-	cleanUpThreshold, err := strconv.Atoi(os.Getenv("CLEAN_UP_UNVERIFIED_USERS_AFTER"))
+	cleanUpThreshold, err := strconv.Atoi(os.Getenv(ENV_CLEAN_UP_UNVERIFIED_USERS_AFTER))
 	if err != nil {
-		logger.Error.Fatal("CLEAN_UP_UNVERIFIED_USERS_AFTER: " + err.Error())
+		logger.Error.Fatal(ENV_CLEAN_UP_UNVERIFIED_USERS_AFTER, ":"+err.Error())
 	}
 	conf.CleanUpUnverifiedUsersAfter = int64(cleanUpThreshold)
 
@@ -98,7 +98,7 @@ func GetWeekDayStrategy() utils.WeekDayStrategy {
 }
 
 func getLogLevel() logger.LogLevel {
-	switch os.Getenv("LOG_LEVEL") {
+	switch os.Getenv(ENV_LOG_LEVEL) {
 	case "debug":
 		return logger.LEVEL_DEBUG
 	case "info":
