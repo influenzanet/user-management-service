@@ -46,7 +46,7 @@ func (s *UserManagementTimerService) DetectAndNotifyInactiveUsers() {
 					"type":  models.ACCOUNT_TYPE_EMAIL,
 					"email": u.Account.AccountID,
 				},
-				Expiration: tokens.GetExpirationTime(time.Hour * 24 * 30),
+				Expiration: tokens.GetExpirationTime(time.Second * time.Duration(s.DeleteAccountAfterNotifyingThreshold)),
 			}
 			tempToken, err := s.globalDBService.AddTempToken(tempTokenInfos)
 			if err != nil {
