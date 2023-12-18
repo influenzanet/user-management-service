@@ -168,12 +168,12 @@ func (dbService *UserDBService) UpdateLoginTime(instanceID string, id string) er
 
 	_id, _ := primitive.ObjectIDFromHex(id)
 	filter := bson.M{"_id": _id}
-	update := bson.M{"$set": bson.M{"timestamps.lastLogin": time.Now().Unix()}}
+	update := bson.M{"$set": bson.M{
+		"timestamps.lastLogin":         time.Now().Unix(),
+		"timestamps.updatedAt":         time.Now().Unix(),
+		"timestamps.markedForDeletion": 0,
+	}}
 	_, err := dbService.collectionRefUsers(instanceID).UpdateOne(ctx, filter, update)
-	if err != nil {
-		return err
-	}
-	_, err = dbService.UpdateMarkedForDeletionTime(instanceID, id, 0, true)
 	if err != nil {
 		return err
 	}
