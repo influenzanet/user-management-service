@@ -525,6 +525,40 @@ func (dbService *UserDBService) CreateIndexForUser(instanceID string) error {
 					{Key: "timestamps.markedForDeletion", Value: 1},
 				},
 			},
+			{
+				Keys: bson.D{
+					{Key: "account.accountID", Value: 1},
+				},
+			},
+			{
+				Keys: bson.D{
+					{Key: "timestamps.createdAt", Value: 1},
+				},
+			},
+			{
+				Keys: bson.D{
+					{Key: "account.accountConfirmedAt", Value: 1},
+					{Key: "timestamps.createdAt", Value: 1},
+				},
+			},
+			{
+				Keys: bson.D{
+					{Key: "roles", Value: 1},
+				},
+			},
+			{
+				Keys: bson.D{
+					{Key: "account.accountConfirmedAt", Value: 1},
+					{Key: "contactPreferences.receiveWeeklyMessageDayOfWeek", Value: 1},
+				},
+			},
+			{
+				Keys: bson.D{
+					{Key: "account.accountConfirmedAt", Value: 1},
+					{Key: "timestamps.reminderToConfirmSentAt", Value: 1},
+					{Key: "timestamps.createdAt", Value: 1},
+				},
+			},
 		},
 	)
 	return err
