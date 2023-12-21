@@ -29,15 +29,6 @@ func (s *UserManagementTimerService) DetectAndNotifyInactiveUsers() {
 		}
 
 		for _, u := range users {
-			succcess, err := s.userDBService.UpdateMarkedForDeletionTime(instance.InstanceID, u.ID.Hex(), s.DeleteAccountAfterNotifyingThreshold, false)
-			if err != nil {
-				logger.Error.Printf("unexpected error: %v", err)
-				continue
-			}
-			if !succcess { //markedForDeletion already set by other service
-				continue
-			}
-			count++
 			tempTokenInfos := models.TempToken{
 				UserID:     u.ID.Hex(),
 				InstanceID: instance.InstanceID,
@@ -55,7 +46,7 @@ func (s *UserManagementTimerService) DetectAndNotifyInactiveUsers() {
 			}
 			//send message
 			// ---> Trigger message sending
-			_, err = s.clients.MessagingService.SendInstantEmail(context.TODO(), &messageAPI.SendEmailReq{
+			_, err = s.clients.MessagingService.QueueEmailTemplateForSending(context.TODO(), &messageAPI.SendEmailReq{
 				InstanceId:  instance.InstanceID,
 				To:          []string{u.Account.AccountID},
 				MessageType: constants.EMAIL_TYPE_ACCOUNT_INACTIVITY,
@@ -66,11 +57,22 @@ func (s *UserManagementTimerService) DetectAndNotifyInactiveUsers() {
 			})
 			if err != nil {
 				logger.Error.Printf("unexpected error: %v", err)
-				s.userDBService.UpdateMarkedForDeletionTime(instance.InstanceID, u.Account.AccountID, 0, true)
+				continue
 			}
+			succcess, err := s.userDBService.UpdateMarkedForDeletionTime(instance.InstanceID, u.ID.Hex(), s.DeleteAccountAfterNotifyingThreshold, false)
+			if err != nil {
+				logger.Error.Printf("unexpected error: %v", err)
+				continue
+			}
+			if !succcess { //markedForDeletion already set by other service
+				continue
+			}
+			count++
 		}
 		if count > 0 {
-			logger.Info.Printf("%s: send notification mail to %d inactive accounts", instance.InstanceID, count)
+			logger.Info.Printf("%s: notification mail will be sent to %d inactive accounts", instance.InstanceID, count)
+		} else {
+			logger.Debug.Printf("%s: notification mail will be sent to %d inactive accounts", instance.InstanceID, count)
 		}
 	}
 }
