@@ -11,7 +11,16 @@ New environment variables:
 - `NOTIFY_INACTIVE_USERS_AFTER`: time after which inactivity notification will be triggered in seconds.
 - `DELETE_ACCOUNT_AFTER_NOTIFYING_USER`: length of interval between user notification and deletion of user account in seconds if user does not react. 
 
-If these variables are not defined or 0, deletion workflow is inactive.
+If these variables are not defined or 0, deletion workflow is inactive. 
+
+If `NOTIFY_INACTIVE_USERS_AFTER` is defined and greater than zero the following email template is needed:
+
+- `account-inactivity`: invitation to user to login to account to prevent its deletion due to inactivity
+
+If `DELETE_ACCOUNT_AFTER_NOTIFYING_USER` is defined and greater than zero the following variabale must be defined and the following email template is needed:
+
+- `ADDR_STUDY_SERVICE`: address of study service,
+- `account-deleted-after-inactivity`: information email to user that account is deleted.
 
 
 ## [v1.2.1] - 2023-10-11
