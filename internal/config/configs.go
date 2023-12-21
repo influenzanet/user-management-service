@@ -38,6 +38,9 @@ func InitConfig() Config {
 	conf.ServiceURLs.MessagingService = os.Getenv(ENV_ADDR_MESSAGING_SERVICE)
 	conf.ServiceURLs.LoggingService = os.Getenv(ENV_ADDR_LOGGING_SERVICE)
 	conf.ServiceURLs.StudyService = os.Getenv(ENV_ADDR_STUDY_SERVICE)
+	if conf.ServiceURLs.StudyService == "" {
+		logger.Warning.Printf("Address of study service: not provided, can not connect to study service")
+	}
 
 	conf.LogLevel = getLogLevel()
 	conf.UserDBConfig = GetUserDBConfig()
