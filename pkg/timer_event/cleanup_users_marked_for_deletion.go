@@ -41,19 +41,16 @@ func (s *UserManagementTimerService) CleanupUsersMarkedForDeletion() {
 			studyServiceError := error(nil)
 			for _, profileId := range userProfileIDs {
 				token.ProfilId = profileId
-				logger.Info.Println("is performed1")
 				if _, err := s.clients.StudyService.ProfileDeleted(context.Background(), token); err != nil {
 					logger.Error.Printf("failed to notify study service: %s", err.Error())
 					studyServiceError = err
 					continue
 				}
-				logger.Info.Println("is performed2")
 			}
 			if studyServiceError != nil {
 				logger.Error.Printf("failed to notify study service: %s", studyServiceError.Error())
 				continue
 			}
-			logger.Info.Println("is performed3")
 			err := s.globalDBService.DeleteAllTempTokenForUser(instance.InstanceID, u.ID.Hex(), "")
 			if err != nil {
 				logger.Error.Printf("error, when trying to remove temp-tokens: %s", err.Error())
