@@ -27,17 +27,33 @@ func (s *UserManagementTimerService) CleanupUsersMarkedForDeletion() {
 			continue
 		}
 		for _, u := range users {
-			// ---> Trigger message sending
-			_, err = s.clients.MessagingService.SendInstantEmail(context.TODO(), &messageAPI.SendEmailReq{
-				InstanceId:        instance.InstanceID,
-				To:                []string{u.Account.AccountID},
-				MessageType:       constants.EMAIL_TYPE_ACCOUNT_DELETED_AFTER_INACTIVITY,
-				PreferredLanguage: u.Account.PreferredLanguage,
-				UseLowPrio:        true,
-			})
-			if err != nil {
-				logger.Error.Printf("DeleteAccount: %s", err.Error())
+
+			//notify study service
+			mainProfileID, otherProfileIDs := utils.GetMainAndOtherProfiles(u)
+			userProfileIDs := []string{mainProfileID}
+			userProfileIDs = append(userProfileIDs, otherProfileIDs...)
+			token := &api_types.TokenInfos{
+				Id:              u.ID.Hex(),
+				InstanceId:      instance.InstanceID,
+				ProfilId:        mainProfileID,
+				OtherProfileIds: otherProfileIDs,
 			}
+			studyServiceError := error(nil)
+			for _, profileId := range userProfileIDs {
+				token.ProfilId = profileId
+				logger.Info.Println("is performed1")
+				if _, err := s.clients.StudyService.ProfileDeleted(context.Background(), token); err != nil {
+					logger.Error.Printf("failed to notify study service: %s", err.Error())
+					studyServiceError = err
+					continue
+				}
+				logger.Info.Println("is performed2")
+			}
+			if studyServiceError != nil {
+				logger.Error.Printf("failed to notify study service: %s", studyServiceError.Error())
+				continue
+			}
+			logger.Info.Println("is performed3")
 			err := s.globalDBService.DeleteAllTempTokenForUser(instance.InstanceID, u.ID.Hex(), "")
 			if err != nil {
 				logger.Error.Printf("error, when trying to remove temp-tokens: %s", err.Error())
@@ -53,22 +69,16 @@ func (s *UserManagementTimerService) CleanupUsersMarkedForDeletion() {
 				logger.Error.Printf("error, when trying to delete user: %s", err.Error())
 				continue
 			}
-
-			//notify study service
-			mainProfileID, otherProfileIDs := utils.GetMainAndOtherProfiles(u)
-			userProfileIDs := []string{mainProfileID}
-			userProfileIDs = append(userProfileIDs, otherProfileIDs...)
-			token := &api_types.TokenInfos{
-				Id:              u.ID.Hex(),
-				InstanceId:      instance.InstanceID,
-				ProfilId:        mainProfileID,
-				OtherProfileIds: otherProfileIDs,
-			}
-			for _, profileId := range userProfileIDs {
-				token.ProfilId = profileId
-				if _, err := s.clients.StudyService.ProfileDeleted(context.Background(), token); err != nil {
-					logger.Error.Printf("failed to notify study service: %s", err.Error())
-				}
+			// ---> Trigger message sending
+			_, err = s.clients.MessagingService.QueueEmailTemplateForSending(context.TODO(), &messageAPI.SendEmailReq{
+				InstanceId:        instance.InstanceID,
+				To:                []string{u.Account.AccountID},
+				MessageType:       constants.EMAIL_TYPE_ACCOUNT_DELETED_AFTER_INACTIVITY,
+				PreferredLanguage: u.Account.PreferredLanguage,
+				UseLowPrio:        true,
+			})
+			if err != nil {
+				logger.Error.Printf("DeleteAccount: %s", err.Error())
 			}
 
 			_, err = s.clients.LoggingService.SaveLogEvent(context.TODO(), &loggingAPI.NewLogEvent{
@@ -84,7 +94,6 @@ func (s *UserManagementTimerService) CleanupUsersMarkedForDeletion() {
 			}
 			logger.Info.Printf("%s: removed account with user ID %s", instance.InstanceID, u.ID.Hex())
 			count++
-
 		}
 		if count > 0 {
 			logger.Info.Printf("%s: removed %d inactive accounts", instance.InstanceID, count)
