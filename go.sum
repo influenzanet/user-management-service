@@ -83,6 +83,8 @@ github.com/influenzanet/logging-service v0.2.0 h1:SVcNPhZEGP27Lhl4idzFf1ClCRMpNX
 github.com/influenzanet/logging-service v0.2.0/go.mod h1:QbzZVLsV4NyW6poTRFONtOuz3MEWuofmfK+hDuibCxM=
 github.com/influenzanet/messaging-service v1.4.1-0.20231219131055-399e464d0ba1 h1:+Vwplv4kGreqN9/l0Y9KWSQQhEM4KAy/TsXGJO60D9k=
 github.com/influenzanet/messaging-service v1.4.1-0.20231219131055-399e464d0ba1/go.mod h1:wH0PkbyetpQu6MsIm6/DxAGSvHlD9wZFMU3YHADE2FE=
+github.com/influenzanet/messaging-service v1.5.0 h1:vhrWdMwDKLWO/HkfarFCJEpp6GilNn3Pr6IggUfy+Qg=
+github.com/influenzanet/messaging-service v1.5.0/go.mod h1:wH0PkbyetpQu6MsIm6/DxAGSvHlD9wZFMU3YHADE2FE=
 github.com/influenzanet/study-service v1.7.2 h1:aCQQJBheZbKU6pzxyNsJ6K4IHEvsiNNJQ1UFjt0HDpw=
 github.com/influenzanet/study-service v1.7.2/go.mod h1:k1kPZeXSH3cUjzStovmRewJtYrcHct9BrNa688vmW4g=
 github.com/jmespath/go-jmespath v0.4.0/go.mod h1:T8mJZnbsbmF+m6zOOFylbeCJqk5+pHWvzYPziyZiYoo=

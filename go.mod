@@ -9,7 +9,7 @@ require (
 	github.com/golang/protobuf v1.5.3
 	github.com/influenzanet/go-utils v0.2.14
 	github.com/influenzanet/logging-service v0.2.0
-	github.com/influenzanet/messaging-service v1.4.1-0.20231219131055-399e464d0ba1
+	github.com/influenzanet/messaging-service v1.5.0
 	go.mongodb.org/mongo-driver v1.13.1
 	golang.org/x/crypto v0.17.0
 	golang.org/x/term v0.15.0
