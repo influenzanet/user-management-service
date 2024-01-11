@@ -99,6 +99,7 @@ func (s *userManagementServer) AutoValidateTempToken(ctx context.Context, req *a
 			constants.TOKEN_PURPOSE_INVITATION,
 			constants.TOKEN_PURPOSE_SURVEY_LOGIN,
 			constants.TOKEN_PURPOSE_CONTACT_VERIFICATION,
+			constants.TOKEN_PURPOSE_INACTIVE_USER_NOTIFICATION,
 		})
 
 	if err != nil {
