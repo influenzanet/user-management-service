@@ -32,7 +32,7 @@ func main() {
 	clients.LoggingService = loggingClient
 
 	var studyClient api.StudyServiceApiClient
-	if ShouldConnectToStudyService(conf.DeleteAccountAfterNotifyingUser) {
+	if shouldConnectToStudyService(conf.DeleteAccountAfterNotifyingUser) {
 		studyClient, close = gc.ConnectToStudyService(conf.ServiceURLs.StudyService)
 		defer close()
 	}
@@ -99,6 +99,6 @@ func ensureDBIndexes(instanceIDs []string, udb *userdb.UserDBService) {
 	}
 }
 
-func ShouldConnectToStudyService(deleteAccountAfterNotifyingUser int64) bool {
+func shouldConnectToStudyService(deleteAccountAfterNotifyingUser int64) bool {
 	return deleteAccountAfterNotifyingUser > 0
 }
