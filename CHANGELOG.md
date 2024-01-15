@@ -1,6 +1,6 @@
 # Changelog
 
-## ?? - 2023-10-31
+## [v1.3.0] - 2024-01-15
 
 ### Added
 
@@ -8,19 +8,20 @@
 - `CleanupUsersMarkedForDeletion` deletes all user accounts that do not react after a certain time. All user tokens are removed and study-service is notified. Users are informed by message about the deletion of their account.
 
 New environment variables:
+
 - `NOTIFY_INACTIVE_USERS_AFTER`: time after which inactivity notification will be triggered in seconds.
-- `DELETE_ACCOUNT_AFTER_NOTIFYING_USER`: length of interval between user notification and deletion of user account in seconds if user does not react. 
+- `DELETE_ACCOUNT_AFTER_NOTIFYING_USER`: length of interval between user notification and deletion of user account in seconds if user does not react.
 
 Both variables must be defined and greater than zero to activate deletion workflow. If workflow is active the following must be provided:
 
 Email templates:
+
 - `account-inactivity`: invites inactive user to login to account in order to prevent account deletion,
 - `account-deleted-after-inactivity`: informs user that account is deleted.
 
 Environment variable:
+
 - `ADDR_STUDY_SERVICE`: address of study service.
-
-
 
 ## [v1.2.1] - 2023-10-11
 
