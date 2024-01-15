@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"math/rand"
 	"time"
 
 	"github.com/coneno/logger"
@@ -33,13 +34,17 @@ func (s *userManagementServer) InitiatePasswordReset(ctx context.Context, req *a
 
 	user, err := s.userDBservice.GetUserByAccountID(req.InstanceId, req.AccountId)
 	if err != nil {
-		logger.Error.Printf("InitiatePasswordReset: %s", err.Error())
-		return nil, status.Error(codes.InvalidArgument, "invalid account id")
+		logger.Warning.Printf("SECURITY WARNING: password reset attempt for invalid email address: %s - error: %v", req.AccountId, err)
+		return &api.ServiceStatus{
+			Msg:     "email sending triggered",
+			Version: apiVersion,
+			Status:  api.ServiceStatus_NORMAL,
+		}, nil
 	}
 
 	if utils.HasMoreAttemptsRecently(user.Account.PasswordResetTriggers, 5, passwordResetAttemptWindow) {
 		logger.Warning.Printf("SECURITY WARNING: password reset attempt blocked for email address for %s - too many tries recently", req.AccountId)
-		time.Sleep(5 * time.Second)
+		time.Sleep(time.Duration(rand.Intn(10)) * time.Second)
 		return nil, status.Error(codes.InvalidArgument, "account blocked for a while")
 	}
 

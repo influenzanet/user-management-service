@@ -77,9 +77,9 @@ func TestInitiatePasswordResetEndpoint(t *testing.T) {
 			InstanceId: testInstanceID,
 			AccountId:  "wrong@test.test",
 		})
-		ok, msg := shouldHaveGrpcErrorStatus(err, "invalid account id")
-		if !ok {
-			t.Error(msg)
+
+		if err != nil {
+			t.Errorf("unexpected error: %s", err.Error())
 		}
 	})
 

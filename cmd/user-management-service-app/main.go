@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/coneno/logger"
+	"github.com/influenzanet/study-service/pkg/api"
 	"github.com/influenzanet/user-management-service/internal/config"
 	"github.com/influenzanet/user-management-service/pkg/dbs/globaldb"
 	"github.com/influenzanet/user-management-service/pkg/dbs/userdb"
@@ -29,6 +30,13 @@ func main() {
 	loggingClient, close := gc.ConnectToLoggingService(conf.ServiceURLs.LoggingService)
 	defer close()
 	clients.LoggingService = loggingClient
+
+	var studyClient api.StudyServiceApiClient
+	if shouldConnectToStudyService(conf.DeleteAccountAfterNotifyingUser) {
+		studyClient, close = gc.ConnectToStudyService(conf.ServiceURLs.StudyService)
+		defer close()
+	}
+	clients.StudyService = studyClient
 
 	userDBService := userdb.NewUserDBService(conf.UserDBConfig)
 	globalDBService := globaldb.NewGlobalDBService(conf.GlobalDBConfig)
@@ -57,6 +65,8 @@ func main() {
 		clients,
 		conf.CleanUpUnverifiedUsersAfter,
 		conf.ReminderToUnverifiedAccountsAfter,
+		conf.NotifyInactiveUsersAfter,
+		conf.DeleteAccountAfterNotifyingUser,
 	)
 
 	// Start server thread
@@ -84,6 +94,11 @@ func ensureDBIndexes(instanceIDs []string, udb *userdb.UserDBService) {
 		logger.Debug.Printf("ensuring indexes for instance %s", i)
 
 		udb.CreateIndexForRenewTokens(i)
+		udb.CreateIndexForUser(i)
 		// TODO: ensure index for users collection as well
 	}
+}
+
+func shouldConnectToStudyService(deleteAccountAfterNotifyingUser int64) bool {
+	return deleteAccountAfterNotifyingUser > 0
 }

@@ -99,6 +99,7 @@ func (s *userManagementServer) AutoValidateTempToken(ctx context.Context, req *a
 			constants.TOKEN_PURPOSE_INVITATION,
 			constants.TOKEN_PURPOSE_SURVEY_LOGIN,
 			constants.TOKEN_PURPOSE_CONTACT_VERIFICATION,
+			constants.TOKEN_PURPOSE_INACTIVE_USER_NOTIFICATION,
 		})
 
 	if err != nil {
@@ -312,6 +313,7 @@ func (s *userManagementServer) LoginWithEmail(ctx context.Context, req *api.Logi
 	}
 
 	user.Timestamps.LastLogin = time.Now().Unix()
+	user.Timestamps.MarkedForDeletion = 0
 	user.Account.VerificationCode = models.VerificationCode{}
 	user.Account.FailedLoginAttempts = utils.RemoveAttemptsOlderThan(user.Account.FailedLoginAttempts, 3600)
 	user.Account.PasswordResetTriggers = utils.RemoveAttemptsOlderThan(user.Account.PasswordResetTriggers, 7200)
@@ -454,6 +456,7 @@ func (s *userManagementServer) LoginWithExternalIDP(ctx context.Context, req *ap
 	}
 
 	user.Timestamps.LastLogin = time.Now().Unix()
+	user.Timestamps.MarkedForDeletion = 0
 	user.Account.VerificationCode = models.VerificationCode{}
 	user.Account.FailedLoginAttempts = utils.RemoveAttemptsOlderThan(user.Account.FailedLoginAttempts, 3600)
 	user.Account.PasswordResetTriggers = utils.RemoveAttemptsOlderThan(user.Account.PasswordResetTriggers, 7200)
