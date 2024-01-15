@@ -350,7 +350,7 @@ func (dbService *UserDBService) FindInactiveUsers(instanceID string, dT int64) (
 
 	filter := bson.M{}
 	filter["$and"] = bson.A{
-		bson.M{ //TODO test if works as expected
+		bson.M{
 			"roles": bson.M{"$nin": bson.A{
 				constants.USER_ROLE_SERVICE_ACCOUNT,
 				constants.USER_ROLE_RESEARCHER,
@@ -514,14 +514,6 @@ func (dbService *UserDBService) CreateIndexForUser(instanceID string) error {
 		ctx, []mongo.IndexModel{
 			{
 				Keys: bson.D{
-					{Key: "roles", Value: 1},
-					{Key: "timestamps.lastLogin", Value: 1},
-					{Key: "timestamps.lastTokenRefresh", Value: 1},
-					{Key: "timestamps.markedForDeletion", Value: 1},
-				},
-			},
-			{
-				Keys: bson.D{
 					{Key: "timestamps.markedForDeletion", Value: 1},
 				},
 			},
@@ -543,20 +535,7 @@ func (dbService *UserDBService) CreateIndexForUser(instanceID string) error {
 			},
 			{
 				Keys: bson.D{
-					{Key: "roles", Value: 1},
-				},
-			},
-			{
-				Keys: bson.D{
-					{Key: "account.accountConfirmedAt", Value: 1},
 					{Key: "contactPreferences.receiveWeeklyMessageDayOfWeek", Value: 1},
-				},
-			},
-			{
-				Keys: bson.D{
-					{Key: "account.accountConfirmedAt", Value: 1},
-					{Key: "timestamps.reminderToConfirmSentAt", Value: 1},
-					{Key: "timestamps.createdAt", Value: 1},
 				},
 			},
 		},
