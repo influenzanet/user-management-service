@@ -22,13 +22,6 @@ func (dbService *UserDBService) CreateIndexForRenewTokens(instanceID string) err
 		ctx, []mongo.IndexModel{
 			{
 				Keys: bson.D{
-					{Key: "userID", Value: 1},
-					{Key: "renewToken", Value: 1},
-					{Key: "expiresAt", Value: 1},
-				},
-			},
-			{
-				Keys: bson.D{
 					{Key: "expiresAt", Value: 1},
 				},
 			},
