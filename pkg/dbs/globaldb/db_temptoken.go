@@ -6,6 +6,8 @@ import (
 	"github.com/influenzanet/user-management-service/pkg/models"
 	"github.com/influenzanet/user-management-service/pkg/tokens"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 func (dbService *GlobalDBService) AddTempToken(t models.TempToken) (token string, err error) {
@@ -113,4 +115,33 @@ func (dbService *GlobalDBService) DeleteTempTokensExpireBefore(instanceID string
 		return err
 	}
 	return nil
+}
+
+func (dbService *GlobalDBService) CreateIndexForTempTokens() error {
+	ctx, cancel := dbService.getContext()
+	defer cancel()
+
+	_, err := dbService.collectionRefTempToken().Indexes().CreateMany(
+		ctx, []mongo.IndexModel{
+			{
+				Keys: bson.D{
+					{Key: "expiration", Value: 1},
+				},
+			},
+			{
+				Keys: bson.D{
+					{Key: "token", Value: 1},
+				},
+				Options: options.Index().SetUnique(true),
+			},
+			{
+				Keys: bson.D{
+					{Key: "userID", Value: 1},
+					{Key: "instanceID", Value: 1},
+					{Key: "purpose", Value: 1},
+				},
+			},
+		},
+	)
+	return err
 }
