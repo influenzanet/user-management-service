@@ -79,8 +79,8 @@ func (s *userManagementServer) InitiatePasswordReset(ctx context.Context, req *a
 	}
 	// <---
 
-	if err2 := s.userDBservice.SavePasswordResetTrigger(req.InstanceId, user.ID.Hex()); err != nil {
-		logger.Error.Printf("DB ERROR: unexpected error when updating user: %s ", err2.Error())
+	if err := s.userDBservice.SavePasswordResetTrigger(req.InstanceId, user.ID.Hex()); err != nil {
+		logger.Error.Printf("DB ERROR: unexpected error when updating user: %s ", err.Error())
 	}
 
 	// ---> Log Event
