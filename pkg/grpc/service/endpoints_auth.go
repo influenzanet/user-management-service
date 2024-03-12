@@ -189,7 +189,7 @@ func (s *userManagementServer) LoginWithEmail(ctx context.Context, req *api.Logi
 		logger.Warning.Printf("SECURITY WARNING: login attempt blocked for email address for %s - too many wrong tries recently", req.Email)
 
 		s.SaveLogEvent(req.InstanceId, user.ID.Hex(), loggingAPI.LogEventType_SECURITY, constants.LOG_EVENT_LOGIN_ATTEMPT_ON_BLOCKED_ACCOUNT, "")
-		if err2 := s.userDBservice.SaveFailedLoginAttempt(req.InstanceId, user.ID.Hex()); err != nil {
+		if err2 := s.userDBservice.SaveFailedLoginAttempt(req.InstanceId, user.ID.Hex()); err2 != nil {
 			logger.Error.Printf("DB ERROR: unexpected error when updating user: %s ", err2.Error())
 		}
 		time.Sleep(time.Duration(rand.Intn(10)) * time.Second)
@@ -206,7 +206,7 @@ func (s *userManagementServer) LoginWithEmail(ctx context.Context, req *api.Logi
 	if err != nil || !match {
 		logger.Warning.Printf("SECURITY WARNING: login attempt with wrong password for %s", user.ID.Hex())
 		s.SaveLogEvent(req.InstanceId, user.ID.Hex(), loggingAPI.LogEventType_SECURITY, constants.LOG_EVENT_AUTH_WRONG_PASSWORD, "")
-		if err2 := s.userDBservice.SaveFailedLoginAttempt(req.InstanceId, user.ID.Hex()); err != nil {
+		if err2 := s.userDBservice.SaveFailedLoginAttempt(req.InstanceId, user.ID.Hex()); err2 != nil {
 			logger.Error.Printf("DB ERROR: unexpected error when updating user: %s ", err2.Error())
 		}
 		return nil, status.Error(codes.InvalidArgument, "invalid username and/or password")
@@ -241,7 +241,7 @@ func (s *userManagementServer) LoginWithEmail(ctx context.Context, req *api.Logi
 			if user.Account.VerificationCode.ExpiresAt < time.Now().Unix() || user.Account.VerificationCode.Code != req.VerificationCode {
 				logger.Warning.Printf("SECURITY WARNING: login attempt with wrong or expired verification code for %s", user.ID.Hex())
 				s.SaveLogEvent(req.InstanceId, user.ID.Hex(), loggingAPI.LogEventType_SECURITY, constants.LOG_EVENT_AUTH_WRONG_VERIFICATION_CODE, "")
-				if err2 := s.userDBservice.SaveFailedLoginAttempt(req.InstanceId, user.ID.Hex()); err != nil {
+				if err2 := s.userDBservice.SaveFailedLoginAttempt(req.InstanceId, user.ID.Hex()); err2 != nil {
 					logger.Error.Printf("DB ERROR: unexpected error when updating user: %s ", err2.Error())
 				}
 
