@@ -14,13 +14,10 @@ require (
 	golang.org/x/crypto v0.18.0
 	golang.org/x/term v0.16.0
 	google.golang.org/grpc v1.60.1
-	google.golang.org/protobuf v1.32.0
+	google.golang.org/protobuf v1.33.0
 )
 
-require (
-	google.golang.org/genproto v0.0.0-20240108191215-35c7eff3a6b1 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20240108191215-35c7eff3a6b1 // indirect
-)
+require google.golang.org/genproto/googleapis/rpc v0.0.0-20240108191215-35c7eff3a6b1 // indirect
 
 require (
 	github.com/golang/snappy v0.0.4 // indirect
