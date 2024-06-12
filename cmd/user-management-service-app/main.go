@@ -55,7 +55,7 @@ func main() {
 	}
 
 	// Ensure indexes
-	ensureDBIndexes(instanceIDs, userDBService)
+	ensureDBIndexes(instanceIDs, userDBService, globalDBService)
 
 	// Start timer thread
 	userTimerService := timer_event.NewUserManagmentTimerService(
@@ -89,7 +89,7 @@ func main() {
 	}
 }
 
-func ensureDBIndexes(instanceIDs []string, udb *userdb.UserDBService) {
+func ensureDBIndexes(instanceIDs []string, udb *userdb.UserDBService, gdb *globaldb.GlobalDBService) {
 	for _, i := range instanceIDs {
 		logger.Debug.Printf("ensuring indexes for instance %s", i)
 
@@ -97,6 +97,7 @@ func ensureDBIndexes(instanceIDs []string, udb *userdb.UserDBService) {
 		udb.CreateIndexForUser(i)
 		// TODO: ensure index for users collection as well
 	}
+	gdb.CreateIndexForTempTokens()
 }
 
 func shouldConnectToStudyService(deleteAccountAfterNotifyingUser int64) bool {
