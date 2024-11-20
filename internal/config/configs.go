@@ -30,6 +30,8 @@ type Config struct {
 	DeleteAccountAfterNotifyingUser   int64
 
 	WeekDayStrategy utils.WeekDayStrategy
+
+	DisableTimerTask bool
 }
 
 func InitConfig() Config {
@@ -80,6 +82,8 @@ func InitConfig() Config {
 	conf.DeleteAccountAfterNotifyingUser = int64(deleteAccountAfterNotifyingUser)
 
 	conf.WeekDayStrategy = GetWeekDayStrategy()
+
+	conf.DisableTimerTask = os.Getenv(ENV_DISABLE_TIMER_TASK) == "true"
 	return conf
 }
 

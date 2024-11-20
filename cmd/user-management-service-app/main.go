@@ -57,23 +57,26 @@ func main() {
 	// Ensure indexes
 	ensureDBIndexes(instanceIDs, userDBService)
 
-	// Start timer thread
-	userTimerService := timer_event.NewUserManagmentTimerService(
-		userManagementTimerEventFrequency,
-		globalDBService,
-		userDBService,
-		clients,
-		conf.CleanUpUnverifiedUsersAfter,
-		conf.ReminderToUnverifiedAccountsAfter,
-		conf.NotifyInactiveUsersAfter,
-		conf.DeleteAccountAfterNotifyingUser,
-	)
-
-	// Start server thread
 	ctx := context.Background()
 
-	userTimerService.Run(ctx)
+	// Start timer thread
+	if !conf.DisableTimerTask {
+		userTimerService := timer_event.NewUserManagmentTimerService(
+			userManagementTimerEventFrequency,
+			globalDBService,
+			userDBService,
+			clients,
+			conf.CleanUpUnverifiedUsersAfter,
+			conf.ReminderToUnverifiedAccountsAfter,
+			conf.NotifyInactiveUsersAfter,
+			conf.DeleteAccountAfterNotifyingUser,
+		)
+		userTimerService.Run(ctx)
+	} else {
+		logger.Info.Println("Timer task is disabled")
+	}
 
+	// Start server thread
 	if err := service.RunServer(
 		ctx,
 		conf.Port,
