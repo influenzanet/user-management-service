@@ -1,5 +1,47 @@
 # Changelog
 
+## [v1.3.0] - 2024-01-15
+
+### Added
+
+- `DetectAndNotifyInactiveUsers` detects inactive users and sends a reminder message to them to login again.
+- `CleanupUsersMarkedForDeletion` deletes all user accounts that do not react after a certain time. All user tokens are removed and study-service is notified. Users are informed by message about the deletion of their account.
+
+New environment variables:
+
+- `NOTIFY_INACTIVE_USERS_AFTER`: time after which inactivity notification will be triggered in seconds.
+- `DELETE_ACCOUNT_AFTER_NOTIFYING_USER`: length of interval between user notification and deletion of user account in seconds if user does not react.
+
+Both variables must be defined and greater than zero to activate deletion workflow. If workflow is active the following must be provided:
+
+Email templates:
+
+- `account-inactivity`: invites inactive user to login to account in order to prevent account deletion,
+- `account-deleted-after-inactivity`: informs user that account is deleted.
+
+Environment variable:
+
+- `ADDR_STUDY_SERVICE`: address of study service.
+
+## [v1.2.1] - 2023-10-11
+
+### Changed
+
+- allow ' character in email address to cover edge case
+
+## [v1.2.0] - 2023-07-13
+
+### BREAKING CHANGES
+
+- Reading instanceID list form globalDB's `instances` collection then use the list of instanceIDs to filter unauthenticated requests directed toward non-listed instances. This means that the `instances` collection must be populated with the instanceIDs of all instances that should be accessible by the user management service. This is a breaking change, since the previous behaviour was to allow all requests to all instances. This change is necessary to prevent unauthenticated requests to the user management service from being used to spam / exhaust the database with non-existent instances.
+
+- Changing renew token procedure to prevent race conditions causing the token renewal to fail. For this, renew tokens are stored in their own DB collection, and allow reusing the same token for a short grace period. This change is a breaking change, since the DB schema is changed and the token renewal procedure is changed, however the API is unchanged and currently there are no additional configuration options.
+
+### Changed
+
+- Improve logging by using the custom logger for all log lines.
+- Hardening email validation rules to prevent using invalid emails.
+
 ## [v1.1.1] - 2022-10-28
 
 ### Changed

@@ -103,12 +103,31 @@ func (m *MockMessagingServiceApiClient) SendInstantEmail(ctx context.Context, in
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
+// QueueEmailTemplateForSending mocks base method
+func (m *MockMessagingServiceApiClient) QueueEmailTemplateForSending(ctx context.Context, in *messaging_service.SendEmailReq, opts ...grpc.CallOption) (*messaging_service.ServiceStatus, error) {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{ctx, in}
+	for _, a := range opts {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "QueueEmailTemplateForSending", varargs...)
+	ret0, _ := ret[0].(*messaging_service.ServiceStatus)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
 
 // SendInstantEmail indicates an expected call of SendInstantEmail
 func (mr *MockMessagingServiceApiClientMockRecorder) SendInstantEmail(ctx, in interface{}, opts ...interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	varargs := append([]interface{}{ctx, in}, opts...)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SendInstantEmail", reflect.TypeOf((*MockMessagingServiceApiClient)(nil).SendInstantEmail), varargs...)
+}
+
+
+func (mr *MockMessagingServiceApiClientMockRecorder) QueueEmailTemplateForSending(ctx, in interface{}, opts ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]interface{}{ctx, in}, opts...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SendInstantEmail", reflect.TypeOf((*MockMessagingServiceApiClient)(nil).QueueEmailTemplateForSending), varargs...)
 }
 
 // SendMessageToAllUsers mocks base method
@@ -322,6 +341,21 @@ func (m *MockMessagingServiceApiServer) SendInstantEmail(arg0 context.Context, a
 func (mr *MockMessagingServiceApiServerMockRecorder) SendInstantEmail(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SendInstantEmail", reflect.TypeOf((*MockMessagingServiceApiServer)(nil).SendInstantEmail), arg0, arg1)
+}
+
+// QueueEmailTemplateForSending mocks base method
+func (m *MockMessagingServiceApiServer) QueueEmailTemplateForSending(arg0 context.Context, arg1 *messaging_service.SendEmailReq) (*messaging_service.ServiceStatus, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "QueueEmailTemplateForSending", arg0, arg1)
+	ret0, _ := ret[0].(*messaging_service.ServiceStatus)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// QueueEmailTemplateForSending indicates an expected call of QueueEmailTemplateForSending
+func (mr *MockMessagingServiceApiServerMockRecorder) QueueEmailTemplateForSending(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "QueueEmailTemplateForSending", reflect.TypeOf((*MockMessagingServiceApiServer)(nil).QueueEmailTemplateForSending), arg0, arg1)
 }
 
 // SendMessageToAllUsers mocks base method

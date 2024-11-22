@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/coneno/logger"
+	"github.com/influenzanet/study-service/pkg/api"
 	"github.com/influenzanet/user-management-service/internal/config"
 	"github.com/influenzanet/user-management-service/pkg/dbs/globaldb"
 	"github.com/influenzanet/user-management-service/pkg/dbs/userdb"
@@ -30,6 +31,13 @@ func main() {
 	defer close()
 	clients.LoggingService = loggingClient
 
+	var studyClient api.StudyServiceApiClient
+	if shouldConnectToStudyService(conf.DeleteAccountAfterNotifyingUser) {
+		studyClient, close = gc.ConnectToStudyService(conf.ServiceURLs.StudyService)
+		defer close()
+	}
+	clients.StudyService = studyClient
+
 	userDBService := userdb.NewUserDBService(conf.UserDBConfig)
 	globalDBService := globaldb.NewGlobalDBService(conf.GlobalDBConfig)
 
@@ -46,21 +54,29 @@ func main() {
 		instanceIDs = append(instanceIDs, instanceIDObject.InstanceID)
 	}
 
-	// Start timer thread
-	userTimerService := timer_event.NewUserManagmentTimerService(
-		userManagementTimerEventFrequency,
-		globalDBService,
-		userDBService,
-		clients,
-		conf.CleanUpUnverifiedUsersAfter,
-		conf.ReminderToUnverifiedAccountsAfter,
-	)
+	// Ensure indexes
+	ensureDBIndexes(instanceIDs, userDBService)
 
-	// Start server thread
 	ctx := context.Background()
 
-	userTimerService.Run(ctx)
+	// Start timer thread
+	if !conf.DisableTimerTask {
+		userTimerService := timer_event.NewUserManagmentTimerService(
+			userManagementTimerEventFrequency,
+			globalDBService,
+			userDBService,
+			clients,
+			conf.CleanUpUnverifiedUsersAfter,
+			conf.ReminderToUnverifiedAccountsAfter,
+			conf.NotifyInactiveUsersAfter,
+			conf.DeleteAccountAfterNotifyingUser,
+		)
+		userTimerService.Run(ctx)
+	} else {
+		logger.Info.Println("Timer task is disabled")
+	}
 
+	// Start server thread
 	if err := service.RunServer(
 		ctx,
 		conf.Port,
@@ -74,4 +90,18 @@ func main() {
 	); err != nil {
 		logger.Error.Fatal(err)
 	}
+}
+
+func ensureDBIndexes(instanceIDs []string, udb *userdb.UserDBService) {
+	for _, i := range instanceIDs {
+		logger.Debug.Printf("ensuring indexes for instance %s", i)
+
+		udb.CreateIndexForRenewTokens(i)
+		udb.CreateIndexForUser(i)
+		// TODO: ensure index for users collection as well
+	}
+}
+
+func shouldConnectToStudyService(deleteAccountAfterNotifyingUser int64) bool {
+	return deleteAccountAfterNotifyingUser > 0
 }

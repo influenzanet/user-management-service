@@ -12,7 +12,6 @@ type Account struct {
 	Password           string           `bson:"password"`
 	AuthType           string           `bson:"authType"`
 	VerificationCode   VerificationCode `bson:"verificationCode"`
-	RefreshTokens      []string         `bson:"refreshTokens"`
 	PreferredLanguage  string           `bson:"preferredLanguage"`
 
 	// Rate limiting

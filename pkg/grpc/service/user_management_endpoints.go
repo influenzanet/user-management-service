@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"errors"
-	"log"
 	"time"
 
 	"github.com/coneno/logger"
@@ -128,7 +127,7 @@ func (s *userManagementServer) CreateUser(ctx context.Context, req *api.CreateUs
 		UseLowPrio:        true,
 	})
 	if err != nil {
-		log.Printf("CreateUser: %s", err.Error())
+		logger.Error.Printf("CreateUser: %s", err.Error())
 	}
 	// <---
 

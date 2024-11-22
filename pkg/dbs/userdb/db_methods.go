@@ -10,6 +10,7 @@ import (
 	"github.com/influenzanet/user-management-service/pkg/models"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
@@ -167,7 +168,11 @@ func (dbService *UserDBService) UpdateLoginTime(instanceID string, id string) er
 
 	_id, _ := primitive.ObjectIDFromHex(id)
 	filter := bson.M{"_id": _id}
-	update := bson.M{"$set": bson.M{"timestamps.lastLogin": time.Now().Unix()}}
+	update := bson.M{"$set": bson.M{
+		"timestamps.lastLogin":         time.Now().Unix(),
+		"timestamps.updatedAt":         time.Now().Unix(),
+		"timestamps.markedForDeletion": 0,
+	}}
 	_, err := dbService.collectionRefUsers(instanceID).UpdateOne(ctx, filter, update)
 	if err != nil {
 		return err
@@ -187,6 +192,39 @@ func (dbService *UserDBService) UpdateReminderToConfirmSentAtTime(instanceID str
 		return err
 	}
 	return nil
+}
+
+func (dbService *UserDBService) UpdateMarkedForDeletionTime(instanceID string, id string, dT int64, reset bool) (bool, error) {
+	ctx, cancel := dbService.getContext()
+	defer cancel()
+
+	_id, _ := primitive.ObjectIDFromHex(id)
+	if reset {
+		filter := bson.M{"_id": _id}
+		update := bson.M{"$set": bson.M{"timestamps.markedForDeletion": 0}}
+		res, err := dbService.collectionRefUsers(instanceID).UpdateOne(ctx, filter, update)
+		if err != nil {
+			return false, err
+		}
+		if res.MatchedCount > 0 {
+			return true, nil
+		}
+		return false, nil
+	}
+	filter := bson.M{}
+	filter["$and"] = bson.A{
+		bson.M{"_id": _id},
+		bson.M{"timestamps.markedForDeletion": bson.M{"$not": bson.M{"$gt": 0}}},
+	}
+	update := bson.M{"$set": bson.M{"timestamps.markedForDeletion": time.Now().Unix() + dT}}
+	res, err := dbService.collectionRefUsers(instanceID).UpdateOne(ctx, filter, update)
+	if err != nil {
+		return false, err
+	}
+	if res.MatchedCount > 0 {
+		return true, nil
+	}
+	return false, nil
 }
 
 func (dbService *UserDBService) CountRecentlyCreatedUsers(instanceID string, interval int64) (count int64, err error) {
@@ -231,6 +269,43 @@ func (dbService *UserDBService) DeleteUnverfiedUsers(instanceID string, createdB
 	return res.DeletedCount, nil
 }
 
+func (dbService *UserDBService) FindUsersMarkedForDeletion(instanceID string) (users []models.User, err error) {
+	ctx, cancel := dbService.getContext()
+	defer cancel()
+
+	filter := bson.M{}
+	filter["$and"] = bson.A{
+		bson.M{"timestamps.markedForDeletion": bson.M{"$gt": 0}},
+		bson.M{"timestamps.markedForDeletion": bson.M{"$lt": time.Now().Unix()}},
+	}
+
+	cur, err := dbService.collectionRefUsers(instanceID).Find(
+		ctx,
+		filter,
+	)
+
+	if err != nil {
+		return users, err
+	}
+	defer cur.Close(ctx)
+
+	users = []models.User{}
+	for cur.Next(ctx) {
+		var result models.User
+		err := cur.Decode(&result)
+		if err != nil {
+			return users, err
+		}
+
+		users = append(users, result)
+	}
+	if err := cur.Err(); err != nil {
+		return users, err
+	}
+
+	return users, nil
+}
+
 func (dbService *UserDBService) FindNonParticipantUsers(instanceID string) (users []models.User, err error) {
 	ctx, cancel := dbService.getContext()
 	defer cancel()
@@ -242,6 +317,51 @@ func (dbService *UserDBService) FindNonParticipantUsers(instanceID string) (user
 			constants.USER_ROLE_ADMIN,
 		}}},
 	}
+	cur, err := dbService.collectionRefUsers(instanceID).Find(
+		ctx,
+		filter,
+	)
+
+	if err != nil {
+		return users, err
+	}
+	defer cur.Close(ctx)
+
+	users = []models.User{}
+	for cur.Next(ctx) {
+		var result models.User
+		err := cur.Decode(&result)
+		if err != nil {
+			return users, err
+		}
+
+		users = append(users, result)
+	}
+	if err := cur.Err(); err != nil {
+		return users, err
+	}
+
+	return users, nil
+}
+
+func (dbService *UserDBService) FindInactiveUsers(instanceID string, dT int64) (users []models.User, err error) {
+	ctx, cancel := dbService.getContext()
+	defer cancel()
+
+	filter := bson.M{}
+	filter["$and"] = bson.A{
+		bson.M{
+			"roles": bson.M{"$nin": bson.A{
+				constants.USER_ROLE_SERVICE_ACCOUNT,
+				constants.USER_ROLE_RESEARCHER,
+				constants.USER_ROLE_ADMIN,
+			}},
+		},
+		bson.M{"timestamps.lastLogin": bson.M{"$lt": time.Now().Unix() - dT}},
+		bson.M{"timestamps.lastTokenRefresh": bson.M{"$lt": time.Now().Unix() - dT}},
+		bson.M{"timestamps.markedForDeletion": bson.M{"$not": bson.M{"$gt": 0}}},
+	}
+
 	cur, err := dbService.collectionRefUsers(instanceID).Find(
 		ctx,
 		filter,
@@ -384,4 +504,41 @@ func (dbService *UserDBService) SendReminderToConfirmAccountLoop(
 		return err
 	}
 	return nil
+}
+
+func (dbService *UserDBService) CreateIndexForUser(instanceID string) error {
+	ctx, cancel := dbService.getContext()
+	defer cancel()
+
+	_, err := dbService.collectionRefUsers(instanceID).Indexes().CreateMany(
+		ctx, []mongo.IndexModel{
+			{
+				Keys: bson.D{
+					{Key: "timestamps.markedForDeletion", Value: 1},
+				},
+			},
+			{
+				Keys: bson.D{
+					{Key: "account.accountID", Value: 1},
+				},
+			},
+			{
+				Keys: bson.D{
+					{Key: "timestamps.createdAt", Value: 1},
+				},
+			},
+			{
+				Keys: bson.D{
+					{Key: "account.accountConfirmedAt", Value: 1},
+					{Key: "timestamps.createdAt", Value: 1},
+				},
+			},
+			{
+				Keys: bson.D{
+					{Key: "contactPreferences.receiveWeeklyMessageDayOfWeek", Value: 1},
+				},
+			},
+		},
+	)
+	return err
 }
