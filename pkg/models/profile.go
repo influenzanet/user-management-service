@@ -7,12 +7,13 @@ import (
 
 // Profile describes personal profile information for a User
 type Profile struct {
-	ID                 primitive.ObjectID `bson:"_id,omitempty"`
-	Alias              string             `bson:"alias,omitempty"`
-	ConsentConfirmedAt int64              `bson:"consentConfirmedAt"`
-	CreatedAt          int64              `bson:"createdAt"`
-	AvatarID           string             `bson:"avatarID,omitempty"`
-	MainProfile        bool               `bson:"mainProfile"`
+	ID                   primitive.ObjectID `bson:"_id,omitempty"`
+	Alias                string             `bson:"alias,omitempty"`
+	ConsentConfirmedAt   int64              `bson:"consentConfirmedAt"`
+	CreatedAt            int64              `bson:"createdAt"`
+	AvatarID             string             `bson:"avatarID,omitempty"`
+	MainProfile          bool               `bson:"mainProfile"`
+	AcceptedPolicyChange bool             `bson:"acceptedPolicyChange,omitempty"`
 }
 
 func ProfileFromAPI(p *api.Profile) Profile {
@@ -20,11 +21,12 @@ func ProfileFromAPI(p *api.Profile) Profile {
 		return Profile{}
 	}
 	dbProf := Profile{
-		Alias:              p.Alias,
-		ConsentConfirmedAt: p.ConsentConfirmedAt,
-		CreatedAt:          p.CreatedAt,
-		AvatarID:           p.AvatarId,
-		MainProfile:        p.MainProfile,
+		Alias:                p.Alias,
+		ConsentConfirmedAt:   p.ConsentConfirmedAt,
+		CreatedAt:            p.CreatedAt,
+		AvatarID:             p.AvatarId,
+		MainProfile:          p.MainProfile,
+		AcceptedPolicyChange: p.AcceptedPolicyChange,
 	}
 	if len(p.Id) > 0 {
 		_id, _ := primitive.ObjectIDFromHex(p.Id)
@@ -36,11 +38,12 @@ func ProfileFromAPI(p *api.Profile) Profile {
 // ToAPI converts a person from DB format into the API format
 func (p Profile) ToAPI() *api.Profile {
 	return &api.Profile{
-		Id:                 p.ID.Hex(),
-		Alias:              p.Alias,
-		ConsentConfirmedAt: p.ConsentConfirmedAt,
-		CreatedAt:          p.CreatedAt,
-		AvatarId:           p.AvatarID,
-		MainProfile:        p.MainProfile,
+		Id:                   p.ID.Hex(),
+		Alias:                p.Alias,
+		ConsentConfirmedAt:   p.ConsentConfirmedAt,
+		CreatedAt:            p.CreatedAt,
+		AvatarId:             p.AvatarID,
+		MainProfile:          p.MainProfile,
+		AcceptedPolicyChange: p.AcceptedPolicyChange,
 	}
 }
