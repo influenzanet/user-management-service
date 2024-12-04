@@ -13,7 +13,7 @@ type Profile struct {
 	CreatedAt            int64              `bson:"createdAt"`
 	AvatarID             string             `bson:"avatarID,omitempty"`
 	MainProfile          bool               `bson:"mainProfile"`
-	AcceptedPolicyChange bool               `bson:"acceptedPolicyChange"`
+	AcceptedPolicyChange string             `bson:"acceptedPolicyChange"`
 }
 
 func ProfileFromAPI(p *api.Profile) Profile {
