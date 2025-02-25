@@ -146,6 +146,7 @@ type SignupWithEmailMsg struct {
 	WantsNewsletter   bool   `protobuf:"varint,5,opt,name=wants_newsletter,json=wantsNewsletter,proto3" json:"wants_newsletter,omitempty"`
 	Use_2Fa           bool   `protobuf:"varint,6,opt,name=use_2fa,json=use2fa,proto3" json:"use_2fa,omitempty"`
 	InfoCheck         string `protobuf:"bytes,7,opt,name=info_check,json=infoCheck,proto3" json:"info_check,omitempty"`
+	Phone 	  		  string `protobuf:"bytes,8,opt,name=phone,json=phoneNumber,proto3" json:"phone,omitempty"`
 }
 
 func (x *SignupWithEmailMsg) Reset() {
@@ -225,6 +226,13 @@ func (x *SignupWithEmailMsg) GetUse_2Fa() bool {
 func (x *SignupWithEmailMsg) GetInfoCheck() string {
 	if x != nil {
 		return x.InfoCheck
+	}
+	return ""
+}
+
+func (x *SignupWithEmailMsg) GetPhone() string {
+	if x != nil {
+		return x.Phone
 	}
 	return ""
 }

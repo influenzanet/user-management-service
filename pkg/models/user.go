@@ -86,6 +86,20 @@ func (u *User) AddNewEmail(addr string, confirmed bool) {
 	u.ContactInfos = append(u.ContactInfos, contactInfo)
 }
 
+// Add a new phone number
+func (u *User) AddNewPhone(phone string, confirmed bool) {
+	contactInfo := ContactInfo{
+		ID:          primitive.NewObjectID(),
+		Type:        "phone",
+		ConfirmedAt: 0,
+		Phone:       phone,
+	}
+	if confirmed {
+		contactInfo.ConfirmedAt = time.Now().Unix()
+	}
+	u.ContactInfos = append(u.ContactInfos, contactInfo)
+}
+
 func (u *User) ConfirmContactInfo(t string, addr string) error {
 	for i, ci := range u.ContactInfos {
 		if t == "email" && ci.Email == addr {

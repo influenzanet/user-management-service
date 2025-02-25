@@ -18,11 +18,26 @@ func (dbService *UserDBService) AddUser(instanceID string, user models.User) (id
 	ctx, cancel := dbService.getContext()
 	defer cancel()
 
+	var phoneNumbers []string
+	for _, contactInfo := range user.ContactInfos {
+		phoneNumbers = append(phoneNumbers, contactInfo.Phone)
+	}
+	if len(phoneNumbers) > 0 {
+		taken, err := dbService.isPhoneNumberTaken(ctx, instanceID, phoneNumbers)
+		if err != nil {
+			return "", err
+		}
+		if taken {
+			return "", errors.New("phone number already taken")
+		}
+	}
+
 	filter := bson.M{"account.accountID": user.Account.AccountID}
 	upsert := true
 	opts := options.UpdateOptions{
 		Upsert: &upsert,
 	}
+
 	res, err := dbService.collectionRefUsers(instanceID).UpdateOne(ctx, filter, bson.M{
 		"$setOnInsert": user,
 	}, &opts)
@@ -37,6 +52,24 @@ func (dbService *UserDBService) AddUser(instanceID string, user models.User) (id
 
 	id = res.UpsertedID.(primitive.ObjectID).Hex()
 	return
+}
+
+// Checks that the provided phone number is not already taken by other users
+func (dbService *UserDBService) isPhoneNumberTaken(ctx context.Context, instanceID string, phoneNumbers []string) (bool, error) {
+	if len(phoneNumbers) == 0 {
+		return false, nil
+	}
+
+	filter := bson.M{"contactInfos.phone": bson.M{"$in": phoneNumbers}}
+	existingUser := dbService.collectionRefUsers(instanceID).FindOne(ctx, filter)
+
+	if existingUser.Err() == nil {
+		return true, nil
+	} else if existingUser.Err() == mongo.ErrNoDocuments {
+		return false, nil
+	}
+
+	return false, existingUser.Err()
 }
 
 // low level find and replace

@@ -97,3 +97,18 @@ func CheckRoleInToken(t *api_types.TokenInfos, role string) bool {
 	}
 	return false
 }
+
+func SanitizePhone(phone string) string {
+	// Step 1: Remove spaces, dashes, and parentheses
+	cleaned := strings.ReplaceAll(phone, " ", "")
+	cleaned = strings.ReplaceAll(cleaned, "-", "")
+	cleaned = strings.ReplaceAll(cleaned, "(", "")
+	cleaned = strings.ReplaceAll(cleaned, ")", "")
+
+	return cleaned
+}
+
+func CheckPhoneFormat(phone string) bool {
+	phoneRule := regexp.MustCompile(`^\+[0-9]{8,15}$`)
+	return phoneRule.MatchString(phone)
+}

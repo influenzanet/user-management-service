@@ -514,6 +514,13 @@ func (s *userManagementServer) SignupWithEmail(ctx context.Context, req *api.Sig
 		return nil, status.Error(codes.InvalidArgument, "invalid instance ID")
 	}
 
+	if req.Phone != "" {
+		req.Phone = utils.SanitizePhone(req.Phone)
+		if !utils.CheckPhoneFormat(req.Phone) {
+			return nil, status.Error(codes.InvalidArgument, "phone number not valid")
+		}
+	}
+
 	newUserCount, err := s.userDBservice.CountRecentlyCreatedUsers(req.InstanceId, signupRateLimitWindow)
 	if err != nil {
 		logger.Error.Printf("ERROR: signup - unexpected error when counting: %v", err)
@@ -557,6 +564,10 @@ func (s *userManagementServer) SignupWithEmail(ctx context.Context, req *api.Sig
 	newUser.AddNewEmail(req.Email, false)
 	if req.Use_2Fa {
 		newUser.Account.AuthType = "2FA"
+	}
+
+	if req.Phone !=  "" {
+		newUser.AddNewPhone(req.Phone, false)
 	}
 
 	if req.WantsNewsletter {
