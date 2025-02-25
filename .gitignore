@@ -9,3 +9,4 @@ run.sh
 benchmark.csv
 run-with-local.sh
 tools/migrate-refresh-tokens/.env
+.idea
