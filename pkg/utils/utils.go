@@ -98,8 +98,9 @@ func CheckRoleInToken(t *api_types.TokenInfos, role string) bool {
 	return false
 }
 
+// SanitizePhone removes common non-numeric characters from the phone number.
+// It removes spaces, hyphens, and parentheses to ensure a clean numeric format.
 func SanitizePhone(phone string) string {
-	// Step 1: Remove spaces, dashes, and parentheses
 	cleaned := strings.ReplaceAll(phone, " ", "")
 	cleaned = strings.ReplaceAll(cleaned, "-", "")
 	cleaned = strings.ReplaceAll(cleaned, "(", "")
@@ -108,6 +109,9 @@ func SanitizePhone(phone string) string {
 	return cleaned
 }
 
+// CheckPhoneFormat verifies if the given phone number matches the expected international format.
+// The phone number must start with a '+' followed by 8 to 15 digits.
+// Returns true if the format is valid, otherwise false.
 func CheckPhoneFormat(phone string) bool {
 	phoneRule := regexp.MustCompile(`^\+[0-9]{8,15}$`)
 	return phoneRule.MatchString(phone)
