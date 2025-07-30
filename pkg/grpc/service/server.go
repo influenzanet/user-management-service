@@ -10,6 +10,7 @@ import (
 	"github.com/influenzanet/user-management-service/pkg/api"
 	"github.com/influenzanet/user-management-service/pkg/dbs/globaldb"
 	"github.com/influenzanet/user-management-service/pkg/dbs/userdb"
+	"github.com/influenzanet/user-management-service/pkg/grpc/clients"
 	itc "github.com/influenzanet/user-management-service/pkg/grpc/interceptors"
 	"github.com/influenzanet/user-management-service/pkg/models"
 	"github.com/influenzanet/user-management-service/pkg/utils"
@@ -30,6 +31,7 @@ type userManagementServer struct {
 	newUserCountLimit int64
 	weekdayStrategy   utils.WeekDayStrategy
 	instanceIDs       []string
+	whatsAppClient    *clients.WhatsAppClient
 }
 
 // NewUserManagementServer creates a new service instance
@@ -41,6 +43,7 @@ func NewUserManagementServer(
 	newUserCountLimit int64,
 	weekdayStrategy utils.WeekDayStrategy,
 	instanceIDs []string,
+	whatsAppClient *clients.WhatsAppClient,
 ) api.UserManagementApiServer {
 	return &userManagementServer{
 		clients:           clients,
@@ -50,6 +53,7 @@ func NewUserManagementServer(
 		newUserCountLimit: newUserCountLimit,
 		weekdayStrategy:   weekdayStrategy,
 		instanceIDs:       instanceIDs,
+		whatsAppClient:    clients.WhatsApp,
 	}
 }
 
@@ -62,6 +66,7 @@ func RunServer(ctx context.Context, port string,
 	newUserCountLimit int64,
 	weekdayStrategy utils.WeekDayStrategy,
 	instanceIDs []string,
+	whatsAppClient *clients.WhatsAppClient,
 ) error {
 	lis, err := net.Listen("tcp", ":"+port)
 	if err != nil {
@@ -78,6 +83,7 @@ func RunServer(ctx context.Context, port string,
 		newUserCountLimit,
 		weekdayStrategy,
 		instanceIDs,
+		whatsAppClient,
 	))
 
 	// graceful shutdown
