@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/coneno/logger"
+	api_types "github.com/influenzanet/go-utils/pkg/api_types"
 	"github.com/influenzanet/go-utils/pkg/constants"
 	loggingAPI "github.com/influenzanet/logging-service/pkg/api"
 	messageAPI "github.com/influenzanet/messaging-service/pkg/api/messaging_service"
@@ -481,4 +482,128 @@ func (s *userManagementServer) RemoveEmail(ctx context.Context, req *api.Contact
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	return updUser.ToAPI(), nil
+}
+
+func (s *userManagementServer) AddPhoneNumber(ctx context.Context, req *api.PhoneMsg) (*api.User, error) {
+	if req == nil || utils.IsTokenEmpty(req.Token) || req.NewPhone == "" {
+		return nil, status.Error(codes.InvalidArgument, "missing argument")
+	}
+
+	phone := utils.SanitizePhone(req.NewPhone)
+	if !utils.CheckPhoneFormat(phone) {
+		return nil, status.Error(codes.InvalidArgument, "phone not valid")
+	}
+
+	phoneSlice := []string{phone}
+
+	// Check if phone number is already taken
+	isTaken, err := s.userDBservice.IsPhoneNumberTaken(ctx, req.Token.InstanceId, phoneSlice)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	} else if isTaken {
+		return nil, status.Error(codes.InvalidArgument, "phone number already taken")
+	}
+
+	user, err := s.userDBservice.GetUserByID(req.Token.InstanceId, req.Token.Id)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "user not found")
+	}
+
+	// Check if user has already a registered phone number
+	for _, ci := range user.ContactInfos {
+		if ci.Type == "phone" && ci.Phone != "" {
+			return nil, status.Error(codes.InvalidArgument, "user already has a phone number")
+		}
+	}
+
+	user.AddNewPhone(phone, false)
+
+	updUser, err := s.userDBservice.UpdateUser(req.Token.InstanceId, user)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	// ---> INVIA CODICE DI VERIFICA TRAMITE WHATSAPP
+	vc := utils.GenerateVerificationCode()
+	err = s.whatsAppClient.SendVerificationCode(phone, vc, user.Account.PreferredLanguage)
+	if err != nil {
+		logger.Error.Printf("AddPhoneNumber: %s", err.Error())
+		return nil, status.Error(codes.Internal, "failed to send verification code")
+	}
+	return updUser.ToAPI(), nil
+}
+
+func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.PhoneMsg) (*api.User, error) {
+	if req == nil || utils.IsTokenEmpty(req.Token) || req.NewPhone == "" {
+		return nil, status.Error(codes.InvalidArgument, "missing argument")
+	}
+
+	phone := utils.SanitizePhone(req.NewPhone)
+	if !utils.CheckPhoneFormat(phone) {
+		return nil, status.Error(codes.InvalidArgument, "phone not valid")
+	}
+
+	phoneSlice := []string{phone}
+
+	// Check if phone number is already taken
+	isTaken, err := s.userDBservice.IsPhoneNumberTaken(ctx, req.Token.InstanceId, phoneSlice)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	} else if isTaken {
+		return nil, status.Error(codes.InvalidArgument, "phone number already taken")
+	}
+
+	user, err := s.userDBservice.GetUserByID(req.Token.InstanceId, req.Token.Id)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "user not found")
+	}
+
+	var contactInfo *models.ContactInfo = nil
+
+	// Check if user has a registered phone number
+	for _, ci := range user.ContactInfos {
+		if ci.Type == "phone" {
+			contactInfo = &ci
+			break
+		}
+	}
+
+	if contactInfo == nil {
+		return nil, status.Error(codes.InvalidArgument, "user has no phone number to edit")
+	}
+
+	err = user.RemoveContactInfo(contactInfo.ID.Hex())
+	if err != nil {
+		return nil, err
+	}
+
+	user.AddNewPhone(phone, false)
+
+	vc := utils.GenerateVerificationCode()
+	err = s.whatsAppClient.SendVerificationCode(phone, vc, user.Account.PreferredLanguage)
+	if err != nil {
+		logger.Error.Printf("EditPhoneNumber: %s", err.Error())
+		return nil, status.Error(codes.Internal, "failed to send verification code")
+	}
+
+	updUser, err := s.userDBservice.UpdateUser(req.Token.InstanceId, user)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	return updUser.ToAPI(), nil
+}
+
+func (s *userManagementServer) DeletePhoneNumber(ctx context.Context, req *api_types.TokenInfos) (*api.User, error) {
+
+	if req == nil || utils.IsTokenEmpty(req) {
+		return nil, status.Error(codes.InvalidArgument, "missing argument")
+	}
+
+	updatedUser, err := s.userDBservice.DeletePhoneNumber(req.InstanceId, req.Id)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	return updatedUser.ToAPI(), nil
 }

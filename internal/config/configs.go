@@ -12,6 +12,11 @@ import (
 )
 
 // Config is the structure that holds all global configuration data
+type WhatsAppConfig struct {
+	ApiToken                 string `yaml:"api_token"`
+	PhoneNumberID            string `yaml:"phone_number_id"`
+	VerificationTemplateName string `yaml:"verification_template_name"`
+}
 type Config struct {
 	LogLevel    logger.LogLevel
 	Port        string
@@ -32,6 +37,7 @@ type Config struct {
 	WeekDayStrategy utils.WeekDayStrategy
 
 	DisableTimerTask bool
+	WhatsApp         WhatsAppConfig
 }
 
 func InitConfig() Config {
@@ -42,6 +48,17 @@ func InitConfig() Config {
 	conf.ServiceURLs.StudyService = os.Getenv(ENV_ADDR_STUDY_SERVICE)
 	if conf.ServiceURLs.StudyService == "" {
 		logger.Warning.Printf("Address of study service: not provided, can not connect to study service")
+	}
+
+	// WhatsApp configuration
+	conf.WhatsApp.ApiToken = os.Getenv(ENV_WHATSAPP_TOKEN)
+	conf.WhatsApp.PhoneNumberID = os.Getenv(ENV_WHATSAPP_PHONE_NUMBER_ID)
+	conf.WhatsApp.VerificationTemplateName = os.Getenv(ENV_WHATSAPP_VERIFICATION_TEMPLATE_NAME)
+	if conf.WhatsApp.ApiToken == "" || conf.WhatsApp.PhoneNumberID == "" || conf.WhatsApp.VerificationTemplateName == "" {
+		logger.Error.Fatal("WhatsApp configuration is not complete. Please set the environment variables: " +
+			ENV_WHATSAPP_TOKEN + ", " +
+			ENV_WHATSAPP_PHONE_NUMBER_ID + ", " +
+			ENV_WHATSAPP_VERIFICATION_TEMPLATE_NAME)
 	}
 
 	conf.LogLevel = getLogLevel()

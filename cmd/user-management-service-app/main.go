@@ -87,6 +87,7 @@ func main() {
 		conf.NewUserCountLimit,
 		conf.WeekDayStrategy,
 		instanceIDs,
+		gc.NewWhatsAppClient(conf.WhatsApp.ApiToken, conf.WhatsApp.PhoneNumberID, conf.WhatsApp.VerificationTemplateName),
 	); err != nil {
 		logger.Error.Fatal(err)
 	}
