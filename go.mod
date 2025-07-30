@@ -1,6 +1,8 @@
 module github.com/influenzanet/user-management-service
 
-go 1.19
+go 1.22
+
+toolchain go1.24.3
 
 require (
 	github.com/coneno/logger v1.2.2
@@ -14,7 +16,7 @@ require (
 	golang.org/x/crypto v0.18.0
 	golang.org/x/term v0.16.0
 	google.golang.org/grpc v1.60.1
-	google.golang.org/protobuf v1.32.0
+	google.golang.org/protobuf v1.36.6
 )
 
 require (

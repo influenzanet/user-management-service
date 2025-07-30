@@ -17,6 +17,8 @@ type Account struct {
 	// Rate limiting
 	FailedLoginAttempts   []int64 `bson:"failedLoginAttempts"`
 	PasswordResetTriggers []int64 `bson:"passwordResetTriggers"`
+	// Notification channels
+	NotificationChannels []string `bson:"notificationChannels" json:"notificationChannels"` // Esempio: ["email", "whatsapp"]
 }
 
 // VerificationCode holds account verification data
