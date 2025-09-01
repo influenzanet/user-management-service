@@ -523,7 +523,7 @@ func (s *userManagementServer) AddPhoneNumber(ctx context.Context, req *api.Phon
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	// ---> INVIA CODICE DI VERIFICA TRAMITE WHATSAPP
+	// Send WhatsApp verification code
 	vc := utils.GenerateVerificationCode()
 	err = s.whatsAppClient.SendVerificationCode(phone, vc, user.Account.PreferredLanguage)
 	if err != nil {
@@ -601,6 +601,61 @@ func (s *userManagementServer) DeletePhoneNumber(ctx context.Context, req *api_t
 	}
 
 	updatedUser, err := s.userDBservice.DeletePhoneNumber(req.InstanceId, req.Id)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	return updatedUser.ToAPI(), nil
+}
+
+func (s *userManagementServer) VerifyWhatsAppCode(ctx context.Context, req *api.VerifyWhatsAppCodeReq) (*api.User, error) {
+	if req == nil || utils.IsTokenEmpty(req.Token) || req.Code == "" {
+		return nil, status.Error(codes.InvalidArgument, "missing argument")
+	}
+
+	user, err := s.userDBservice.GetUserByID(req.Token.InstanceId, req.Token.Id)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "user not found")
+	}
+
+	// Verify code
+	vc := user.Account.VerificationCode
+
+	// Check if code expired
+	if time.Now().Unix() > vc.ExpiresAt {
+		return nil, status.Error(codes.PermissionDenied, "verification code expired")
+	}
+
+	// Increment attempts
+	vc.Attempts++
+	if vc.Attempts > int64(s.Intervals.MaxVerificationAttempts) {
+		// Too many attempts, remove phone number
+		user.RemovePhone()
+		_, err = s.userDBservice.UpdateUser(req.Token.InstanceId, user)
+		if err != nil {
+			logger.Error.Printf("VerifyWhatsAppCode: failed to remove phone: %v", err)
+		}
+		return nil, status.Error(codes.PermissionDenied, "too many attempts, phone number removed")
+	}
+
+	// Check if code is correct
+	if req.Code != vc.Code {
+		// Wrong code, update attempts
+		user.Account.VerificationCode = vc
+		_, err = s.userDBservice.UpdateUser(req.Token.InstanceId, user)
+		if err != nil {
+			logger.Error.Printf("VerifyWhatsAppCode: failed to update attempts: %v", err)
+		}
+		return nil, status.Error(codes.PermissionDenied, "invalid verification code")
+	}
+
+	// Code correct, mark phone as verified
+	user.MarkPhoneAsVerified()
+
+	// Remove verification code
+	user.Account.VerificationCode = models.VerificationCode{}
+
+	updatedUser, err := s.userDBservice.UpdateUser(req.Token.InstanceId, user)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
