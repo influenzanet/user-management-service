@@ -5,34 +5,34 @@ on:
     inputs:
       tags:
         required: false
-        description: 'Docker Tag override: [leave empty if not needed]'
+        description: "Docker Tag override: [leave empty if not needed]"
   push:
+    branches:
+      - "orbyta-features"
     tags:
       - "v*"
 jobs:
-
   build:
-
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
-    - name: Get current version (workflow_dispatch)
-      id: version
-      run: echo "REPO_VERSION=$(git describe --tags --abbrev=0)" >> $GITHUB_ENV
-      if: ${{ github.event_name == 'workflow_dispatch' }}
-    - name: Docker image tag override
-      if: ${{ github.event.inputs.tags && github.event.inputs.tags != '' }}
-      run: echo "REPO_VERSION=${{github.event.inputs.tags}}" >> $GITHUB_ENV
-    - name: version from tags push
-      run: echo "REPO_VERSION=${{github.ref_name}}" >> $GITHUB_ENV
-      if: ${{ github.event_name == 'push' }}
-    - name: docker login
-      env:
-        DOCKER_USER: ${{secrets.DOCKER_USER}}
-        DOCKER_PASSWORD: ${{secrets.DOCKER_PASSWORD}}
-      run: docker login -u $DOCKER_USER -p $DOCKER_PASSWORD
-    - name: Build the Docker image
-      run: docker build . --file build/docker/Dockerfile --tag ${{secrets.DOCKER_ORGANIZATION}}/${{secrets.DOCKER_REPO_NAME}}:$REPO_VERSION
-    - name: Push Docker image
-      run: docker push ${{secrets.DOCKER_ORGANIZATION}}/${{secrets.DOCKER_REPO_NAME}}:$REPO_VERSION
+      - uses: actions/checkout@v3
+      - name: Get current version (workflow_dispatch)
+        id: version
+        run: echo "REPO_VERSION=$(git describe --tags --abbrev=0)" >> $GITHUB_ENV
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+      - name: Docker image tag override
+        if: ${{ github.event.inputs.tags && github.event.inputs.tags != '' }}
+        run: echo "REPO_VERSION=${{github.event.inputs.tags}}" >> $GITHUB_ENV
+      - name: version from tags push
+        run: echo "REPO_VERSION=${{github.ref_name}}" >> $GITHUB_ENV
+        if: ${{ github.event_name == 'push' }}
+      - name: docker login
+        env:
+          DOCKER_USER: ${{secrets.DOCKER_USER}}
+          DOCKER_PASSWORD: ${{secrets.DOCKER_PASSWORD}}
+        run: docker login -u $DOCKER_USER -p $DOCKER_PASSWORD
+      - name: Build the Docker image
+        run: docker build . --file build/docker/Dockerfile --tag ${{secrets.DOCKER_ORGANIZATION}}/${{secrets.DOCKER_REPO_NAME}}:$REPO_VERSION
+      - name: Push Docker image
+        run: docker push ${{secrets.DOCKER_ORGANIZATION}}/${{secrets.DOCKER_REPO_NAME}}:$REPO_VERSION
