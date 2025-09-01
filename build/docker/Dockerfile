@@ -1,11 +1,11 @@
 ##########################
 # STAGE 1
 ##########################
-FROM golang:1.19-alpine AS builder
+FROM golang:1.23-alpine AS builder
 RUN apk update && apk add --no-cache git ca-certificates && update-ca-certificates
 RUN mkdir -p /go/src/github.com/influenzanet/user-management-service
 ENV GO111MODULE=on
-ADD . /go/src/github.com/influenzanet/user-management-service/
+COPY . /go/src/github.com/influenzanet/user-management-service/
 WORKDIR /go/src/github.com/influenzanet/user-management-service
 COPY go.mod .
 COPY go.sum .

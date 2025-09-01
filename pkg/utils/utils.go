@@ -1,8 +1,8 @@
 package utils
 
 import (
+	"crypto/rand"
 	"fmt"
-	"math/rand"
 	"net/mail"
 	"regexp"
 	"strings"
@@ -120,6 +120,19 @@ func CheckPhoneFormat(phone string) bool {
 }
 
 func GenerateVerificationCode() string {
-	// Generate a random 6-digit verification code
-	return fmt.Sprintf("%06d", rand.Intn(1000000))
+	// Generate a cryptographically secure random 6-digit verification code
+	buffer := make([]byte, 6)
+	_, err := rand.Read(buffer)
+	if err != nil {
+		// Fallback in case of error (should not happen)
+		return "000000"
+	}
+
+	// Convert bytes to digits 0-9
+	code := ""
+	for i := 0; i < 6; i++ {
+		digit := int(buffer[i]) % 10
+		code += fmt.Sprintf("%d", digit)
+	}
+	return code
 }

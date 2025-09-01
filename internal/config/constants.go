@@ -7,6 +7,7 @@ const (
 	ENV_TOKEN_EXPIRATION_MIN                = "TOKEN_EXPIRATION_MIN"
 	ENV_TOKEN_INVITATION_LIFETIME           = "INVITATION_TOKEN_LIFETIME"
 	ENV_TOKEN_CONTACT_VERIFICATION_LIFETIME = "CONTACT_VERIFICATION_TOKEN_LIFETIME"
+	ENV_MAX_VERIFICATION_ATTEMPTS           = "MAX_VERIFICATION_ATTEMPTS"
 
 	ENV_USE_NO_CURSOR_TIMEOUT                   = "USE_NO_CURSOR_TIMEOUT"
 	ENV_SEND_REMINDER_TO_UNVERIFIED_USERS_AFTER = "SEND_REMINDER_TO_UNVERIFIED_USERS_AFTER"
@@ -39,4 +40,5 @@ const (
 	defaultContactVerificationTokenLifetime = time.Hour * 24 * 30
 	defaultNotifyInactiveUsersAfter         = 0
 	defaultDeleteAccountAfterNotifyingUser  = 0
+	defaultMaxVerificationAttempts          = 3
 )

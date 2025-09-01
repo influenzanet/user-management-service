@@ -542,3 +542,57 @@ func (dbService *UserDBService) CreateIndexForUser(instanceID string) error {
 	)
 	return err
 }
+
+// IsPhoneNumberTaken checks if a phone number is already in use
+func (dbService *UserDBService) IsPhoneNumberTaken(ctx context.Context, instanceID string, phoneNumbers []string) (bool, error) {
+	filter := bson.M{
+		"contactInfos": bson.M{
+			"$elemMatch": bson.M{
+				"type":  "phone",
+				"phone": bson.M{"$in": phoneNumbers},
+			},
+		},
+	}
+
+	count, err := dbService.collectionRefUsers(instanceID).CountDocuments(ctx, filter)
+	if err != nil {
+		return false, err
+	}
+
+	return count > 0, nil
+}
+
+// DeletePhoneNumber removes a phone number from a user
+func (dbService *UserDBService) DeletePhoneNumber(instanceID, userID string) (models.User, error) {
+	ctx, cancel := dbService.getContext()
+	defer cancel()
+
+	userObjID, err := primitive.ObjectIDFromHex(userID)
+	if err != nil {
+		return models.User{}, err
+	}
+
+	filter := bson.M{"_id": userObjID}
+	update := bson.M{
+		"$pull": bson.M{
+			"contactInfos": bson.M{"type": "phone"},
+		},
+		"$set": bson.M{
+			"timestamps.updatedAt": time.Now().Unix(),
+		},
+	}
+
+	var updatedUser models.User
+	err = dbService.collectionRefUsers(instanceID).FindOneAndUpdate(
+		ctx,
+		filter,
+		update,
+		options.FindOneAndUpdate().SetReturnDocument(options.After),
+	).Decode(&updatedUser)
+
+	if err != nil {
+		return models.User{}, err
+	}
+
+	return updatedUser, nil
+}

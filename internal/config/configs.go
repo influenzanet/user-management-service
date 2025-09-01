@@ -140,6 +140,7 @@ func getIntervalsConfig() models.Intervals {
 	intervals := models.Intervals{
 		TokenExpiryInterval:      time.Minute * time.Duration(defaultTokenExpirationMin),
 		VerificationCodeLifetime: defaultVerificationCodeLifetime,
+		MaxVerificationAttempts:  defaultMaxVerificationAttempts,
 	}
 
 	accessTokenExpiration, err := strconv.Atoi(os.Getenv(ENV_TOKEN_EXPIRATION_MIN))
@@ -154,6 +155,13 @@ func getIntervalsConfig() models.Intervals {
 		logger.Info.Println("using default verification code lifetime")
 	} else {
 		intervals.VerificationCodeLifetime = int64(newVerificationCodeLifetime)
+	}
+
+	maxVerificationAttempts, err := strconv.Atoi(os.Getenv(ENV_MAX_VERIFICATION_ATTEMPTS))
+	if err != nil {
+		logger.Info.Println("using default max verification attempts")
+	} else {
+		intervals.MaxVerificationAttempts = maxVerificationAttempts
 	}
 
 	intervals.InvitationTokenLifetime = parseEnvDuration(ENV_TOKEN_INVITATION_LIFETIME, defaultInvitationTokenLifetime, "m")

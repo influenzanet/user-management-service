@@ -252,13 +252,13 @@ func (s *userManagementServer) GetUserContactPreferences(ctx context.Context, re
 		return nil, status.Error(codes.InvalidArgument, "missing argument")
 	}
 
-	// 1. Trova l'utente usando l'ID dal token
+	// 1. Find user by token ID
 	user, err := s.userDBservice.GetUserByID(req.Token.InstanceId, req.Token.Id)
 	if err != nil {
 		return nil, status.Error(codes.Internal, "user not found")
 	}
 
-	// 2. Estrai le informazioni di contatto (email e telefono)
+	// 2. Extract contact information (email and phone)
 	var email, phone string
 	for _, ci := range user.ContactInfos {
 		if ci.Type == "email" {
@@ -268,8 +268,7 @@ func (s *userManagementServer) GetUserContactPreferences(ctx context.Context, re
 		}
 	}
 
-	// 3. Costruisci e restituisci la risposta
-	// Assicurati che il campo `NotificationChannels` esista nel modello `user.Account`
+	// 3. Build and return response
 	return &api.ContactPreferencesResponse{
 		UserId:            user.ID.Hex(),
 		Email:             email,
@@ -279,25 +278,20 @@ func (s *userManagementServer) GetUserContactPreferences(ctx context.Context, re
 }
 
 func (s *userManagementServer) SendMessage(ctx context.Context, req *api.SendMessageRequest) (*api.ServiceStatus, error) {
-	// Qui puoi aggiungere controlli di sicurezza, es. se la chiamata proviene da un servizio fidato.
+	// Add security checks here, e.g., if call comes from trusted service
 	if req == nil || req.ToPhoneNumber == "" || req.MessageType == "" {
 		return nil, status.Error(codes.InvalidArgument, "missing arguments")
 	}
 
-	// Qui la logica è più complessa: devi mappare il "message_type" a un template di WhatsApp
-	// e poi usare i content_params per popolarlo. Per ora, usiamo una logica semplice.
-	// In un caso reale, potresti leggere i template da un DB.
+	// Map message_type to WhatsApp template and populate with content_params
+	// In production, read templates from DB
 
-	// Per ora, assumiamo che message_type sia il nome del template e che i parametri siano passati correttamente.
-	// La funzione SendVerificationCode che abbiamo scritto prima è un buon esempio.
-	// Qui la semplifichiamo per inviare un messaggio di testo libero per dimostrare il concetto.
-
-	// In un caso reale, useresti un template:
+	// In real case, use template:
 	// err := s.whatsAppClient.SendMessageTemplate(req.ToPhoneNumber, req.MessageType, req.Lang, req.ContentParams)
 
-	// Per ora, simuliamo l'invio di un messaggio di testo semplice:
-	messageBody := fmt.Sprintf("Messaggio di tipo '%s' con parametri: %v", req.MessageType, req.ContentParams)
-	err := s.whatsAppClient.SendTextMessage(req.ToPhoneNumber, messageBody) // Assumendo che hai aggiunto SendTextMessage al client
+	// For now, send simple text message:
+	messageBody := fmt.Sprintf("Message type '%s' with params: %v", req.MessageType, req.ContentParams)
+	err := s.whatsAppClient.SendTextMessage(req.ToPhoneNumber, messageBody)
 
 	if err != nil {
 		logger.Error.Printf("failed to send whatsapp message: %v", err)

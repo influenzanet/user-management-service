@@ -17,4 +17,5 @@ type Intervals struct {
 	VerificationCodeLifetime         int64         // in seconds
 	InvitationTokenLifetime          time.Duration // Duration of the invitation token lifetime
 	ContactVerificationTokenLifetime time.Duration // Duration of the contact verification token lifetime
+	MaxVerificationAttempts          int           // Maximum number of verification attempts allowed
 }
