@@ -13,9 +13,11 @@ import (
 
 // Config is the structure that holds all global configuration data
 type WhatsAppConfig struct {
-	ApiToken                 string `yaml:"api_token"`
-	PhoneNumberID            string `yaml:"phone_number_id"`
-	VerificationTemplateName string `yaml:"verification_template_name"`
+	ApiToken                     string `yaml:"api_token"`
+	PhoneNumberID                string `yaml:"phone_number_id"`
+	VerificationTemplateName     string `yaml:"verification_template_name"`
+	VerificationTemplateLang     string `yaml:"verification_template_lang"`
+	VerificationTemplateCategory string `yaml:"verification_template_category"`
 }
 type Config struct {
 	LogLevel    logger.LogLevel
@@ -54,11 +56,15 @@ func InitConfig() Config {
 	conf.WhatsApp.ApiToken = os.Getenv(ENV_WHATSAPP_TOKEN)
 	conf.WhatsApp.PhoneNumberID = os.Getenv(ENV_WHATSAPP_PHONE_NUMBER_ID)
 	conf.WhatsApp.VerificationTemplateName = os.Getenv(ENV_WHATSAPP_VERIFICATION_TEMPLATE_NAME)
-	if conf.WhatsApp.ApiToken == "" || conf.WhatsApp.PhoneNumberID == "" || conf.WhatsApp.VerificationTemplateName == "" {
+	conf.WhatsApp.VerificationTemplateLang = os.Getenv(ENV_WHATSAPP_VERIFICATION_TEMPLATE_LANG)
+	conf.WhatsApp.VerificationTemplateCategory = os.Getenv(ENV_WHATSAPP_VERIFICATION_TEMPLATE_CATEGORY)
+	if conf.WhatsApp.ApiToken == "" || conf.WhatsApp.PhoneNumberID == "" || conf.WhatsApp.VerificationTemplateName == "" || conf.WhatsApp.VerificationTemplateLang == "" || conf.WhatsApp.VerificationTemplateCategory == "" {
 		logger.Error.Fatal("WhatsApp configuration is not complete. Please set the environment variables: " +
 			ENV_WHATSAPP_TOKEN + ", " +
 			ENV_WHATSAPP_PHONE_NUMBER_ID + ", " +
-			ENV_WHATSAPP_VERIFICATION_TEMPLATE_NAME)
+			ENV_WHATSAPP_VERIFICATION_TEMPLATE_NAME + ", " +
+			ENV_WHATSAPP_VERIFICATION_TEMPLATE_LANG + ", " +
+			ENV_WHATSAPP_VERIFICATION_TEMPLATE_CATEGORY)
 	}
 
 	conf.LogLevel = getLogLevel()

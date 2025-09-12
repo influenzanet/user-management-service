@@ -42,7 +42,6 @@ func (s *userManagementServer) SendVerificationCode(ctx context.Context, req *ap
 		req.InstanceId = "default"
 	}
 
-
 	req.Email = utils.SanitizeEmail(req.Email)
 	user, err := s.userDBservice.GetUserByAccountID(req.InstanceId, req.Email)
 	if err != nil {
@@ -260,18 +259,16 @@ func (s *userManagementServer) LoginWithEmail(ctx context.Context, req *api.Logi
 		}
 	}
 
-	var username string
+	// proceed to token generation; participant role selection handled later when building token
+
+	// Build roles and username
 	currentRoles := user.Roles
 	if req.AsParticipant {
 		currentRoles = []string{constants.USER_ROLE_PARTICIPANT}
-	} else {
-		if len(user.Roles) > 1 || len(user.Roles) == 1 && user.Roles[0] != constants.USER_ROLE_PARTICIPANT {
-			username = user.Account.AccountID
-		}
 	}
+	username := user.Account.AccountID
 
 	apiUser := user.ToAPI()
-
 	mainProfileID, otherProfileIDs := utils.GetMainAndOtherProfiles(user)
 
 	// Access Token
@@ -297,20 +294,19 @@ func (s *userManagementServer) LoginWithEmail(ctx context.Context, req *api.Logi
 		logger.Error.Printf("LoginWithEmail: unexpected error during refresh token generation -> %v", err)
 		return nil, status.Error(codes.Internal, "token generation error")
 	}
-	err = s.userDBservice.CreateRenewToken(req.InstanceId, user.ID.Hex(), rt, time.Now().Unix()+userdb.RENEW_TOKEN_DEFAULT_LIFETIME)
-	if err != nil {
+	if err := s.userDBservice.CreateRenewToken(req.InstanceId, user.ID.Hex(), rt, time.Now().Unix()+userdb.RENEW_TOKEN_DEFAULT_LIFETIME); err != nil {
 		logger.Error.Printf("LoginWithEmail: unexpected error during refresh token creation -> %v", err)
 		return nil, status.Error(codes.Internal, "token generation error")
 	}
 
+	// Update user login timestamps and cleanup
 	user.Timestamps.LastLogin = time.Now().Unix()
 	user.Timestamps.MarkedForDeletion = 0
 	user.Account.VerificationCode = models.VerificationCode{}
 	user.Account.FailedLoginAttempts = utils.RemoveAttemptsOlderThan(user.Account.FailedLoginAttempts, 3600)
 	user.Account.PasswordResetTriggers = utils.RemoveAttemptsOlderThan(user.Account.PasswordResetTriggers, 7200)
 
-	user, err = s.userDBservice.UpdateUser(req.InstanceId, user)
-	if err != nil {
+	if _, err := s.userDBservice.UpdateUser(req.InstanceId, user); err != nil {
 		logger.Error.Printf("LoginWithEmail: unexpected error when saving user -> %v", err)
 		return nil, status.Error(codes.Internal, "user couldn't be updated")
 	}
@@ -334,7 +330,6 @@ func (s *userManagementServer) LoginWithEmail(ctx context.Context, req *api.Logi
 		User: user.ToAPI(),
 	}
 	return response, nil
-
 }
 
 func (s *userManagementServer) LoginWithExternalIDP(ctx context.Context, req *api.LoginWithExternalIDPMsg) (*api.LoginResponse, error) {
@@ -696,51 +691,77 @@ func (s *userManagementServer) ResendContactVerification(ctx context.Context, re
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	ci, found := user.FindContactInfoByTypeAndAddr("email", req.Address)
-	if !found {
-		return nil, status.Error(codes.InvalidArgument, "address not found")
-	}
-
-	if ci.ConfirmationLinkSentAt > time.Now().Unix()-contactVerificationMessageCooldown {
-		return nil, status.Error(codes.InvalidArgument, "cannot send verification so often")
-	}
-
-	// TempToken for contact verification:
-	tempTokenInfos := models.TempToken{
-		UserID:     req.Token.Id,
-		InstanceID: req.Token.InstanceId,
-		Purpose:    constants.TOKEN_PURPOSE_CONTACT_VERIFICATION,
-		Info: map[string]string{
-			"type":  models.ACCOUNT_TYPE_EMAIL,
-			"email": ci.Email,
-		},
-		Expiration: tokens.GetExpirationTime(s.Intervals.ContactVerificationTokenLifetime),
-	}
-	tempToken, err := s.globalDBService.AddTempToken(tempTokenInfos)
-	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
-	}
-
-	// ---> Trigger message sending
-	_, err = s.clients.MessagingService.SendInstantEmail(ctx, &messageAPI.SendEmailReq{
-		InstanceId:  req.Token.InstanceId,
-		To:          []string{req.Address},
-		MessageType: constants.EMAIL_TYPE_VERIFY_EMAIL,
-		ContentInfos: map[string]string{
-			"token": tempToken,
-		},
-		PreferredLanguage: user.Account.PreferredLanguage,
-	})
-	if err != nil {
-		logger.Error.Printf("ResendContactVerification: %s", err.Error())
-	}
-	// <---
-
-	// update last verification email sent time:
-	user.SetContactInfoVerificationSent("email", req.Address)
-	_, err = s.userDBservice.UpdateUser(req.Token.InstanceId, user)
-	if err != nil {
-		logger.Error.Printf("ResendContactVerification: %s", err.Error())
+	switch req.Type {
+	case "email":
+		ci, found := user.FindContactInfoByTypeAndAddr("email", req.Address)
+		if !found {
+			return nil, status.Error(codes.InvalidArgument, "address not found")
+		}
+		if ci.ConfirmationLinkSentAt > time.Now().Unix()-contactVerificationMessageCooldown {
+			return nil, status.Error(codes.InvalidArgument, "cannot send verification so often")
+		}
+		// TempToken for contact verification:
+		tempTokenInfos := models.TempToken{
+			UserID:     req.Token.Id,
+			InstanceID: req.Token.InstanceId,
+			Purpose:    constants.TOKEN_PURPOSE_CONTACT_VERIFICATION,
+			Info: map[string]string{
+				"type":  models.ACCOUNT_TYPE_EMAIL,
+				"email": ci.Email,
+			},
+			Expiration: tokens.GetExpirationTime(s.Intervals.ContactVerificationTokenLifetime),
+		}
+		tempToken, err := s.globalDBService.AddTempToken(tempTokenInfos)
+		if err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+		// Trigger email sending
+		_, err = s.clients.MessagingService.SendInstantEmail(ctx, &messageAPI.SendEmailReq{
+			InstanceId:  req.Token.InstanceId,
+			To:          []string{req.Address},
+			MessageType: constants.EMAIL_TYPE_VERIFY_EMAIL,
+			ContentInfos: map[string]string{
+				"token": tempToken,
+			},
+			PreferredLanguage: user.Account.PreferredLanguage,
+		})
+		if err != nil {
+			logger.Error.Printf("ResendContactVerification: %s", err.Error())
+		}
+		// update last verification sent time
+		user.SetContactInfoVerificationSent("email", req.Address)
+		_, err = s.userDBservice.UpdateUser(req.Token.InstanceId, user)
+		if err != nil {
+			logger.Error.Printf("ResendContactVerification: %s", err.Error())
+		}
+	case "phone":
+		ci, found := user.FindContactInfoByTypeAndAddr("phone", req.Address)
+		if !found {
+			return nil, status.Error(codes.InvalidArgument, "address not found")
+		}
+		if ci.ConfirmationLinkSentAt > time.Now().Unix()-contactVerificationMessageCooldown {
+			return nil, status.Error(codes.InvalidArgument, "cannot send verification so often")
+		}
+		// Generate and store new WhatsApp verification code
+		vc := utils.GenerateVerificationCode()
+		user.Account.VerificationCode = models.VerificationCode{
+			Code:      vc,
+			Attempts:  0,
+			CreatedAt: time.Now().Unix(),
+			ExpiresAt: time.Now().Unix() + s.Intervals.VerificationCodeLifetime,
+		}
+		user.SetContactInfoVerificationSent("phone", req.Address)
+		if _, err := s.userDBservice.UpdateUser(req.Token.InstanceId, user); err != nil {
+			logger.Error.Printf("ResendContactVerification: %s", err.Error())
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+		// Send via WhatsApp client
+		if err := s.whatsAppClient.SendVerificationCode(req.Address, vc, s.whatsAppConfig.VerificationTemplateLang); err != nil {
+			logger.Error.Printf("ResendContactVerification (phone): %s", err.Error())
+			return nil, status.Error(codes.Internal, "failed to send verification code")
+		}
+	default:
+		return nil, status.Error(codes.InvalidArgument, "unsupported contact type")
 	}
 
 	return &api.ServiceStatus{

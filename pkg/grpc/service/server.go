@@ -7,6 +7,7 @@ import (
 	"os/signal"
 
 	"github.com/coneno/logger"
+	"github.com/influenzanet/user-management-service/internal/config"
 	"github.com/influenzanet/user-management-service/pkg/api"
 	"github.com/influenzanet/user-management-service/pkg/dbs/globaldb"
 	"github.com/influenzanet/user-management-service/pkg/dbs/userdb"
@@ -32,6 +33,7 @@ type userManagementServer struct {
 	weekdayStrategy   utils.WeekDayStrategy
 	instanceIDs       []string
 	whatsAppClient    *clients.WhatsAppClient
+	whatsAppConfig    config.WhatsAppConfig
 }
 
 // NewUserManagementServer creates a new service instance
@@ -44,6 +46,7 @@ func NewUserManagementServer(
 	weekdayStrategy utils.WeekDayStrategy,
 	instanceIDs []string,
 	whatsAppClient *clients.WhatsAppClient,
+	whatsAppConfig config.WhatsAppConfig,
 ) api.UserManagementApiServer {
 	return &userManagementServer{
 		clients:           clients,
@@ -53,7 +56,8 @@ func NewUserManagementServer(
 		newUserCountLimit: newUserCountLimit,
 		weekdayStrategy:   weekdayStrategy,
 		instanceIDs:       instanceIDs,
-		whatsAppClient:    clients.WhatsApp,
+		whatsAppClient:    whatsAppClient,
+		whatsAppConfig:    whatsAppConfig,
 	}
 }
 
@@ -67,6 +71,7 @@ func RunServer(ctx context.Context, port string,
 	weekdayStrategy utils.WeekDayStrategy,
 	instanceIDs []string,
 	whatsAppClient *clients.WhatsAppClient,
+	whatsAppConfig config.WhatsAppConfig,
 ) error {
 	lis, err := net.Listen("tcp", ":"+port)
 	if err != nil {
@@ -84,6 +89,7 @@ func RunServer(ctx context.Context, port string,
 		weekdayStrategy,
 		instanceIDs,
 		whatsAppClient,
+		whatsAppConfig,
 	))
 
 	// graceful shutdown

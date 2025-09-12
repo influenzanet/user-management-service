@@ -516,7 +516,17 @@ func (s *userManagementServer) AddPhoneNumber(ctx context.Context, req *api.Phon
 		}
 	}
 
+	// Add phone and set verification code on account before persisting
 	user.AddNewPhone(phone, false)
+	vc := utils.GenerateVerificationCode()
+	user.Account.VerificationCode = models.VerificationCode{
+		Code:      vc,
+		Attempts:  0,
+		CreatedAt: time.Now().Unix(),
+		ExpiresAt: time.Now().Unix() + s.Intervals.VerificationCodeLifetime,
+	}
+	// mark cooldown timestamp for this phone
+	user.SetContactInfoVerificationSent("phone", phone)
 
 	updUser, err := s.userDBservice.UpdateUser(req.Token.InstanceId, user)
 	if err != nil {
@@ -524,10 +534,9 @@ func (s *userManagementServer) AddPhoneNumber(ctx context.Context, req *api.Phon
 	}
 
 	// Send WhatsApp verification code
-	vc := utils.GenerateVerificationCode()
-	err = s.whatsAppClient.SendVerificationCode(phone, vc, user.Account.PreferredLanguage)
-	if err != nil {
+	if err := s.whatsAppClient.SendVerificationCode(phone, vc, s.whatsAppConfig.VerificationTemplateLang); err != nil {
 		logger.Error.Printf("AddPhoneNumber: %s", err.Error())
+		// keep state (code saved) but signal send failure
 		return nil, status.Error(codes.Internal, "failed to send verification code")
 	}
 	return updUser.ToAPI(), nil
@@ -577,18 +586,28 @@ func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.Pho
 		return nil, err
 	}
 
+	// Re-add phone and set verification code on account before persisting
 	user.AddNewPhone(phone, false)
-
 	vc := utils.GenerateVerificationCode()
-	err = s.whatsAppClient.SendVerificationCode(phone, vc, user.Account.PreferredLanguage)
-	if err != nil {
-		logger.Error.Printf("EditPhoneNumber: %s", err.Error())
-		return nil, status.Error(codes.Internal, "failed to send verification code")
+	user.Account.VerificationCode = models.VerificationCode{
+		Code:      vc,
+		Attempts:  0,
+		CreatedAt: time.Now().Unix(),
+		ExpiresAt: time.Now().Unix() + s.Intervals.VerificationCodeLifetime,
 	}
+	// mark cooldown timestamp for this phone
+	user.SetContactInfoVerificationSent("phone", phone)
 
+	// persist changes
 	updUser, err := s.userDBservice.UpdateUser(req.Token.InstanceId, user)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	// Send WhatsApp verification code
+	if err := s.whatsAppClient.SendVerificationCode(phone, vc, s.whatsAppConfig.VerificationTemplateLang); err != nil {
+		logger.Error.Printf("EditPhoneNumber: %s", err.Error())
+		return nil, status.Error(codes.Internal, "failed to send verification code")
 	}
 
 	return updUser.ToAPI(), nil
