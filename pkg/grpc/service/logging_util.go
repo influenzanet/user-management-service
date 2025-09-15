@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"time"
 
 	"github.com/coneno/logger"
 	loggingAPI "github.com/influenzanet/logging-service/pkg/api"
@@ -14,7 +15,10 @@ func (s *userManagementServer) SaveLogEvent(
 	eventName string,
 	msg string,
 ) {
-	_, err := s.clients.LoggingService.SaveLogEvent(context.TODO(), &loggingAPI.NewLogEvent{
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	_, err := s.clients.LoggingService.SaveLogEvent(ctx, &loggingAPI.NewLogEvent{
 		Origin:     "user-management",
 		InstanceId: instanceID,
 		UserId:     userID,

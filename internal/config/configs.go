@@ -1,7 +1,6 @@
 package config
 
 import (
-	"fmt"
 	"os"
 	"strconv"
 	"time"
@@ -123,7 +122,7 @@ func GetWeekDayStrategy() utils.WeekDayStrategy {
 	}
 
 	strategy := utils.CreateWeekdayWeightedStrategy(w)
-	fmt.Println("Weekday Strategy: ", strategy.String())
+	logger.Info.Printf("Weekday Strategy initialized: %s", strategy.String())
 	return strategy
 }
 
