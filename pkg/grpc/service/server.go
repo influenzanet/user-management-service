@@ -11,8 +11,8 @@ import (
 	"github.com/influenzanet/user-management-service/pkg/api"
 	"github.com/influenzanet/user-management-service/pkg/dbs/globaldb"
 	"github.com/influenzanet/user-management-service/pkg/dbs/userdb"
-	"github.com/influenzanet/user-management-service/pkg/grpc/clients"
 	itc "github.com/influenzanet/user-management-service/pkg/grpc/interceptors"
+	httpClients "github.com/influenzanet/user-management-service/pkg/http/clients"
 	"github.com/influenzanet/user-management-service/pkg/models"
 	"github.com/influenzanet/user-management-service/pkg/utils"
 	"google.golang.org/grpc"
@@ -32,7 +32,7 @@ type userManagementServer struct {
 	newUserCountLimit int64
 	weekdayStrategy   utils.WeekDayStrategy
 	instanceIDs       []string
-	whatsAppClient    *clients.WhatsAppClient
+	whatsAppClient    *httpClients.WhatsAppClient
 	whatsAppConfig    config.WhatsAppConfig
 }
 
@@ -45,7 +45,7 @@ func NewUserManagementServer(
 	newUserCountLimit int64,
 	weekdayStrategy utils.WeekDayStrategy,
 	instanceIDs []string,
-	whatsAppClient *clients.WhatsAppClient,
+	whatsAppClient *httpClients.WhatsAppClient,
 	whatsAppConfig config.WhatsAppConfig,
 ) api.UserManagementApiServer {
 	return &userManagementServer{
@@ -70,7 +70,7 @@ func RunServer(ctx context.Context, port string,
 	newUserCountLimit int64,
 	weekdayStrategy utils.WeekDayStrategy,
 	instanceIDs []string,
-	whatsAppClient *clients.WhatsAppClient,
+	whatsAppClient *httpClients.WhatsAppClient,
 	whatsAppConfig config.WhatsAppConfig,
 ) error {
 	lis, err := net.Listen("tcp", ":"+port)

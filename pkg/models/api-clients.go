@@ -4,7 +4,7 @@ import (
 	loggingAPI "github.com/influenzanet/logging-service/pkg/api"
 	messageAPI "github.com/influenzanet/messaging-service/pkg/api/messaging_service"
 	studyAPI "github.com/influenzanet/study-service/pkg/api"
-	"github.com/influenzanet/user-management-service/pkg/grpc/clients"
+	"github.com/influenzanet/user-management-service/pkg/http/clients"
 )
 
 // APIClients holds the service clients to the internal services

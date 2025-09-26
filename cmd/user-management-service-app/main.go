@@ -10,6 +10,7 @@ import (
 	"github.com/influenzanet/user-management-service/pkg/dbs/userdb"
 	gc "github.com/influenzanet/user-management-service/pkg/grpc/clients"
 	"github.com/influenzanet/user-management-service/pkg/grpc/service"
+	hc "github.com/influenzanet/user-management-service/pkg/http/clients"
 	"github.com/influenzanet/user-management-service/pkg/models"
 	"github.com/influenzanet/user-management-service/pkg/timer_event"
 )
@@ -87,7 +88,7 @@ func main() {
 		conf.NewUserCountLimit,
 		conf.WeekDayStrategy,
 		instanceIDs,
-		gc.NewWhatsAppClient(conf.WhatsApp.ApiToken, conf.WhatsApp.PhoneNumberID, conf.WhatsApp.VerificationTemplateName),
+		hc.NewWhatsAppClient(conf.WhatsApp.ApiToken, conf.WhatsApp.PhoneNumberID, conf.WhatsApp.VerificationTemplateName),
 		conf.WhatsApp,
 	); err != nil {
 		logger.Error.Fatal(err)
