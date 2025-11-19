@@ -545,6 +545,11 @@ func (dbService *UserDBService) CreateIndexForUser(instanceID string) error {
 
 // IsPhoneNumberTaken checks if a phone number is already in use
 func (dbService *UserDBService) IsPhoneNumberTaken(ctx context.Context, instanceID string, phoneNumbers []string) (bool, error) {
+	return dbService.IsPhoneNumberTakenExcludingUser(ctx, instanceID, phoneNumbers, "")
+}
+
+// IsPhoneNumberTakenExcludingUser checks if a phone number is taken by any user except the specified one
+func (dbService *UserDBService) IsPhoneNumberTakenExcludingUser(ctx context.Context, instanceID string, phoneNumbers []string, excludeUserID string) (bool, error) {
 	filter := bson.M{
 		"contactInfos": bson.M{
 			"$elemMatch": bson.M{
@@ -552,6 +557,14 @@ func (dbService *UserDBService) IsPhoneNumberTaken(ctx context.Context, instance
 				"phone": bson.M{"$in": phoneNumbers},
 			},
 		},
+	}
+
+	// Exclude specific user if provided
+	if excludeUserID != "" {
+		userObjID, err := primitive.ObjectIDFromHex(excludeUserID)
+		if err == nil {
+			filter["_id"] = bson.M{"$ne": userObjID}
+		}
 	}
 
 	count, err := dbService.collectionRefUsers(instanceID).CountDocuments(ctx, filter)

@@ -515,9 +515,9 @@ func (s *userManagementServer) AddPhoneNumber(ctx context.Context, req *api.Phon
 
 	// If user already has this phone but unverified, allow re-sending verification code
 	if existingPhoneInfo == nil {
-		// Phone doesn't belong to this user - check if it's taken by someone else
+		// Phone doesn't belong to this user - check if it's taken by someone else (excluding this user)
 		phoneSlice := []string{phone}
-		isTaken, err := s.userDBservice.IsPhoneNumberTaken(ctx, req.Token.InstanceId, phoneSlice)
+		isTaken, err := s.userDBservice.IsPhoneNumberTakenExcludingUser(ctx, req.Token.InstanceId, phoneSlice, req.Token.Id)
 		if err != nil {
 			return nil, status.Error(codes.Internal, err.Error())
 		} else if isTaken {
@@ -597,9 +597,9 @@ func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.Pho
 		// Same phone, already verified - no change needed
 		return nil, status.Error(codes.InvalidArgument, "phone number already verified")
 	} else {
-		// Different phone number - check if it's taken by someone else
+		// Different phone number - check if it's taken by someone else (excluding this user)
 		phoneSlice := []string{phone}
-		isTaken, err := s.userDBservice.IsPhoneNumberTaken(ctx, req.Token.InstanceId, phoneSlice)
+		isTaken, err := s.userDBservice.IsPhoneNumberTakenExcludingUser(ctx, req.Token.InstanceId, phoneSlice, req.Token.Id)
 		if err != nil {
 			return nil, status.Error(codes.Internal, err.Error())
 		} else if isTaken {
