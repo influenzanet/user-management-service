@@ -590,7 +590,7 @@ func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.Pho
 	}
 
 	// Debug log
-	logger.Debug.Printf("EditPhoneNumber: existing phone='%s', new phone='%s', confirmedAt=%d", 
+	logger.Debug.Printf("EditPhoneNumber: existing phone='%s', new phone='%s', confirmedAt=%d",
 		contactInfo.Phone, phone, contactInfo.ConfirmedAt)
 
 	// If trying to set the same phone number that's already unverified, allow re-sending code
