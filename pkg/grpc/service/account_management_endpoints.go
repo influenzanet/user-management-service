@@ -494,6 +494,8 @@ func (s *userManagementServer) AddPhoneNumber(ctx context.Context, req *api.Phon
 		return nil, status.Error(codes.InvalidArgument, "phone not valid")
 	}
 
+	logger.Warning.Printf("AddPhoneNumber: sanitized phone='%s' from original='%s'", phone, req.NewPhone)
+
 	user, err := s.userDBservice.GetUserByID(req.Token.InstanceId, req.Token.Id)
 	if err != nil {
 		return nil, status.Error(codes.Internal, "user not found")
@@ -508,19 +510,27 @@ func (s *userManagementServer) AddPhoneNumber(ctx context.Context, req *api.Phon
 		}
 	}
 
+	logger.Warning.Printf("AddPhoneNumber: existingPhoneInfo=%v", existingPhoneInfo != nil)
+	if existingPhoneInfo != nil {
+		logger.Warning.Printf("AddPhoneNumber: existing phone='%s', confirmedAt=%d", existingPhoneInfo.Phone, existingPhoneInfo.ConfirmedAt)
+	}
+
 	// If user already has this phone and it's verified, can't add again
 	if existingPhoneInfo != nil && existingPhoneInfo.ConfirmedAt > 0 {
+		logger.Warning.Printf("AddPhoneNumber: phone already verified")
 		return nil, status.Error(codes.InvalidArgument, "phone number already verified")
 	}
 
 	// If user already has this phone but unverified, allow re-sending verification code
 	if existingPhoneInfo == nil {
 		// Phone doesn't belong to this user - check if it's taken by someone else (excluding this user)
+		logger.Warning.Printf("AddPhoneNumber: phone not found in user, checking if taken by others")
 		phoneSlice := []string{phone}
 		isTaken, err := s.userDBservice.IsPhoneNumberTakenExcludingUser(ctx, req.Token.InstanceId, phoneSlice, req.Token.Id)
 		if err != nil {
 			return nil, status.Error(codes.Internal, err.Error())
 		} else if isTaken {
+			logger.Warning.Printf("AddPhoneNumber: phone is taken by another user")
 			return nil, status.Error(codes.InvalidArgument, "phone number already taken")
 		}
 
@@ -561,7 +571,11 @@ func (s *userManagementServer) AddPhoneNumber(ctx context.Context, req *api.Phon
 }
 
 func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.PhoneMsg) (*api.User, error) {
+	logger.Warning.Printf("EditPhoneNumber: METHOD CALLED - req=%+v", req)
+
 	if req == nil || utils.IsTokenEmpty(req.Token) || req.NewPhone == "" {
+		logger.Warning.Printf("EditPhoneNumber: invalid request - req nil=%v, token empty=%v, newPhone empty=%v",
+			req == nil, req != nil && utils.IsTokenEmpty(req.Token), req != nil && req.NewPhone == "")
 		return nil, status.Error(codes.InvalidArgument, "missing argument")
 	}
 
