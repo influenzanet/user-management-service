@@ -541,14 +541,17 @@ func (s *userManagementServer) SignupWithEmail(ctx context.Context, req *api.Sig
 			isTaken, err := s.userDBservice.IsPhoneNumberTaken(ctx, req.InstanceId, phoneSlice)
 			if err != nil {
 				logger.Error.Printf("ERROR: signup method failed to check phone availability: %s", err.Error())
-			} else if !isTaken {
+				return nil, status.Error(codes.Internal, "failed to check phone availability")
+			} else if isTaken {
+				logger.Warning.Printf("Phone number %s already taken during signup", phone)
+				return nil, status.Error(codes.AlreadyExists, "phone number already registered")
+			} else {
 				newUser.AddNewPhone(phone, false) // Add as unverified
 				logger.Debug.Printf("Added unverified phone %s for new user", phone)
-			} else {
-				logger.Warning.Printf("Phone number %s already taken during signup", phone)
 			}
 		} else {
 			logger.Warning.Printf("Invalid phone format during signup: %s", phone)
+			return nil, status.Error(codes.InvalidArgument, "phone not valid")
 		}
 	}
 

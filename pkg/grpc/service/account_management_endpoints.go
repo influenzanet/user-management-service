@@ -494,30 +494,48 @@ func (s *userManagementServer) AddPhoneNumber(ctx context.Context, req *api.Phon
 		return nil, status.Error(codes.InvalidArgument, "phone not valid")
 	}
 
-	phoneSlice := []string{phone}
-
-	// Check if phone number is already taken
-	isTaken, err := s.userDBservice.IsPhoneNumberTaken(ctx, req.Token.InstanceId, phoneSlice)
-	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
-	} else if isTaken {
-		return nil, status.Error(codes.InvalidArgument, "phone number already taken")
-	}
-
 	user, err := s.userDBservice.GetUserByID(req.Token.InstanceId, req.Token.Id)
 	if err != nil {
 		return nil, status.Error(codes.Internal, "user not found")
 	}
 
-	// Check if user has already a registered phone number
-	for _, ci := range user.ContactInfos {
-		if ci.Type == "phone" && ci.Phone != "" {
-			return nil, status.Error(codes.InvalidArgument, "user already has a phone number")
+	// Check if user already has this phone number
+	var existingPhoneInfo *models.ContactInfo
+	for i, ci := range user.ContactInfos {
+		if ci.Type == "phone" && ci.Phone == phone {
+			existingPhoneInfo = &user.ContactInfos[i]
+			break
 		}
 	}
 
-	// Add phone and set verification code on account before persisting
-	user.AddNewPhone(phone, false)
+	// If user already has this phone and it's verified, can't add again
+	if existingPhoneInfo != nil && existingPhoneInfo.ConfirmedAt > 0 {
+		return nil, status.Error(codes.InvalidArgument, "phone number already verified")
+	}
+
+	// If user already has this phone but unverified, allow re-sending verification code
+	if existingPhoneInfo == nil {
+		// Phone doesn't belong to this user - check if it's taken by someone else
+		phoneSlice := []string{phone}
+		isTaken, err := s.userDBservice.IsPhoneNumberTaken(ctx, req.Token.InstanceId, phoneSlice)
+		if err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
+		} else if isTaken {
+			return nil, status.Error(codes.InvalidArgument, "phone number already taken")
+		}
+
+		// Check if user already has a different phone number
+		for _, ci := range user.ContactInfos {
+			if ci.Type == "phone" && ci.Phone != "" && ci.Phone != phone {
+				return nil, status.Error(codes.InvalidArgument, "user already has a phone number")
+			}
+		}
+
+		// Add new phone number
+		user.AddNewPhone(phone, false)
+	}
+
+	// Set verification code on account before persisting
 	vc := utils.GenerateVerificationCode()
 	user.Account.VerificationCode = models.VerificationCode{
 		Code:      vc,
