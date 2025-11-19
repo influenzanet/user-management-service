@@ -570,16 +570,6 @@ func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.Pho
 		return nil, status.Error(codes.InvalidArgument, "phone not valid")
 	}
 
-	phoneSlice := []string{phone}
-
-	// Check if phone number is already taken
-	isTaken, err := s.userDBservice.IsPhoneNumberTaken(ctx, req.Token.InstanceId, phoneSlice)
-	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
-	} else if isTaken {
-		return nil, status.Error(codes.InvalidArgument, "phone number already taken")
-	}
-
 	user, err := s.userDBservice.GetUserByID(req.Token.InstanceId, req.Token.Id)
 	if err != nil {
 		return nil, status.Error(codes.Internal, "user not found")
@@ -597,6 +587,24 @@ func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.Pho
 
 	if contactInfo == nil {
 		return nil, status.Error(codes.InvalidArgument, "user has no phone number to edit")
+	}
+
+	// If trying to set the same phone number that's already unverified, allow re-sending code
+	if contactInfo.Phone == phone && contactInfo.ConfirmedAt == 0 {
+		// Same phone, not verified - just re-send verification code without checking if taken
+		// (it's taken by this user, which is fine)
+	} else if contactInfo.Phone == phone && contactInfo.ConfirmedAt > 0 {
+		// Same phone, already verified - no change needed
+		return nil, status.Error(codes.InvalidArgument, "phone number already verified")
+	} else {
+		// Different phone number - check if it's taken by someone else
+		phoneSlice := []string{phone}
+		isTaken, err := s.userDBservice.IsPhoneNumberTaken(ctx, req.Token.InstanceId, phoneSlice)
+		if err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
+		} else if isTaken {
+			return nil, status.Error(codes.InvalidArgument, "phone number already taken")
+		}
 	}
 
 	err = user.RemoveContactInfo(contactInfo.ID.Hex())
