@@ -590,20 +590,21 @@ func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.Pho
 	}
 
 	// Debug log
-	logger.Debug.Printf("EditPhoneNumber: existing phone='%s', new phone='%s', confirmedAt=%d",
+	logger.Warning.Printf("EditPhoneNumber: existing phone='%s', new phone='%s', confirmedAt=%d",
 		contactInfo.Phone, phone, contactInfo.ConfirmedAt)
 
 	// If trying to set the same phone number that's already unverified, allow re-sending code
 	if contactInfo.Phone == phone && contactInfo.ConfirmedAt == 0 {
 		// Same phone, not verified - just re-send verification code without checking if taken
 		// (it's taken by this user, which is fine)
-		logger.Debug.Printf("EditPhoneNumber: re-sending code for same unverified phone")
+		logger.Warning.Printf("EditPhoneNumber: re-sending code for same unverified phone")
 	} else if contactInfo.Phone == phone && contactInfo.ConfirmedAt > 0 {
 		// Same phone, already verified - no change needed
+		logger.Warning.Printf("EditPhoneNumber: phone already verified")
 		return nil, status.Error(codes.InvalidArgument, "phone number already verified")
 	} else {
 		// Different phone number - check if it's taken by someone else (excluding this user)
-		logger.Debug.Printf("EditPhoneNumber: checking if new phone is taken by others")
+		logger.Warning.Printf("EditPhoneNumber: checking if new phone is taken by others")
 		phoneSlice := []string{phone}
 		isTaken, err := s.userDBservice.IsPhoneNumberTakenExcludingUser(ctx, req.Token.InstanceId, phoneSlice, req.Token.Id)
 		if err != nil {
