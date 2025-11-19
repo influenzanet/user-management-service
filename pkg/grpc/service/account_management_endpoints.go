@@ -570,6 +570,8 @@ func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.Pho
 		return nil, status.Error(codes.InvalidArgument, "phone not valid")
 	}
 
+	logger.Warning.Printf("EditPhoneNumber: sanitized phone='%s' from original='%s'", phone, req.NewPhone)
+
 	user, err := s.userDBservice.GetUserByID(req.Token.InstanceId, req.Token.Id)
 	if err != nil {
 		return nil, status.Error(codes.Internal, "user not found")

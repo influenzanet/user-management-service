@@ -564,7 +564,12 @@ func (dbService *UserDBService) IsPhoneNumberTakenExcludingUser(ctx context.Cont
 		userObjID, err := primitive.ObjectIDFromHex(excludeUserID)
 		if err == nil {
 			filter["_id"] = bson.M{"$ne": userObjID}
+			logger.Warning.Printf("IsPhoneNumberTakenExcludingUser: checking phone %v excluding user %s", phoneNumbers, excludeUserID)
+		} else {
+			logger.Warning.Printf("IsPhoneNumberTakenExcludingUser: invalid excludeUserID %s: %v", excludeUserID, err)
 		}
+	} else {
+		logger.Warning.Printf("IsPhoneNumberTakenExcludingUser: checking phone %v (no exclusion)", phoneNumbers)
 	}
 
 	count, err := dbService.collectionRefUsers(instanceID).CountDocuments(ctx, filter)
@@ -572,6 +577,7 @@ func (dbService *UserDBService) IsPhoneNumberTakenExcludingUser(ctx context.Cont
 		return false, err
 	}
 
+	logger.Warning.Printf("IsPhoneNumberTakenExcludingUser: found %d users with phone", count)
 	return count > 0, nil
 }
 
