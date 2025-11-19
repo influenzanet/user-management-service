@@ -578,9 +578,9 @@ func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.Pho
 	var contactInfo *models.ContactInfo = nil
 
 	// Check if user has a registered phone number
-	for _, ci := range user.ContactInfos {
-		if ci.Type == "phone" {
-			contactInfo = &ci
+	for i := range user.ContactInfos {
+		if user.ContactInfos[i].Type == "phone" {
+			contactInfo = &user.ContactInfos[i]
 			break
 		}
 	}
@@ -589,15 +589,21 @@ func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.Pho
 		return nil, status.Error(codes.InvalidArgument, "user has no phone number to edit")
 	}
 
+	// Debug log
+	logger.Debug.Printf("EditPhoneNumber: existing phone='%s', new phone='%s', confirmedAt=%d", 
+		contactInfo.Phone, phone, contactInfo.ConfirmedAt)
+
 	// If trying to set the same phone number that's already unverified, allow re-sending code
 	if contactInfo.Phone == phone && contactInfo.ConfirmedAt == 0 {
 		// Same phone, not verified - just re-send verification code without checking if taken
 		// (it's taken by this user, which is fine)
+		logger.Debug.Printf("EditPhoneNumber: re-sending code for same unverified phone")
 	} else if contactInfo.Phone == phone && contactInfo.ConfirmedAt > 0 {
 		// Same phone, already verified - no change needed
 		return nil, status.Error(codes.InvalidArgument, "phone number already verified")
 	} else {
 		// Different phone number - check if it's taken by someone else (excluding this user)
+		logger.Debug.Printf("EditPhoneNumber: checking if new phone is taken by others")
 		phoneSlice := []string{phone}
 		isTaken, err := s.userDBservice.IsPhoneNumberTakenExcludingUser(ctx, req.Token.InstanceId, phoneSlice, req.Token.Id)
 		if err != nil {
