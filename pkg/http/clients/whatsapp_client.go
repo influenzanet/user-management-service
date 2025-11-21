@@ -27,16 +27,34 @@ func NewWhatsAppClient(token, phoneID, templateName string) *WhatsAppClient {
 	}
 }
 
+func mapLanguageCode(lang string) string {
+
+	langMap := map[string]string{
+		"en": "en_US",
+		"it": "it",
+	}
+
+	// Return mapped code if exists, otherwise return original
+	if mapped, ok := langMap[lang]; ok {
+		return mapped
+	}
+	return lang
+}
+
 // SendVerificationCode sends a verification code using a pre-approved template
 func (c *WhatsAppClient) SendVerificationCode(toPhoneNumber, code, lang string) error {
 	apiURL := fmt.Sprintf("https://graph.facebook.com/v19.0/%s/messages", c.phoneNumberID)
+
+	// Map language codes to WhatsApp template language codes
+	// Default to the input lang if no mapping exists
+	whatsappLangCode := mapLanguageCode(lang)
 
 	// Base template structure
 	// Builds the base template
 	template := map[string]interface{}{
 		"name": c.templateName,
 		"language": map[string]string{
-			"code": lang,
+			"code": whatsappLangCode,
 		},
 	}
 
