@@ -811,8 +811,12 @@ func (s *userManagementServer) ResendContactVerification(ctx context.Context, re
 			logger.Error.Printf("ResendContactVerification: %s", err.Error())
 			return nil, status.Error(codes.Internal, err.Error())
 		}
-		// Send via WhatsApp client
-		if err := s.whatsAppClient.SendVerificationCode(req.Address, vc, s.whatsAppConfig.VerificationTemplateLang); err != nil {
+		// Send via WhatsApp client using user's preferred language
+		lang := user.Account.PreferredLanguage
+		if lang == "" {
+			lang = s.whatsAppConfig.VerificationTemplateLang // fallback to default if not set
+		}
+		if err := s.whatsAppClient.SendVerificationCode(req.Address, vc, lang); err != nil {
 			logger.Error.Printf("ResendContactVerification (phone): %s", err.Error())
 			return nil, status.Error(codes.Internal, "failed to send verification code")
 		}
