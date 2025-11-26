@@ -194,3 +194,72 @@ func (c *WhatsAppClient) SendTextMessage(toPhoneNumber, message string) error {
 
 	return nil
 }
+
+// SendTemplateMessage sends a message using a specific WhatsApp template
+func (c *WhatsAppClient) SendTemplateMessage(toPhoneNumber, templateName, lang string, params map[string]string) error {
+	apiURL := fmt.Sprintf("https://graph.facebook.com/v19.0/%s/messages", c.phoneNumberID)
+
+	// Build template structure
+	template := map[string]interface{}{
+		"name": templateName,
+		"language": map[string]string{
+			"code": lang,
+		},
+	}
+
+	// Add parameters if provided
+	if len(params) > 0 {
+		var bodyParams []map[string]string
+		for _, value := range params {
+			bodyParams = append(bodyParams, map[string]string{
+				"type": "text",
+				"text": value,
+			})
+		}
+
+		template["components"] = []map[string]interface{}{
+			{
+				"type":       "body",
+				"parameters": bodyParams,
+			},
+		}
+	}
+
+	payload := map[string]interface{}{
+		"messaging_product": "whatsapp",
+		"to":                toPhoneNumber,
+		"type":              "template",
+		"template":          template,
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(body))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+c.apiToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	logger.Info.Printf("WhatsApp SendTemplateMessage -> to:%s template:%s lang:%s", toPhoneNumber, templateName, lang)
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 300 {
+		var respObj map[string]any
+		_ = json.NewDecoder(resp.Body).Decode(&respObj)
+		logger.Error.Printf("WhatsApp SendTemplateMessage failed status=%d resp=%v", resp.StatusCode, respObj)
+		logger.Error.Printf("WhatsApp Request payload was: %s", string(body))
+		return fmt.Errorf("failed to send template message, status code: %d", resp.StatusCode)
+	}
+	logger.Info.Println("WhatsApp SendTemplateMessage: delivered to API")
+
+	return nil
+}

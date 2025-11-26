@@ -12,11 +12,14 @@ import (
 
 // Config is the structure that holds all global configuration data
 type WhatsAppConfig struct {
-	ApiToken                     string `yaml:"api_token"`
-	PhoneNumberID                string `yaml:"phone_number_id"`
-	VerificationTemplateName     string `yaml:"verification_template_name"`
-	VerificationTemplateLang     string `yaml:"verification_template_lang"`
-	VerificationTemplateCategory string `yaml:"verification_template_category"`
+	ApiToken                       string `yaml:"api_token"`
+	PhoneNumberID                  string `yaml:"phone_number_id"`
+	VerificationTemplateName       string `yaml:"verification_template_name"`
+	VerificationTemplateLang       string `yaml:"verification_template_lang"`
+	VerificationTemplateCategory   string `yaml:"verification_template_category"`
+	WeeklyReminderTemplateName     string `yaml:"weekly_reminder_template_name"`
+	WeeklyReminderTemplateLang     string `yaml:"weekly_reminder_template_lang"`
+	WeeklyReminderTemplateCategory string `yaml:"weekly_reminder_template_category"`
 }
 type Config struct {
 	LogLevel    logger.LogLevel
@@ -57,6 +60,10 @@ func InitConfig() Config {
 	conf.WhatsApp.VerificationTemplateName = os.Getenv(ENV_WHATSAPP_VERIFICATION_TEMPLATE_NAME)
 	conf.WhatsApp.VerificationTemplateLang = os.Getenv(ENV_WHATSAPP_VERIFICATION_TEMPLATE_LANG)
 	conf.WhatsApp.VerificationTemplateCategory = os.Getenv(ENV_WHATSAPP_VERIFICATION_TEMPLATE_CATEGORY)
+	conf.WhatsApp.WeeklyReminderTemplateName = os.Getenv(ENV_WHATSAPP_WEEKLY_REMINDER_TEMPLATE_NAME)
+	conf.WhatsApp.WeeklyReminderTemplateLang = os.Getenv(ENV_WHATSAPP_WEEKLY_REMINDER_TEMPLATE_LANG)
+	conf.WhatsApp.WeeklyReminderTemplateCategory = os.Getenv(ENV_WHATSAPP_WEEKLY_REMINDER_TEMPLATE_CATEGORY)
+
 	if conf.WhatsApp.ApiToken == "" || conf.WhatsApp.PhoneNumberID == "" || conf.WhatsApp.VerificationTemplateName == "" || conf.WhatsApp.VerificationTemplateLang == "" || conf.WhatsApp.VerificationTemplateCategory == "" {
 		logger.Error.Fatal("WhatsApp configuration is not complete. Please set the environment variables: " +
 			ENV_WHATSAPP_TOKEN + ", " +
@@ -64,6 +71,11 @@ func InitConfig() Config {
 			ENV_WHATSAPP_VERIFICATION_TEMPLATE_NAME + ", " +
 			ENV_WHATSAPP_VERIFICATION_TEMPLATE_LANG + ", " +
 			ENV_WHATSAPP_VERIFICATION_TEMPLATE_CATEGORY)
+	}
+
+	// Weekly reminder template is optional
+	if conf.WhatsApp.WeeklyReminderTemplateName != "" {
+		logger.Info.Printf("WhatsApp weekly reminder template configured: %s (%s)", conf.WhatsApp.WeeklyReminderTemplateName, conf.WhatsApp.WeeklyReminderTemplateLang)
 	}
 
 	conf.LogLevel = getLogLevel()

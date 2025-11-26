@@ -283,18 +283,44 @@ func (s *userManagementServer) SendMessage(ctx context.Context, req *api.SendMes
 		return nil, status.Error(codes.InvalidArgument, "missing arguments")
 	}
 
-	// Map message_type to WhatsApp template and populate with content_params
-	// In production, read templates from DB
+	// Determine which template to use based on message type
+	var templateName, templateLang string
+	switch req.MessageType {
+	case "weekly_reminder":
+		templateName = s.whatsAppConfig.WeeklyReminderTemplateName
+		templateLang = s.whatsAppConfig.WeeklyReminderTemplateLang
+		if templateName == "" {
+			logger.Warning.Printf("weekly_reminder template not configured, falling back to text message")
+			// Fallback to text message
+			messageBody := "Promemoria settimanale: compila il questionario su orbyta.influenzanet.info"
+			err := s.whatsAppClient.SendTextMessage(req.ToPhoneNumber, messageBody)
+			if err != nil {
+				logger.Error.Printf("failed to send whatsapp message: %v", err)
+				return nil, status.Error(codes.Internal, "failed to send message")
+			}
+			return &api.ServiceStatus{Status: api.ServiceStatus_NORMAL, Msg: "message sent (text fallback)"}, nil
+		}
+	default:
+		// Unknown message type - send as text message
+		logger.Warning.Printf("Unknown message type '%s', sending as text message", req.MessageType)
+		messageBody := fmt.Sprintf("Message type '%s' with params: %v", req.MessageType, req.ContentParams)
+		err := s.whatsAppClient.SendTextMessage(req.ToPhoneNumber, messageBody)
+		if err != nil {
+			logger.Error.Printf("failed to send whatsapp message: %v", err)
+			return nil, status.Error(codes.Internal, "failed to send message")
+		}
+		return &api.ServiceStatus{Status: api.ServiceStatus_NORMAL, Msg: "message sent"}, nil
+	}
 
-	// In real case, use template:
-	// err := s.whatsAppClient.SendMessageTemplate(req.ToPhoneNumber, req.MessageType, req.Lang, req.ContentParams)
+	// Use req.Lang if provided, otherwise use default from config
+	if req.Lang != "" {
+		templateLang = req.Lang
+	}
 
-	// For now, send simple text message:
-	messageBody := fmt.Sprintf("Message type '%s' with params: %v", req.MessageType, req.ContentParams)
-	err := s.whatsAppClient.SendTextMessage(req.ToPhoneNumber, messageBody)
-
+	// Send using template
+	err := s.whatsAppClient.SendTemplateMessage(req.ToPhoneNumber, templateName, templateLang, req.ContentParams)
 	if err != nil {
-		logger.Error.Printf("failed to send whatsapp message: %v", err)
+		logger.Error.Printf("failed to send whatsapp template message: %v", err)
 		return nil, status.Error(codes.Internal, "failed to send message")
 	}
 
