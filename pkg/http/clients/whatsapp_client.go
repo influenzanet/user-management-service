@@ -195,25 +195,31 @@ func (c *WhatsAppClient) SendTextMessage(toPhoneNumber, message string) error {
 	return nil
 }
 
-// SendTemplateMessage sends a message using a specific WhatsApp template
+// SendTemplateMessage sends a message using a specific WhatsApp template with named parameters.
+// Named parameters (parameter_name) are required by Meta Cloud API v19.0+ for templates
+// that use named variable syntax (e.g. {{study_key}}) instead of positional ({{1}}, {{2}}).
 func (c *WhatsAppClient) SendTemplateMessage(toPhoneNumber, templateName, lang string, params map[string]string) error {
 	apiURL := fmt.Sprintf("https://graph.facebook.com/v19.0/%s/messages", c.phoneNumberID)
+
+	whatsappLangCode := mapLanguageCode(lang)
 
 	// Build template structure
 	template := map[string]interface{}{
 		"name": templateName,
 		"language": map[string]string{
-			"code": lang,
+			"code": whatsappLangCode,
 		},
 	}
 
-	// Add parameters if provided
+	// Add named parameters if provided. Each param carries both "parameter_name" (for named
+	// template variables) and "text" (the runtime value).
 	if len(params) > 0 {
-		var bodyParams []map[string]string
-		for _, value := range params {
-			bodyParams = append(bodyParams, map[string]string{
-				"type": "text",
-				"text": value,
+		var bodyParams []map[string]interface{}
+		for key, value := range params {
+			bodyParams = append(bodyParams, map[string]interface{}{
+				"type":           "text",
+				"text":           value,
+				"parameter_name": key,
 			})
 		}
 
