@@ -29,13 +29,18 @@ func (u User) ToAPI() *api.User {
 	for i, c := range u.ContactInfos {
 		contactInfos[i] = c.ToAPI()
 	}
+	prefs := u.ContactPreferences.ToAPI()
+	// PreferredChannels is stored on Account.NotificationChannels in MongoDB
+	// and must be forwarded here so that StreamUsers consumers (e.g. bulk_messages)
+	// can read the user's channel preferences without an extra RPC call.
+	prefs.PreferredChannels = u.Account.NotificationChannels
 	return &api.User{
 		Id:                 u.ID.Hex(),
 		Account:            u.Account.ToAPI(),
 		Roles:              u.Roles,
 		Timestamps:         u.Timestamps.ToAPI(),
 		Profiles:           profiles,
-		ContactPreferences: u.ContactPreferences.ToAPI(),
+		ContactPreferences: prefs,
 		ContactInfos:       contactInfos,
 	}
 }
