@@ -31,7 +31,7 @@ func NewWhatsAppClient(token, phoneID, templateName string) *WhatsAppClient {
 func mapLanguageCode(lang string) string {
 
 	langMap := map[string]string{
-		"en": "en_US",
+		"en": "en",
 		"it": "it",
 	}
 
