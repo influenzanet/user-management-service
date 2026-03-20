@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/coneno/logger"
 )
@@ -211,23 +212,45 @@ func (c *WhatsAppClient) SendTemplateMessage(toPhoneNumber, templateName, lang s
 		},
 	}
 
-	// Add named parameters if provided. Each param carries both "parameter_name" (for named
-	// template variables) and "text" (the runtime value).
+	// Add parameters if provided. Parameters whose key starts with "button_<index>"
+	// are sent as button URL components; all others are sent as body components.
 	if len(params) > 0 {
 		var bodyParams []map[string]interface{}
+		var components []map[string]interface{}
+
 		for key, value := range params {
-			bodyParams = append(bodyParams, map[string]interface{}{
-				"type":           "text",
-				"text":           value,
-				"parameter_name": key,
+			if strings.HasPrefix(key, "button_") {
+				// Extract button index from key, e.g. "button_0" → index "0"
+				btnIndex := strings.TrimPrefix(key, "button_")
+				components = append(components, map[string]interface{}{
+					"type":     "button",
+					"sub_type": "url",
+					"index":    btnIndex,
+					"parameters": []map[string]interface{}{
+						{
+							"type": "text",
+							"text": value,
+						},
+					},
+				})
+			} else {
+				bodyParams = append(bodyParams, map[string]interface{}{
+					"type":           "text",
+					"text":           value,
+					"parameter_name": key,
+				})
+			}
+		}
+
+		if len(bodyParams) > 0 {
+			components = append(components, map[string]interface{}{
+				"type":       "body",
+				"parameters": bodyParams,
 			})
 		}
 
-		template["components"] = []map[string]interface{}{
-			{
-				"type":       "body",
-				"parameters": bodyParams,
-			},
+		if len(components) > 0 {
+			template["components"] = components
 		}
 	}
 
