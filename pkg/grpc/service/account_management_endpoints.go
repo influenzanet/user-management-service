@@ -13,6 +13,7 @@ import (
 	"github.com/influenzanet/user-management-service/pkg/api"
 	"github.com/influenzanet/user-management-service/pkg/models"
 	"github.com/influenzanet/user-management-service/pkg/pwhash"
+	"go.mongodb.org/mongo-driver/mongo"
 	"github.com/influenzanet/user-management-service/pkg/tokens"
 	"github.com/influenzanet/user-management-service/pkg/utils"
 	"google.golang.org/grpc/codes"
@@ -687,12 +688,24 @@ func (s *userManagementServer) VerifyWhatsAppCode(ctx context.Context, req *api.
 		return nil, status.Error(codes.InvalidArgument, "missing argument")
 	}
 
-	user, err := s.userDBservice.GetUserByID(req.Token.InstanceId, req.Token.Id)
+	// Atomically increment attempts via $inc with a filter that caps at max.
+	// This prevents race conditions: concurrent requests each get a distinct counter value.
+	user, err := s.userDBservice.IncrementVerificationCodeAttempts(
+		req.Token.InstanceId, req.Token.Id, s.Intervals.MaxVerificationAttempts,
+	)
+	if err == mongo.ErrNoDocuments {
+		// Limit reached — remove phone number
+		user, _ = s.userDBservice.GetUserByID(req.Token.InstanceId, req.Token.Id)
+		user.RemovePhone()
+		if _, updErr := s.userDBservice.UpdateUser(req.Token.InstanceId, user); updErr != nil {
+			logger.Error.Printf("VerifyWhatsAppCode: failed to remove phone: %v", updErr)
+		}
+		return nil, status.Error(codes.PermissionDenied, "too many attempts, phone number removed")
+	}
 	if err != nil {
 		return nil, status.Error(codes.Internal, "user not found")
 	}
 
-	// Verify code
 	vc := user.Account.VerificationCode
 
 	// Check if code expired
@@ -700,26 +713,8 @@ func (s *userManagementServer) VerifyWhatsAppCode(ctx context.Context, req *api.
 		return nil, status.Error(codes.PermissionDenied, "verification code expired")
 	}
 
-	// Increment attempts
-	vc.Attempts++
-	if vc.Attempts > int64(s.Intervals.MaxVerificationAttempts) {
-		// Too many attempts, remove phone number
-		user.RemovePhone()
-		_, err = s.userDBservice.UpdateUser(req.Token.InstanceId, user)
-		if err != nil {
-			logger.Error.Printf("VerifyWhatsAppCode: failed to remove phone: %v", err)
-		}
-		return nil, status.Error(codes.PermissionDenied, "too many attempts, phone number removed")
-	}
-
 	// Check if code is correct
 	if req.Code != vc.Code {
-		// Wrong code, update attempts
-		user.Account.VerificationCode = vc
-		_, err = s.userDBservice.UpdateUser(req.Token.InstanceId, user)
-		if err != nil {
-			logger.Error.Printf("VerifyWhatsAppCode: failed to update attempts: %v", err)
-		}
 		return nil, status.Error(codes.PermissionDenied, "invalid verification code")
 	}
 

@@ -620,3 +620,35 @@ func (dbService *UserDBService) DeletePhoneNumber(instanceID, userID string) (mo
 
 	return updatedUser, nil
 }
+
+// IncrementVerificationCodeAttempts atomically increments the verification code
+// attempt counter. The filter ensures the increment only happens if attempts < maxAttempts,
+// preventing race conditions between concurrent requests.
+// Returns mongo.ErrNoDocuments if the limit has been reached.
+func (dbService *UserDBService) IncrementVerificationCodeAttempts(instanceID, userID string, maxAttempts int) (models.User, error) {
+	ctx, cancel := dbService.getContext()
+	defer cancel()
+
+	userObjID, err := primitive.ObjectIDFromHex(userID)
+	if err != nil {
+		return models.User{}, err
+	}
+
+	filter := bson.M{
+		"_id": userObjID,
+		"account.verificationCode.attempts": bson.M{"$lt": maxAttempts},
+	}
+	update := bson.M{
+		"$inc": bson.M{"account.verificationCode.attempts": 1},
+	}
+
+	var updatedUser models.User
+	err = dbService.collectionRefUsers(instanceID).FindOneAndUpdate(
+		ctx,
+		filter,
+		update,
+		options.FindOneAndUpdate().SetReturnDocument(options.After),
+	).Decode(&updatedUser)
+
+	return updatedUser, err
+}
