@@ -594,10 +594,15 @@ func (dbService *UserDBService) DeletePhoneNumber(instanceID, userID string) (mo
 	filter := bson.M{"_id": userObjID}
 	update := bson.M{
 		"$pull": bson.M{
-			"contactInfos": bson.M{"type": "phone"},
+			"contactInfos":              bson.M{"type": "phone"},
+			"account.notificationChannels": "whatsapp",
 		},
 		"$set": bson.M{
-			"timestamps.updatedAt": time.Now().Unix(),
+			"timestamps.updatedAt":    time.Now().Unix(),
+			"account.verificationCode": bson.M{},
+		},
+		"$unset": bson.M{
+			"contactPreferences.whatsappNumber": "",
 		},
 	}
 
