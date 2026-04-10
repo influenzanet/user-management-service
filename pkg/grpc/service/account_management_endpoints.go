@@ -488,6 +488,9 @@ func (s *userManagementServer) AddPhoneNumber(ctx context.Context, req *api.Phon
 	if req == nil || utils.IsTokenEmpty(req.Token) || req.NewPhone == "" {
 		return nil, status.Error(codes.InvalidArgument, "missing argument")
 	}
+	if !s.whatsAppConfig.Enabled {
+		return nil, status.Error(codes.Unavailable, "WhatsApp is not configured")
+	}
 
 	phone := utils.SanitizePhone(req.NewPhone)
 	if !utils.CheckPhoneFormat(phone) {
@@ -577,6 +580,9 @@ func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.Pho
 		logger.Warning.Printf("EditPhoneNumber: invalid request - req nil=%v, token empty=%v, newPhone empty=%v",
 			req == nil, req != nil && utils.IsTokenEmpty(req.Token), req != nil && req.NewPhone == "")
 		return nil, status.Error(codes.InvalidArgument, "missing argument")
+	}
+	if !s.whatsAppConfig.Enabled {
+		return nil, status.Error(codes.Unavailable, "WhatsApp is not configured")
 	}
 
 	phone := utils.SanitizePhone(req.NewPhone)

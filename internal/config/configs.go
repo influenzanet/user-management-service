@@ -12,6 +12,7 @@ import (
 
 // Config is the structure that holds all global configuration data
 type WhatsAppConfig struct {
+	Enabled                        bool   // true when all required env vars are present
 	ApiToken                       string `yaml:"api_token"`
 	PhoneNumberID                  string `yaml:"phone_number_id"`
 	VerificationTemplateName       string `yaml:"verification_template_name"`
@@ -65,17 +66,16 @@ func InitConfig() Config {
 	conf.WhatsApp.WeeklyReminderTemplateCategory = os.Getenv(ENV_WHATSAPP_WEEKLY_REMINDER_TEMPLATE_CATEGORY)
 
 	if conf.WhatsApp.ApiToken == "" || conf.WhatsApp.PhoneNumberID == "" || conf.WhatsApp.VerificationTemplateName == "" || conf.WhatsApp.VerificationTemplateLang == "" || conf.WhatsApp.VerificationTemplateCategory == "" {
-		logger.Error.Fatal("WhatsApp configuration is not complete. Please set the environment variables: " +
-			ENV_WHATSAPP_TOKEN + ", " +
-			ENV_WHATSAPP_PHONE_NUMBER_ID + ", " +
-			ENV_WHATSAPP_VERIFICATION_TEMPLATE_NAME + ", " +
-			ENV_WHATSAPP_VERIFICATION_TEMPLATE_LANG + ", " +
+		logger.Warning.Printf("WhatsApp disabled: incomplete configuration. Missing env vars among: %s, %s, %s, %s, %s",
+			ENV_WHATSAPP_TOKEN, ENV_WHATSAPP_PHONE_NUMBER_ID,
+			ENV_WHATSAPP_VERIFICATION_TEMPLATE_NAME, ENV_WHATSAPP_VERIFICATION_TEMPLATE_LANG,
 			ENV_WHATSAPP_VERIFICATION_TEMPLATE_CATEGORY)
-	}
-
-	// Weekly reminder template is optional
-	if conf.WhatsApp.WeeklyReminderTemplateName != "" {
-		logger.Info.Printf("WhatsApp weekly reminder template configured: %s (%s)", conf.WhatsApp.WeeklyReminderTemplateName, conf.WhatsApp.WeeklyReminderTemplateLang)
+	} else {
+		conf.WhatsApp.Enabled = true
+		logger.Info.Println("WhatsApp enabled")
+		if conf.WhatsApp.WeeklyReminderTemplateName != "" {
+			logger.Info.Printf("WhatsApp weekly reminder template configured: %s (%s)", conf.WhatsApp.WeeklyReminderTemplateName, conf.WhatsApp.WeeklyReminderTemplateLang)
+		}
 	}
 
 	conf.LogLevel = getLogLevel()
