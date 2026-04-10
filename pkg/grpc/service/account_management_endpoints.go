@@ -565,7 +565,7 @@ func (s *userManagementServer) AddPhoneNumber(ctx context.Context, req *api.Phon
 	}
 
 	// Send WhatsApp verification code
-	if err := s.whatsAppClient.SendVerificationCode(phone, vc, s.whatsAppConfig.VerificationTemplateLang); err != nil {
+	if err := s.whatsAppClient.SendVerificationCode(ctx, phone, vc, s.whatsAppConfig.VerificationTemplateLang); err != nil {
 		logger.Error.Printf("AddPhoneNumber: %s", err.Error())
 		// keep state (code saved) but signal send failure
 		return nil, status.Error(codes.Internal, "failed to send verification code")
@@ -660,7 +660,7 @@ func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.Pho
 	}
 
 	// Send WhatsApp verification code
-	if err := s.whatsAppClient.SendVerificationCode(phone, vc, s.whatsAppConfig.VerificationTemplateLang); err != nil {
+	if err := s.whatsAppClient.SendVerificationCode(ctx, phone, vc, s.whatsAppConfig.VerificationTemplateLang); err != nil {
 		logger.Error.Printf("EditPhoneNumber: %s", err.Error())
 		return nil, status.Error(codes.Internal, "failed to send verification code")
 	}

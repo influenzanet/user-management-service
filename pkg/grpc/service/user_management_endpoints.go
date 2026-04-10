@@ -276,16 +276,18 @@ func (s *userManagementServer) GetUserContactPreferences(ctx context.Context, re
 	}, nil
 }
 
+// Deprecated: bulk WhatsApp delivery moved to messaging-service (direct HTTP).
+// Kept for backward compatibility; no new callers should use this RPC.
 func (s *userManagementServer) SendMessage(ctx context.Context, req *api.SendMessageRequest) (*api.ServiceStatus, error) {
+	logger.Warning.Println("SendMessage RPC called — this method is deprecated, bulk delivery should use messaging-service directly")
+
 	if req == nil || req.ToPhoneNumber == "" || req.MessageType == "" {
 		return nil, status.Error(codes.InvalidArgument, "missing arguments")
 	}
 
-	// MessageType carries the Meta template name directly (e.g. "influenzanet_weekly_v1").
-	// Lang carries the user's preferred language; mapLanguageCode is applied inside SendTemplateMessage.
-	err := s.whatsAppClient.SendTemplateMessage(req.ToPhoneNumber, req.MessageType, req.Lang, req.ContentParams)
+	err := s.whatsAppClient.SendTemplateMessage(ctx, req.ToPhoneNumber, req.MessageType, req.Lang, req.ContentParams)
 	if err != nil {
-		logger.Error.Printf("SendMessage: failed type=%s phone=%s: %v", req.MessageType, req.ToPhoneNumber, err)
+		logger.Error.Printf("SendMessage: failed type=%s: %v", req.MessageType, err)
 		return nil, status.Error(codes.Internal, "failed to send message")
 	}
 

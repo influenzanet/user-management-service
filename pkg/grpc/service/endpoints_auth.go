@@ -717,9 +717,10 @@ func (s *userManagementServer) VerifyContact(ctx context.Context, req *api.TempT
 					// Mark cooldown timestamp for this phone
 					user.SetContactInfoVerificationSent("phone", ci.Phone)
 
-					// Send WhatsApp verification code asynchronously
+					// Send WhatsApp verification code asynchronously.
+					// Use Background context because the gRPC handler ctx may be cancelled before the goroutine runs.
 					go func(phone string, code string, lang string) {
-						if err := s.whatsAppClient.SendVerificationCode(phone, code, lang); err != nil {
+						if err := s.whatsAppClient.SendVerificationCode(context.Background(), phone, code, lang); err != nil {
 							logger.Error.Printf("VerifyContact - Failed to send WhatsApp code to %s: %s", phone, err.Error())
 						} else {
 							logger.Info.Printf("WhatsApp verification code sent to %s after email verification", phone)
@@ -816,7 +817,7 @@ func (s *userManagementServer) ResendContactVerification(ctx context.Context, re
 		if lang == "" {
 			lang = s.whatsAppConfig.VerificationTemplateLang // fallback to default if not set
 		}
-		if err := s.whatsAppClient.SendVerificationCode(req.Address, vc, lang); err != nil {
+		if err := s.whatsAppClient.SendVerificationCode(ctx, req.Address, vc, lang); err != nil {
 			logger.Error.Printf("ResendContactVerification (phone): %s", err.Error())
 			return nil, status.Error(codes.Internal, "failed to send verification code")
 		}
