@@ -50,7 +50,8 @@ func maskPhone(phone string) string {
 	return phone[:3] + "***" + phone[len(phone)-4:]
 }
 
-// SendVerificationCode sends a verification code using a pre-approved template
+// SendVerificationCode sends a verification code using a pre-approved template.
+// Always sends with parameters — Meta ignores extra params for templates without variables.
 func (c *WhatsAppClient) SendVerificationCode(ctx context.Context, toPhoneNumber, code, lang string) error {
 	apiURL := fmt.Sprintf("https://graph.facebook.com/v19.0/%s/messages", c.phoneNumberID)
 
@@ -61,9 +62,24 @@ func (c *WhatsAppClient) SendVerificationCode(ctx context.Context, toPhoneNumber
 		"language": map[string]string{
 			"code": whatsappLangCode,
 		},
+		"components": []map[string]interface{}{
+			{
+				"type": "body",
+				"parameters": []map[string]string{
+					{"type": "text", "text": code},
+				},
+			},
+			{
+				"type":     "button",
+				"sub_type": "url",
+				"index":    "0",
+				"parameters": []map[string]string{
+					{"type": "text", "text": code},
+				},
+			},
+		},
 	}
 
-	// Try first without parameters for simple templates
 	payload := map[string]interface{}{
 		"messaging_product": "whatsapp",
 		"to":                toPhoneNumber,
@@ -84,58 +100,8 @@ func (c *WhatsAppClient) SendVerificationCode(ctx context.Context, toPhoneNumber
 	req.Header.Set("Authorization", "Bearer "+c.apiToken)
 	req.Header.Set("Content-Type", "application/json")
 
-	logger.Info.Printf("WhatsApp SendVerificationCode -> to:%s lang:%s template:%s (trying without parameters)", maskPhone(toPhoneNumber), lang, c.templateName)
+	logger.Info.Printf("WhatsApp SendVerificationCode -> to:%s lang:%s template:%s", maskPhone(toPhoneNumber), lang, c.templateName)
 	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	resp.Body.Close()
-
-	if resp.StatusCode < 300 {
-		logger.Info.Println("WhatsApp SendVerificationCode: delivered to API (no parameters)")
-		return nil
-	}
-
-	// If it fails, try with parameters
-	template["components"] = []map[string]interface{}{
-		{
-			"type": "body",
-			"parameters": []map[string]string{
-				{"type": "text", "text": code},
-			},
-		},
-		{
-			"type":     "button",
-			"sub_type": "url",
-			"index":    "0",
-			"parameters": []map[string]string{
-				{"type": "text", "text": code},
-			},
-		},
-	}
-
-	payload = map[string]interface{}{
-		"messaging_product": "whatsapp",
-		"to":                toPhoneNumber,
-		"type":              "template",
-		"template":          template,
-	}
-
-	body, err = json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-
-	req, err = http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewBuffer(body))
-	if err != nil {
-		return err
-	}
-
-	req.Header.Set("Authorization", "Bearer "+c.apiToken)
-	req.Header.Set("Content-Type", "application/json")
-
-	logger.Info.Printf("WhatsApp SendVerificationCode -> to:%s lang:%s template:%s (with parameters)", maskPhone(toPhoneNumber), lang, c.templateName)
-	resp, err = c.httpClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -147,7 +113,7 @@ func (c *WhatsAppClient) SendVerificationCode(ctx context.Context, toPhoneNumber
 		logger.Error.Printf("WhatsApp SendVerificationCode failed status=%d resp=%v", resp.StatusCode, respObj)
 		return fmt.Errorf("failed to send message, status code: %d", resp.StatusCode)
 	}
-	logger.Info.Println("WhatsApp SendVerificationCode: delivered to API (with parameters)")
+	logger.Info.Println("WhatsApp SendVerificationCode: delivered to API")
 
 	return nil
 }
