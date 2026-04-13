@@ -258,3 +258,24 @@ func TestCheckRoleInToken(t *testing.T) {
 		}
 	})
 }
+
+func TestMaskPhone(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"+391234567890", "+39***7890"},
+		{"+1555", "***"},
+		{"", "***"},
+		{"+44207", "***"},
+		{"+447911123456", "+44***3456"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := MaskPhone(tt.input)
+			if got != tt.expected {
+				t.Errorf("MaskPhone(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}

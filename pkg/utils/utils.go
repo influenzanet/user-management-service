@@ -119,6 +119,14 @@ func CheckPhoneFormat(phone string) bool {
 	return phoneRule.MatchString(phone)
 }
 
+// MaskPhone returns a masked phone number for logging (e.g. "+39***7890").
+func MaskPhone(phone string) string {
+	if len(phone) <= 6 {
+		return "***"
+	}
+	return phone[:3] + "***" + phone[len(phone)-4:]
+}
+
 func GenerateVerificationCode() string {
 	// Generate a cryptographically secure random 6-digit verification code
 	buffer := make([]byte, 6)

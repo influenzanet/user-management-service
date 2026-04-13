@@ -543,14 +543,14 @@ func (s *userManagementServer) SignupWithEmail(ctx context.Context, req *api.Sig
 				logger.Error.Printf("ERROR: signup method failed to check phone availability: %s", err.Error())
 				return nil, status.Error(codes.Internal, "failed to check phone availability")
 			} else if isTaken {
-				logger.Warning.Printf("Phone number %s already taken during signup", phone)
+				logger.Warning.Printf("Phone number %s already taken during signup", utils.MaskPhone(phone))
 				return nil, status.Error(codes.AlreadyExists, "phone number already registered")
 			} else {
 				newUser.AddNewPhone(phone, false) // Add as unverified
-				logger.Debug.Printf("Added unverified phone %s for new user", phone)
+				logger.Debug.Printf("Added unverified phone %s for new user", utils.MaskPhone(phone))
 			}
 		} else {
-			logger.Warning.Printf("Invalid phone format during signup: %s", phone)
+			logger.Warning.Printf("Invalid phone format during signup: %s", utils.MaskPhone(phone))
 			return nil, status.Error(codes.InvalidArgument, "phone not valid")
 		}
 	}
@@ -721,9 +721,9 @@ func (s *userManagementServer) VerifyContact(ctx context.Context, req *api.TempT
 					// Use Background context because the gRPC handler ctx may be cancelled before the goroutine runs.
 					go func(phone string, code string, lang string) {
 						if err := s.whatsAppClient.SendVerificationCode(context.Background(), phone, code, lang); err != nil {
-							logger.Error.Printf("VerifyContact - Failed to send WhatsApp code to %s: %s", phone, err.Error())
+							logger.Error.Printf("VerifyContact - Failed to send WhatsApp code to %s: %s", utils.MaskPhone(phone), err.Error())
 						} else {
-							logger.Info.Printf("WhatsApp verification code sent to %s after email verification", phone)
+							logger.Info.Printf("WhatsApp verification code sent to %s after email verification", utils.MaskPhone(phone))
 						}
 					}(ci.Phone, vc, user.Account.PreferredLanguage)
 					break // Only verify the first unverified phone

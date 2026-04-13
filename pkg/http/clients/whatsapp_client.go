@@ -43,7 +43,6 @@ func mapLanguageCode(lang string) string {
 	return lang
 }
 
-// maskPhone returns a masked phone number for logging (e.g. "+39***7890").
 func maskPhone(phone string) string {
 	if len(phone) <= 6 {
 		return "***"

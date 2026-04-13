@@ -498,7 +498,7 @@ func (s *userManagementServer) AddPhoneNumber(ctx context.Context, req *api.Phon
 		return nil, status.Error(codes.InvalidArgument, "phone not valid")
 	}
 
-	logger.Warning.Printf("AddPhoneNumber: sanitized phone='%s' from original='%s'", phone, req.NewPhone)
+	logger.Debug.Printf("AddPhoneNumber: phone=%s", utils.MaskPhone(phone))
 
 	user, err := s.userDBservice.GetUserByID(req.Token.InstanceId, req.Token.Id)
 	if err != nil {
@@ -514,27 +514,19 @@ func (s *userManagementServer) AddPhoneNumber(ctx context.Context, req *api.Phon
 		}
 	}
 
-	logger.Warning.Printf("AddPhoneNumber: existingPhoneInfo=%v", existingPhoneInfo != nil)
-	if existingPhoneInfo != nil {
-		logger.Warning.Printf("AddPhoneNumber: existing phone='%s', confirmedAt=%d", existingPhoneInfo.Phone, existingPhoneInfo.ConfirmedAt)
-	}
-
 	// If user already has this phone and it's verified, can't add again
 	if existingPhoneInfo != nil && existingPhoneInfo.ConfirmedAt > 0 {
-		logger.Warning.Printf("AddPhoneNumber: phone already verified")
 		return nil, status.Error(codes.InvalidArgument, "phone number already verified")
 	}
 
 	// If user already has this phone but unverified, allow re-sending verification code
 	if existingPhoneInfo == nil {
 		// Phone doesn't belong to this user - check if it's taken by someone else (excluding this user)
-		logger.Warning.Printf("AddPhoneNumber: phone not found in user, checking if taken by others")
 		phoneSlice := []string{phone}
 		isTaken, err := s.userDBservice.IsPhoneNumberTakenExcludingUser(ctx, req.Token.InstanceId, phoneSlice, req.Token.Id)
 		if err != nil {
 			return nil, status.Error(codes.Internal, err.Error())
 		} else if isTaken {
-			logger.Warning.Printf("AddPhoneNumber: phone is taken by another user")
 			return nil, status.Error(codes.InvalidArgument, "phone number already taken")
 		}
 
@@ -575,11 +567,7 @@ func (s *userManagementServer) AddPhoneNumber(ctx context.Context, req *api.Phon
 }
 
 func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.PhoneMsg) (*api.User, error) {
-	logger.Warning.Printf("EditPhoneNumber: METHOD CALLED - req=%+v", req)
-
 	if req == nil || utils.IsTokenEmpty(req.Token) || req.NewPhone == "" {
-		logger.Warning.Printf("EditPhoneNumber: invalid request - req nil=%v, token empty=%v, newPhone empty=%v",
-			req == nil, req != nil && utils.IsTokenEmpty(req.Token), req != nil && req.NewPhone == "")
 		return nil, status.Error(codes.InvalidArgument, "missing argument")
 	}
 	if !s.whatsAppConfig.Enabled {
@@ -591,7 +579,7 @@ func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.Pho
 		return nil, status.Error(codes.InvalidArgument, "phone not valid")
 	}
 
-	logger.Warning.Printf("EditPhoneNumber: sanitized phone='%s' from original='%s'", phone, req.NewPhone)
+	logger.Debug.Printf("EditPhoneNumber: phone=%s", utils.MaskPhone(phone))
 
 	user, err := s.userDBservice.GetUserByID(req.Token.InstanceId, req.Token.Id)
 	if err != nil {
@@ -612,22 +600,13 @@ func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.Pho
 		return nil, status.Error(codes.InvalidArgument, "user has no phone number to edit")
 	}
 
-	// Debug log
-	logger.Warning.Printf("EditPhoneNumber: existing phone='%s', new phone='%s', confirmedAt=%d",
-		contactInfo.Phone, phone, contactInfo.ConfirmedAt)
-
 	// If trying to set the same phone number that's already unverified, allow re-sending code
 	if contactInfo.Phone == phone && contactInfo.ConfirmedAt == 0 {
-		// Same phone, not verified - just re-send verification code without checking if taken
-		// (it's taken by this user, which is fine)
-		logger.Warning.Printf("EditPhoneNumber: re-sending code for same unverified phone")
+		// Same phone, not verified - re-send verification code
 	} else if contactInfo.Phone == phone && contactInfo.ConfirmedAt > 0 {
-		// Same phone, already verified - no change needed
-		logger.Warning.Printf("EditPhoneNumber: phone already verified")
 		return nil, status.Error(codes.InvalidArgument, "phone number already verified")
 	} else {
-		// Different phone number - check if it's taken by someone else (excluding this user)
-		logger.Warning.Printf("EditPhoneNumber: checking if new phone is taken by others")
+		// Different phone number - check if it's taken by someone else
 		phoneSlice := []string{phone}
 		isTaken, err := s.userDBservice.IsPhoneNumberTakenExcludingUser(ctx, req.Token.InstanceId, phoneSlice, req.Token.Id)
 		if err != nil {
