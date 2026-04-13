@@ -602,7 +602,7 @@ func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.Pho
 
 	// If trying to set the same phone number that's already unverified, allow re-sending code
 	if contactInfo.Phone == phone && contactInfo.ConfirmedAt == 0 {
-		// Same phone, not verified - re-send verification code
+		// Same phone, not verified — keep ContactInfo, just regenerate code (G-8 fix)
 	} else if contactInfo.Phone == phone && contactInfo.ConfirmedAt > 0 {
 		return nil, status.Error(codes.InvalidArgument, "phone number already verified")
 	} else {
@@ -614,15 +614,14 @@ func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.Pho
 		} else if isTaken {
 			return nil, status.Error(codes.InvalidArgument, "phone number already taken")
 		}
+		// Only remove+re-add when the number actually changes
+		err = user.RemoveContactInfo(contactInfo.ID.Hex())
+		if err != nil {
+			return nil, err
+		}
+		user.AddNewPhone(phone, false)
 	}
 
-	err = user.RemoveContactInfo(contactInfo.ID.Hex())
-	if err != nil {
-		return nil, err
-	}
-
-	// Re-add phone and set phone verification code (separate from login 2FA — G-3 fix)
-	user.AddNewPhone(phone, false)
 	vc := utils.GenerateVerificationCode()
 	user.Account.PhoneVerificationCode = models.VerificationCode{
 		Code:      vc,
