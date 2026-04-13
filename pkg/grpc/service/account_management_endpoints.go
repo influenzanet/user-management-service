@@ -549,9 +549,9 @@ func (s *userManagementServer) AddPhoneNumber(ctx context.Context, req *api.Phon
 		user.AddNewPhone(phone, false)
 	}
 
-	// Set verification code on account before persisting
+	// Set phone verification code (separate from login 2FA code — G-3 fix)
 	vc := utils.GenerateVerificationCode()
-	user.Account.VerificationCode = models.VerificationCode{
+	user.Account.PhoneVerificationCode = models.VerificationCode{
 		Code:      vc,
 		Attempts:  0,
 		CreatedAt: time.Now().Unix(),
@@ -642,10 +642,10 @@ func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.Pho
 		return nil, err
 	}
 
-	// Re-add phone and set verification code on account before persisting
+	// Re-add phone and set phone verification code (separate from login 2FA — G-3 fix)
 	user.AddNewPhone(phone, false)
 	vc := utils.GenerateVerificationCode()
-	user.Account.VerificationCode = models.VerificationCode{
+	user.Account.PhoneVerificationCode = models.VerificationCode{
 		Code:      vc,
 		Attempts:  0,
 		CreatedAt: time.Now().Unix(),
@@ -706,7 +706,7 @@ func (s *userManagementServer) VerifyWhatsAppCode(ctx context.Context, req *api.
 		return nil, status.Error(codes.Internal, "user not found")
 	}
 
-	vc := user.Account.VerificationCode
+	vc := user.Account.PhoneVerificationCode
 
 	// Check if code expired
 	if time.Now().Unix() > vc.ExpiresAt {
@@ -742,7 +742,7 @@ func (s *userManagementServer) VerifyWhatsAppCode(ctx context.Context, req *api.
 	user.Account.NotificationChannels = channels
 
 	// Remove verification code
-	user.Account.VerificationCode = models.VerificationCode{}
+	user.Account.PhoneVerificationCode = models.VerificationCode{}
 
 	updatedUser, err := s.userDBservice.UpdateUser(req.Token.InstanceId, user)
 	if err != nil {

@@ -598,8 +598,8 @@ func (dbService *UserDBService) DeletePhoneNumber(instanceID, userID string) (mo
 			"account.notificationChannels": "whatsapp",
 		},
 		"$set": bson.M{
-			"timestamps.updatedAt":    time.Now().Unix(),
-			"account.verificationCode": bson.M{},
+			"timestamps.updatedAt":         time.Now().Unix(),
+			"account.phoneVerificationCode": bson.M{},
 		},
 		"$unset": bson.M{
 			"contactPreferences.whatsappNumber": "",
@@ -636,10 +636,10 @@ func (dbService *UserDBService) IncrementVerificationCodeAttempts(instanceID, us
 
 	filter := bson.M{
 		"_id": userObjID,
-		"account.verificationCode.attempts": bson.M{"$lt": maxAttempts},
+		"account.phoneVerificationCode.attempts": bson.M{"$lt": maxAttempts},
 	}
 	update := bson.M{
-		"$inc": bson.M{"account.verificationCode.attempts": 1},
+		"$inc": bson.M{"account.phoneVerificationCode.attempts": 1},
 	}
 
 	var updatedUser models.User

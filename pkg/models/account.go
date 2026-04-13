@@ -11,8 +11,9 @@ type Account struct {
 	AccountConfirmedAt int64            `bson:"accountConfirmedAt"`
 	Password           string           `bson:"password"`
 	AuthType           string           `bson:"authType"`
-	VerificationCode   VerificationCode `bson:"verificationCode"`
-	PreferredLanguage  string           `bson:"preferredLanguage"`
+	VerificationCode      VerificationCode `bson:"verificationCode"`      // Used by login 2FA and AutoValidateTempToken
+	PhoneVerificationCode VerificationCode `bson:"phoneVerificationCode"` // Used by phone/WhatsApp verification only
+	PreferredLanguage     string           `bson:"preferredLanguage"`
 
 	// Rate limiting
 	FailedLoginAttempts   []int64 `bson:"failedLoginAttempts"`

@@ -708,7 +708,7 @@ func (s *userManagementServer) VerifyContact(ctx context.Context, req *api.TempT
 				if ci.Type == "phone" && ci.ConfirmedAt == 0 {
 					// Start WhatsApp verification process
 					vc := utils.GenerateVerificationCode()
-					user.Account.VerificationCode = models.VerificationCode{
+					user.Account.PhoneVerificationCode = models.VerificationCode{
 						Code:      vc,
 						Attempts:  0,
 						CreatedAt: time.Now().Unix(),
@@ -799,9 +799,9 @@ func (s *userManagementServer) ResendContactVerification(ctx context.Context, re
 		if ci.ConfirmationLinkSentAt > time.Now().Unix()-contactVerificationMessageCooldown {
 			return nil, status.Error(codes.InvalidArgument, "cannot send verification so often")
 		}
-		// Generate and store new WhatsApp verification code
+		// Generate and store new phone verification code (separate from login 2FA — G-3 fix)
 		vc := utils.GenerateVerificationCode()
-		user.Account.VerificationCode = models.VerificationCode{
+		user.Account.PhoneVerificationCode = models.VerificationCode{
 			Code:      vc,
 			Attempts:  0,
 			CreatedAt: time.Now().Unix(),
