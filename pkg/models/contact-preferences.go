@@ -8,7 +8,6 @@ type ContactPreferences struct {
 	SendNewsletterTo              []string `bson:"sendNewsletterTo"`
 	SubscribedToWeekly            bool     `bson:"subscribedToWeekly"`
 	ReceiveWeeklyMessageDayOfWeek int32    `bson:"receiveWeeklyMessageDayOfWeek"`
-	WhatsappNumber                string   `bson:"whatsappNumber,omitempty"`
 }
 
 func ContactPreferencesFromAPI(obj *api.ContactPreferences) ContactPreferences {
@@ -21,7 +20,6 @@ func ContactPreferencesFromAPI(obj *api.ContactPreferences) ContactPreferences {
 		SendNewsletterTo:              obj.SendNewsletterTo,
 		SubscribedToWeekly:            obj.SubscribedToWeekly,
 		ReceiveWeeklyMessageDayOfWeek: obj.ReceiveWeeklyMessageDayOfWeek,
-		WhatsappNumber:                obj.WhatsappNumber,
 	}
 	return res
 }
@@ -33,6 +31,5 @@ func (obj ContactPreferences) ToAPI() *api.ContactPreferences {
 		SendNewsletterTo:              obj.SendNewsletterTo,
 		SubscribedToWeekly:            obj.SubscribedToWeekly,
 		ReceiveWeeklyMessageDayOfWeek: obj.ReceiveWeeklyMessageDayOfWeek,
-		WhatsappNumber:                obj.WhatsappNumber,
 	}
 }
