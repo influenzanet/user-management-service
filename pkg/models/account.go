@@ -16,8 +16,9 @@ type Account struct {
 	PreferredLanguage     string           `bson:"preferredLanguage"`
 
 	// Rate limiting
-	FailedLoginAttempts   []int64 `bson:"failedLoginAttempts"`
-	PasswordResetTriggers []int64 `bson:"passwordResetTriggers"`
+	FailedLoginAttempts       []int64 `bson:"failedLoginAttempts"`
+	PasswordResetTriggers     []int64 `bson:"passwordResetTriggers"`
+	PhoneVerificationAttempts []int64 `bson:"phoneVerificationAttempts"`
 	// Notification channels
 	NotificationChannels []string `bson:"notificationChannels" json:"notificationChannels"` // Esempio: ["email", "whatsapp"]
 }

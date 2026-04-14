@@ -126,6 +126,20 @@ func (dbService *UserDBService) SavePasswordResetTrigger(instanceID string, user
 	return nil
 }
 
+func (dbService *UserDBService) SavePhoneVerificationAttempt(instanceID string, userID string) error {
+	ctx, cancel := dbService.getContext()
+	defer cancel()
+
+	_id, _ := primitive.ObjectIDFromHex(userID)
+	filter := bson.M{"_id": _id}
+	update := bson.M{"$push": bson.M{"account.phoneVerificationAttempts": time.Now().Unix()}}
+	_, err := dbService.collectionRefUsers(instanceID).UpdateOne(ctx, filter, update)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func (dbService *UserDBService) UpdateAccountPreferredLang(instanceID string, userID string, lang string) (models.User, error) {
 	ctx, cancel := dbService.getContext()
 	defer cancel()

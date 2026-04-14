@@ -89,3 +89,32 @@ func TestPhoneVerificationCodeZeroValue(t *testing.T) {
 		t.Errorf("expected empty verification code on zero-value Account, got %q", account.VerificationCode.Code)
 	}
 }
+
+func TestPhoneVerificationAttemptsZeroValue(t *testing.T) {
+	account := Account{}
+
+	// Zero value: nil slice — HasMoreAttemptsRecently(nil, ...) returns false
+	if account.PhoneVerificationAttempts != nil {
+		t.Error("expected nil PhoneVerificationAttempts on zero-value Account")
+	}
+}
+
+func TestPhoneVerificationAttemptsNotExposedInAPI(t *testing.T) {
+	account := Account{
+		Type:                      "email-pw",
+		AccountID:                 "test@example.com",
+		PhoneVerificationAttempts: []int64{1000, 2000, 3000},
+	}
+
+	apiAccount := account.ToAPI()
+
+	// PhoneVerificationAttempts must not leak into the API response
+	if apiAccount.Type != "email-pw" {
+		t.Errorf("Type not mapped: got %q", apiAccount.Type)
+	}
+	if apiAccount.AccountId != "test@example.com" {
+		t.Errorf("AccountId not mapped: got %q", apiAccount.AccountId)
+	}
+	// api.User_Account has no PhoneVerificationAttempts field — this test
+	// ensures the mapping stays correct if ToAPI is modified in the future.
+}

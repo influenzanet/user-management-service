@@ -505,6 +505,10 @@ func (s *userManagementServer) AddPhoneNumber(ctx context.Context, req *api.Phon
 		return nil, status.Error(codes.Internal, "user not found")
 	}
 
+	if utils.HasMoreAttemptsRecently(user.Account.PhoneVerificationAttempts, allowedPhoneVerificationAttempts, phoneVerificationRateLimitWindow) {
+		return nil, status.Error(codes.ResourceExhausted, "too many phone verification attempts, try again later")
+	}
+
 	// Check if user already has this phone number
 	var existingPhoneInfo *models.ContactInfo
 	for i, ci := range user.ContactInfos {
@@ -560,8 +564,10 @@ func (s *userManagementServer) AddPhoneNumber(ctx context.Context, req *api.Phon
 	// Send WhatsApp verification code
 	if err := s.whatsAppClient.SendVerificationCode(ctx, phone, vc, s.whatsAppConfig.VerificationTemplateLang); err != nil {
 		logger.Error.Printf("AddPhoneNumber: %s", err.Error())
-		// keep state (code saved) but signal send failure
 		return nil, status.Error(codes.Internal, "failed to send verification code")
+	}
+	if err := s.userDBservice.SavePhoneVerificationAttempt(req.Token.InstanceId, req.Token.Id); err != nil {
+		logger.Error.Printf("AddPhoneNumber: failed to save rate limit timestamp: %v", err)
 	}
 	return updUser.ToAPI(), nil
 }
@@ -584,6 +590,10 @@ func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.Pho
 	user, err := s.userDBservice.GetUserByID(req.Token.InstanceId, req.Token.Id)
 	if err != nil {
 		return nil, status.Error(codes.Internal, "user not found")
+	}
+
+	if utils.HasMoreAttemptsRecently(user.Account.PhoneVerificationAttempts, allowedPhoneVerificationAttempts, phoneVerificationRateLimitWindow) {
+		return nil, status.Error(codes.ResourceExhausted, "too many phone verification attempts, try again later")
 	}
 
 	var contactInfo *models.ContactInfo = nil
@@ -642,6 +652,9 @@ func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.Pho
 	if err := s.whatsAppClient.SendVerificationCode(ctx, phone, vc, s.whatsAppConfig.VerificationTemplateLang); err != nil {
 		logger.Error.Printf("EditPhoneNumber: %s", err.Error())
 		return nil, status.Error(codes.Internal, "failed to send verification code")
+	}
+	if err := s.userDBservice.SavePhoneVerificationAttempt(req.Token.InstanceId, req.Token.Id); err != nil {
+		logger.Error.Printf("EditPhoneNumber: failed to save rate limit timestamp: %v", err)
 	}
 
 	return updUser.ToAPI(), nil
