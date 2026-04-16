@@ -30,10 +30,6 @@ func (u User) ToAPI() *api.User {
 		contactInfos[i] = c.ToAPI()
 	}
 	prefs := u.ContactPreferences.ToAPI()
-	// PreferredChannels is stored on Account.NotificationChannels in MongoDB
-	// and must be forwarded here so that StreamUsers consumers (e.g. bulk_messages)
-	// can read the user's channel preferences without an extra RPC call.
-	prefs.PreferredChannels = u.Account.NotificationChannels
 	return &api.User{
 		Id:                 u.ID.Hex(),
 		Account:            u.Account.ToAPI(),

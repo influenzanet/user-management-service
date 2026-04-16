@@ -603,11 +603,11 @@ func (dbService *UserDBService) DeletePhoneNumber(instanceID, userID string) (mo
 	filter := bson.M{"_id": userObjID}
 	update := bson.M{
 		"$pull": bson.M{
-			"contactInfos":              bson.M{"type": "phone"},
-			"account.notificationChannels": "whatsapp",
+			"contactInfos":                        bson.M{"type": "phone"},
+			"contactPreferences.preferredChannels": "whatsapp",
 		},
 		"$set": bson.M{
-			"timestamps.updatedAt":         time.Now().Unix(),
+			"timestamps.updatedAt":          time.Now().Unix(),
 			"account.phoneVerificationCode": bson.M{},
 		},
 		"$unset": bson.M{
@@ -625,6 +625,21 @@ func (dbService *UserDBService) DeletePhoneNumber(instanceID, userID string) (mo
 
 	if err != nil {
 		return models.User{}, err
+	}
+
+	// Ensure at least "email" channel after removing whatsapp
+	hasEmail := false
+	for _, ch := range updatedUser.ContactPreferences.PreferredChannels {
+		if ch == "email" {
+			hasEmail = true
+			break
+		}
+	}
+	if !hasEmail {
+		updatedUser.ContactPreferences.PreferredChannels = append(updatedUser.ContactPreferences.PreferredChannels, "email")
+		emailFilter := bson.M{"_id": userObjID}
+		emailUpdate := bson.M{"$addToSet": bson.M{"contactPreferences.preferredChannels": "email"}}
+		dbService.collectionRefUsers(instanceID).UpdateOne(ctx, emailFilter, emailUpdate)
 	}
 
 	return updatedUser, nil

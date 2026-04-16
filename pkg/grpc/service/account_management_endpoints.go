@@ -712,9 +712,9 @@ func (s *userManagementServer) VerifyWhatsAppCode(ctx context.Context, req *api.
 	// Code correct, mark phone as verified
 	user.MarkPhoneAsVerified()
 
-	// Enable WhatsApp as notification channel (C-1 fix).
+	// Enable WhatsApp as notification channel.
 	// Both "email" and "whatsapp" must be present to avoid disabling email delivery.
-	channels := user.Account.NotificationChannels
+	channels := user.ContactPreferences.PreferredChannels
 	hasEmail, hasWhatsapp := false, false
 	for _, ch := range channels {
 		if ch == "email" {
@@ -730,7 +730,7 @@ func (s *userManagementServer) VerifyWhatsAppCode(ctx context.Context, req *api.
 	if !hasWhatsapp {
 		channels = append(channels, "whatsapp")
 	}
-	user.Account.NotificationChannels = channels
+	user.ContactPreferences.PreferredChannels = channels
 
 	// Remove verification code
 	user.Account.PhoneVerificationCode = models.VerificationCode{}

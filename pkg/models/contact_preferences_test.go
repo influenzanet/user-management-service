@@ -66,6 +66,45 @@ func TestContactPreferencesToAPI_NoWhatsappNumber(t *testing.T) {
 	}
 }
 
+func TestContactPreferencesFromAPI_WithPreferredChannels(t *testing.T) {
+	input := &api.ContactPreferences{
+		SubscribedToNewsletter: true,
+		SubscribedToWeekly:     true,
+		PreferredChannels:      []string{"email", "whatsapp"},
+	}
+	result := ContactPreferencesFromAPI(input)
+
+	if len(result.PreferredChannels) != 2 {
+		t.Errorf("PreferredChannels: got %d items, want 2", len(result.PreferredChannels))
+	}
+	if result.PreferredChannels[0] != "email" || result.PreferredChannels[1] != "whatsapp" {
+		t.Errorf("PreferredChannels: got %v, want [email whatsapp]", result.PreferredChannels)
+	}
+}
+
+func TestContactPreferencesToAPI_WithPreferredChannels(t *testing.T) {
+	prefs := ContactPreferences{
+		SubscribedToNewsletter: true,
+		PreferredChannels:      []string{"whatsapp"},
+	}
+	result := prefs.ToAPI()
+
+	if len(result.PreferredChannels) != 1 || result.PreferredChannels[0] != "whatsapp" {
+		t.Errorf("PreferredChannels: got %v, want [whatsapp]", result.PreferredChannels)
+	}
+}
+
+func TestContactPreferencesFromAPI_EmptyChannels(t *testing.T) {
+	input := &api.ContactPreferences{
+		SubscribedToNewsletter: true,
+	}
+	result := ContactPreferencesFromAPI(input)
+
+	if result.PreferredChannels != nil {
+		t.Errorf("PreferredChannels: got %v, want nil", result.PreferredChannels)
+	}
+}
+
 func TestContactPreferencesZeroValue(t *testing.T) {
 	prefs := ContactPreferences{}
 	result := prefs.ToAPI()

@@ -272,7 +272,7 @@ func (s *userManagementServer) GetUserContactPreferences(ctx context.Context, re
 		UserId:            user.ID.Hex(),
 		Email:             email,
 		PhoneNumber:       phone,
-		PreferredChannels: user.Account.NotificationChannels,
+		PreferredChannels: user.ContactPreferences.PreferredChannels,
 	}, nil
 }
 
