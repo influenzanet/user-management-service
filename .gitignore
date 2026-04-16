@@ -10,3 +10,10 @@ benchmark.csv
 run-with-local.sh
 tools/migrate-refresh-tokens/.env
 .idea
+
+# Compiled binaries
+user-management-service-app
+key-generator
+create-admin-user
+weekday-assign
+__debug_bin*
