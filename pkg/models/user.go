@@ -91,7 +91,7 @@ func (u *User) AddNewEmail(addr string, confirmed bool) {
 func (u *User) AddNewPhone(number string, confirmed bool) {
 	contactInfo := ContactInfo{
 		ID:          primitive.NewObjectID(),
-		Type:        "phone",
+		Type:        ContactTypePhone,
 		ConfirmedAt: 0,
 		Phone:       number,
 	}
@@ -255,7 +255,7 @@ func (o Timestamps) ToAPI() *api.User_Timestamps {
 func (u *User) RemovePhone() {
 	for i := len(u.ContactInfos) - 1; i >= 0; i-- {
 		ci := u.ContactInfos[i]
-		if ci.Type == "phone" {
+		if ci.Type == ContactTypePhone {
 			u.ContactInfos = append(u.ContactInfos[:i], u.ContactInfos[i+1:]...)
 		}
 	}
@@ -264,7 +264,7 @@ func (u *User) RemovePhone() {
 // MarkPhoneAsVerified marks the user's phone number as verified
 func (u *User) MarkPhoneAsVerified() {
 	for i, ci := range u.ContactInfos {
-		if ci.Type == "phone" {
+		if ci.Type == ContactTypePhone {
 			u.ContactInfos[i].ConfirmedAt = time.Now().Unix()
 			return
 		}

@@ -512,7 +512,7 @@ func (s *userManagementServer) AddPhoneNumber(ctx context.Context, req *api.Phon
 	// Check if user already has this phone number
 	var existingPhoneInfo *models.ContactInfo
 	for i, ci := range user.ContactInfos {
-		if ci.Type == "phone" && ci.Phone == phone {
+		if ci.Type == models.ContactTypePhone && ci.Phone == phone {
 			existingPhoneInfo = &user.ContactInfos[i]
 			break
 		}
@@ -536,7 +536,7 @@ func (s *userManagementServer) AddPhoneNumber(ctx context.Context, req *api.Phon
 
 		// Check if user already has a different phone number
 		for _, ci := range user.ContactInfos {
-			if ci.Type == "phone" && ci.Phone != "" && ci.Phone != phone {
+			if ci.Type == models.ContactTypePhone && ci.Phone != "" && ci.Phone != phone {
 				return nil, status.Error(codes.InvalidArgument, "user already has a phone number")
 			}
 		}
@@ -554,7 +554,7 @@ func (s *userManagementServer) AddPhoneNumber(ctx context.Context, req *api.Phon
 		ExpiresAt: time.Now().Unix() + s.Intervals.VerificationCodeLifetime,
 	}
 	// mark cooldown timestamp for this phone
-	user.SetContactInfoVerificationSent("phone", phone)
+	user.SetContactInfoVerificationSent(models.ContactTypePhone, phone)
 
 	updUser, err := s.userDBservice.UpdateUser(req.Token.InstanceId, user)
 	if err != nil {
@@ -600,7 +600,7 @@ func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.Pho
 
 	// Check if user has a registered phone number
 	for i := range user.ContactInfos {
-		if user.ContactInfos[i].Type == "phone" {
+		if user.ContactInfos[i].Type == models.ContactTypePhone {
 			contactInfo = &user.ContactInfos[i]
 			break
 		}
@@ -640,7 +640,7 @@ func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.Pho
 		ExpiresAt: time.Now().Unix() + s.Intervals.VerificationCodeLifetime,
 	}
 	// mark cooldown timestamp for this phone
-	user.SetContactInfoVerificationSent("phone", phone)
+	user.SetContactInfoVerificationSent(models.ContactTypePhone, phone)
 
 	// persist changes
 	updUser, err := s.userDBservice.UpdateUser(req.Token.InstanceId, user)
@@ -717,18 +717,18 @@ func (s *userManagementServer) VerifyWhatsAppCode(ctx context.Context, req *api.
 	channels := user.ContactPreferences.PreferredChannels
 	hasEmail, hasWhatsapp := false, false
 	for _, ch := range channels {
-		if ch == "email" {
+		if ch == models.ChannelEmail {
 			hasEmail = true
 		}
-		if ch == "whatsapp" {
+		if ch == models.ChannelWhatsApp {
 			hasWhatsapp = true
 		}
 	}
 	if !hasEmail {
-		channels = append(channels, "email")
+		channels = append(channels, models.ChannelEmail)
 	}
 	if !hasWhatsapp {
-		channels = append(channels, "whatsapp")
+		channels = append(channels, models.ChannelWhatsApp)
 	}
 	user.ContactPreferences.PreferredChannels = channels
 

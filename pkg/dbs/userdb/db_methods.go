@@ -567,7 +567,7 @@ func (dbService *UserDBService) IsPhoneNumberTakenExcludingUser(ctx context.Cont
 	filter := bson.M{
 		"contactInfos": bson.M{
 			"$elemMatch": bson.M{
-				"type":  "phone",
+				"type":  models.ContactTypePhone,
 				"phone": bson.M{"$in": phoneNumbers},
 			},
 		},
@@ -603,8 +603,8 @@ func (dbService *UserDBService) DeletePhoneNumber(instanceID, userID string) (mo
 	filter := bson.M{"_id": userObjID}
 	update := bson.M{
 		"$pull": bson.M{
-			"contactInfos":                        bson.M{"type": "phone"},
-			"contactPreferences.preferredChannels": "whatsapp",
+			"contactInfos":                        bson.M{"type": models.ContactTypePhone},
+			"contactPreferences.preferredChannels": models.ChannelWhatsApp,
 		},
 		"$set": bson.M{
 			"timestamps.updatedAt":          time.Now().Unix(),
@@ -627,18 +627,18 @@ func (dbService *UserDBService) DeletePhoneNumber(instanceID, userID string) (mo
 		return models.User{}, err
 	}
 
-	// Ensure at least "email" channel after removing whatsapp
+	// Ensure at least email channel after removing whatsapp
 	hasEmail := false
 	for _, ch := range updatedUser.ContactPreferences.PreferredChannels {
-		if ch == "email" {
+		if ch == models.ChannelEmail {
 			hasEmail = true
 			break
 		}
 	}
 	if !hasEmail {
-		updatedUser.ContactPreferences.PreferredChannels = append(updatedUser.ContactPreferences.PreferredChannels, "email")
+		updatedUser.ContactPreferences.PreferredChannels = append(updatedUser.ContactPreferences.PreferredChannels, models.ChannelEmail)
 		emailFilter := bson.M{"_id": userObjID}
-		emailUpdate := bson.M{"$addToSet": bson.M{"contactPreferences.preferredChannels": "email"}}
+		emailUpdate := bson.M{"$addToSet": bson.M{"contactPreferences.preferredChannels": models.ChannelEmail}}
 		dbService.collectionRefUsers(instanceID).UpdateOne(ctx, emailFilter, emailUpdate)
 	}
 

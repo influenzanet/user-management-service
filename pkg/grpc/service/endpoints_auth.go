@@ -749,8 +749,8 @@ func (s *userManagementServer) ResendContactVerification(ctx context.Context, re
 	}
 
 	switch req.Type {
-	case "email":
-		ci, found := user.FindContactInfoByTypeAndAddr("email", req.Address)
+	case models.ContactTypeEmail:
+		ci, found := user.FindContactInfoByTypeAndAddr(models.ContactTypeEmail, req.Address)
 		if !found {
 			return nil, status.Error(codes.InvalidArgument, "address not found")
 		}
@@ -786,13 +786,13 @@ func (s *userManagementServer) ResendContactVerification(ctx context.Context, re
 			logger.Error.Printf("ResendContactVerification: %s", err.Error())
 		}
 		// update last verification sent time
-		user.SetContactInfoVerificationSent("email", req.Address)
+		user.SetContactInfoVerificationSent(models.ContactTypeEmail, req.Address)
 		_, err = s.userDBservice.UpdateUser(req.Token.InstanceId, user)
 		if err != nil {
 			logger.Error.Printf("ResendContactVerification: %s", err.Error())
 		}
-	case "phone":
-		ci, found := user.FindContactInfoByTypeAndAddr("phone", req.Address)
+	case models.ContactTypePhone:
+		ci, found := user.FindContactInfoByTypeAndAddr(models.ContactTypePhone, req.Address)
 		if !found {
 			return nil, status.Error(codes.InvalidArgument, "address not found")
 		}
@@ -807,7 +807,7 @@ func (s *userManagementServer) ResendContactVerification(ctx context.Context, re
 			CreatedAt: time.Now().Unix(),
 			ExpiresAt: time.Now().Unix() + s.Intervals.VerificationCodeLifetime,
 		}
-		user.SetContactInfoVerificationSent("phone", req.Address)
+		user.SetContactInfoVerificationSent(models.ContactTypePhone, req.Address)
 		if _, err := s.userDBservice.UpdateUser(req.Token.InstanceId, user); err != nil {
 			logger.Error.Printf("ResendContactVerification: %s", err.Error())
 			return nil, status.Error(codes.Internal, err.Error())
