@@ -546,7 +546,11 @@ func (s *userManagementServer) AddPhoneNumber(ctx context.Context, req *api.Phon
 	}
 
 	// Set phone verification code (separate from login 2FA code — G-3 fix)
-	vc := utils.GenerateVerificationCode()
+	vc, err := tokens.GenerateVerificationCode(6)
+	if err != nil {
+		logger.Error.Printf("AddPhoneNumber: failed to generate verification code: %v", err)
+		return nil, status.Error(codes.Internal, "error while generating verification code")
+	}
 	user.Account.PhoneVerificationCode = models.VerificationCode{
 		Code:      vc,
 		Attempts:  0,
@@ -632,7 +636,11 @@ func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.Pho
 		user.AddNewPhone(phone, false)
 	}
 
-	vc := utils.GenerateVerificationCode()
+	vc, err := tokens.GenerateVerificationCode(6)
+	if err != nil {
+		logger.Error.Printf("EditPhoneNumber: failed to generate verification code: %v", err)
+		return nil, status.Error(codes.Internal, "error while generating verification code")
+	}
 	user.Account.PhoneVerificationCode = models.VerificationCode{
 		Code:      vc,
 		Attempts:  0,

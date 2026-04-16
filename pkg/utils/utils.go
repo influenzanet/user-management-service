@@ -1,8 +1,6 @@
 package utils
 
 import (
-	"crypto/rand"
-	"fmt"
 	"net/mail"
 	"regexp"
 	"strings"
@@ -125,22 +123,4 @@ func MaskPhone(phone string) string {
 		return "***"
 	}
 	return phone[:3] + "***" + phone[len(phone)-4:]
-}
-
-func GenerateVerificationCode() string {
-	// Generate a cryptographically secure random 6-digit verification code
-	buffer := make([]byte, 6)
-	_, err := rand.Read(buffer)
-	if err != nil {
-		// Fallback in case of error (should not happen)
-		return "000000"
-	}
-
-	// Convert bytes to digits 0-9
-	code := ""
-	for i := 0; i < 6; i++ {
-		digit := int(buffer[i]) % 10
-		code += fmt.Sprintf("%d", digit)
-	}
-	return code
 }

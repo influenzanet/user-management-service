@@ -800,7 +800,11 @@ func (s *userManagementServer) ResendContactVerification(ctx context.Context, re
 			return nil, status.Error(codes.InvalidArgument, "cannot send verification so often")
 		}
 		// Generate and store new phone verification code (separate from login 2FA — G-3 fix)
-		vc := utils.GenerateVerificationCode()
+		vc, err := tokens.GenerateVerificationCode(6)
+		if err != nil {
+			logger.Error.Printf("ResendContactVerification: failed to generate verification code: %v", err)
+			return nil, status.Error(codes.Internal, "error while generating verification code")
+		}
 		user.Account.PhoneVerificationCode = models.VerificationCode{
 			Code:      vc,
 			Attempts:  0,
