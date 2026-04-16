@@ -12,15 +12,15 @@ import (
 
 // Config is the structure that holds all global configuration data
 type WhatsAppConfig struct {
-	Enabled                        bool   // true when all required env vars are present
-	ApiToken                       string `yaml:"api_token"`
-	PhoneNumberID                  string `yaml:"phone_number_id"`
-	VerificationTemplateName       string `yaml:"verification_template_name"`
-	VerificationTemplateLang       string `yaml:"verification_template_lang"`
-	VerificationTemplateCategory   string `yaml:"verification_template_category"`
-	WeeklyReminderTemplateName     string `yaml:"weekly_reminder_template_name"`
-	WeeklyReminderTemplateLang     string `yaml:"weekly_reminder_template_lang"`
-	WeeklyReminderTemplateCategory string `yaml:"weekly_reminder_template_category"`
+	Enabled                        bool
+	ApiToken                       string
+	PhoneNumberID                  string
+	VerificationTemplateName       string
+	VerificationTemplateLang       string
+	VerificationTemplateCategory   string
+	WeeklyReminderTemplateName     string
+	WeeklyReminderTemplateLang     string
+	WeeklyReminderTemplateCategory string
 }
 type Config struct {
 	LogLevel    logger.LogLevel
