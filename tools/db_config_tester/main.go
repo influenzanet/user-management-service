@@ -98,7 +98,7 @@ func benchmark() {
 	ctx := context.Background()
 	err := userDB.PerfomActionForUsers(ctx, INSTANCE_ID, userFilter, benchmarkCallback)
 	if err != nil {
-		logger.Error.Printf(err.Error())
+		logger.Error.Print(err.Error())
 	}
 	logger.Info.Printf("Finished running benchmark in %d seconds", time.Now().Unix()-start.Unix())
 

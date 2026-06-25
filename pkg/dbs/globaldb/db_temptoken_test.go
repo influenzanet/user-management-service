@@ -24,7 +24,7 @@ func TestDbInterfaceMethodsForTempToken(t *testing.T) {
 	t.Run("Add temporary token to DB", func(t *testing.T) {
 		ts, err := testDBService.AddTempToken(testTempToken)
 		if err != nil {
-			t.Errorf(err.Error())
+			t.Error(err.Error())
 			return
 		}
 		tokenStr = ts
@@ -33,7 +33,7 @@ func TestDbInterfaceMethodsForTempToken(t *testing.T) {
 		testTempToken2.Purpose = "test_purpose2"
 		_, err = testDBService.AddTempToken(testTempToken2)
 		if err != nil {
-			t.Errorf(err.Error())
+			t.Error(err.Error())
 			return
 		}
 	})

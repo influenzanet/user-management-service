@@ -95,7 +95,7 @@ func TestDbInterfaceMethods(t *testing.T) {
 	t.Run("Testing create user", func(t *testing.T) {
 		id, err := testDBService.AddUser(testInstanceID, testUser)
 		if err != nil {
-			t.Errorf(err.Error())
+			t.Error(err.Error())
 			return
 		}
 		if len(id) == 0 {
@@ -116,7 +116,7 @@ func TestDbInterfaceMethods(t *testing.T) {
 		}
 		u, e := testDBService.GetUserByAccountID(testInstanceID, testUser2.Account.AccountID)
 		if e != nil {
-			t.Errorf(e.Error())
+			t.Error(e.Error())
 			return
 		}
 		if len(u.Roles) > 0 && u.Roles[0] == "TEST2" {
@@ -127,7 +127,7 @@ func TestDbInterfaceMethods(t *testing.T) {
 	t.Run("Testing find existing user by id", func(t *testing.T) {
 		user, err := testDBService.GetUserByID(testInstanceID, testUser.ID.Hex())
 		if err != nil {
-			t.Errorf(err.Error())
+			t.Error(err.Error())
 			return
 		}
 		if user.Account.AccountID != testUser.Account.AccountID {
@@ -147,7 +147,7 @@ func TestDbInterfaceMethods(t *testing.T) {
 	t.Run("Testing find existing user by email", func(t *testing.T) {
 		user, err := testDBService.GetUserByAccountID(testInstanceID, testUser.Account.AccountID)
 		if err != nil {
-			t.Errorf(err.Error())
+			t.Error(err.Error())
 			return
 		}
 		if user.Account.AccountID != testUser.Account.AccountID {
@@ -168,7 +168,7 @@ func TestDbInterfaceMethods(t *testing.T) {
 		testUser.Account.AccountConfirmedAt = time.Now().Unix()
 		_, err := testDBService.UpdateUser(testInstanceID, testUser)
 		if err != nil {
-			t.Errorf(err.Error())
+			t.Error(err.Error())
 			return
 		}
 	})
@@ -206,7 +206,7 @@ func TestDbInterfaceMethods(t *testing.T) {
 	t.Run("Testing deleting existing user", func(t *testing.T) {
 		err := testDBService.DeleteUser(testInstanceID, testUser.ID.Hex())
 		if err != nil {
-			t.Errorf(err.Error())
+			t.Error(err.Error())
 			return
 		}
 	})

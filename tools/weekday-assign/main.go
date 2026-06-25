@@ -103,7 +103,7 @@ func main() {
 	fmt.Printf("Scanned users %d\n", count_scanned)
 
 	if err != nil {
-		logger.Error.Printf(err.Error())
+		logger.Error.Print(err.Error())
 	}
 
 	fmt.Println("        Sun | Mon | Tue | Wed | Thu | Fri | Sat")
