@@ -394,6 +394,31 @@ func TestLogin(t *testing.T) {
 		return
 	}
 
+	testUser3 := models.User{
+		Account: models.Account{
+			Type:               "email",
+			AccountID:          "test-login-researcher@test.com",
+			AccountConfirmedAt: time.Now().Unix(),
+			Password:           hashedPw,
+			PreferredLanguage:  "de",
+		},
+		Roles: []string{"RESEARCHER"},
+		Profiles: []models.Profile{
+			{ID: primitive.NewObjectID()},
+		},
+	}
+
+	id, err = testUserDBService.AddUser(testInstanceID, testUser3)
+	if err != nil {
+		t.Errorf("error creating user 3 for testing login")
+		return
+	}
+	testUser3.ID, err = primitive.ObjectIDFromHex(id)
+	if err != nil {
+		t.Errorf("error converting id")
+		return
+	}
+
 	t.Run("without payload", func(t *testing.T) {
 		resp, err := s.LoginWithEmail(context.Background(), nil)
 		st, ok := status.FromError(err)
@@ -488,6 +513,43 @@ func TestLogin(t *testing.T) {
 		if resp.Token.PreferredLanguage != "de" || resp.Token.SelectedProfileId != testUser1.Profiles[0].ID.Hex() {
 			t.Errorf("unexpected PreferredLanguage or AccountConfirmed: %s", resp)
 			return
+		}
+
+		claims, valid, err := tokens.ValidateToken(resp.Token.AccessToken)
+		if err != nil || !valid {
+			t.Errorf("unexpected error: %s", err)
+			return
+		}
+		if _, hasUsername := claims.Payload["username"]; hasUsername {
+			t.Error("participant access token should not contain a username claim")
+		}
+	})
+
+	t.Run("with non participant user", func(t *testing.T) {
+		mockLoggingClient.EXPECT().SaveLogEvent(
+			gomock.Any(),
+			gomock.Any(),
+		).Return(nil, nil)
+
+		req := &api.LoginWithEmailMsg{
+			Email:      testUser3.Account.AccountID,
+			Password:   currentPw,
+			InstanceId: testInstanceID,
+		}
+
+		resp, err := s.LoginWithEmail(context.Background(), req)
+		if err != nil {
+			t.Errorf("unexpected error: %s", err.Error())
+			return
+		}
+
+		claims, valid, err := tokens.ValidateToken(resp.Token.AccessToken)
+		if err != nil || !valid {
+			t.Errorf("unexpected error: %s", err)
+			return
+		}
+		if claims.Payload["username"] != testUser3.Account.AccountID {
+			t.Errorf("wrong username claim: %s", claims.Payload["username"])
 		}
 	})
 

@@ -259,16 +259,18 @@ func (s *userManagementServer) LoginWithEmail(ctx context.Context, req *api.Logi
 		}
 	}
 
-	// proceed to token generation; participant role selection handled later when building token
-
-	// Build roles and username
+	var username string
 	currentRoles := user.Roles
 	if req.AsParticipant {
 		currentRoles = []string{constants.USER_ROLE_PARTICIPANT}
+	} else {
+		if len(user.Roles) > 1 || len(user.Roles) == 1 && user.Roles[0] != constants.USER_ROLE_PARTICIPANT {
+			username = user.Account.AccountID
+		}
 	}
-	username := user.Account.AccountID
 
 	apiUser := user.ToAPI()
+
 	mainProfileID, otherProfileIDs := utils.GetMainAndOtherProfiles(user)
 
 	// Access Token
