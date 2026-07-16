@@ -349,13 +349,14 @@ func (s *userManagementServer) LoginWithExternalIDP(ctx context.Context, req *ap
 		// Create user DB object from request:
 		user = models.User{
 			Account: models.Account{
-				Type:                  models.ACCOUNT_TYPE_EXTERNAL,
-				AccountID:             req.Email,
-				AccountConfirmedAt:    time.Now().Unix(),
-				Password:              randomPW, // not used, just to not leave it empty
-				PreferredLanguage:     "",
-				FailedLoginAttempts:   []int64{},
-				PasswordResetTriggers: []int64{},
+				Type:                      models.ACCOUNT_TYPE_EXTERNAL,
+				AccountID:                 req.Email,
+				AccountConfirmedAt:        time.Now().Unix(),
+				Password:                  randomPW, // not used, just to not leave it empty
+				PreferredLanguage:         "",
+				FailedLoginAttempts:       []int64{},
+				PasswordResetTriggers:     []int64{},
+				PhoneVerificationAttempts: []int64{},
 			},
 			Roles: []string{req.Role},
 			Profiles: []models.Profile{
@@ -508,13 +509,14 @@ func (s *userManagementServer) SignupWithEmail(ctx context.Context, req *api.Sig
 	// Create user DB object from request:
 	newUser := models.User{
 		Account: models.Account{
-			Type:                  models.ACCOUNT_TYPE_EMAIL,
-			AccountID:             req.Email,
-			AccountConfirmedAt:    0, // not confirmed yet
-			Password:              password,
-			PreferredLanguage:     req.PreferredLanguage,
-			FailedLoginAttempts:   []int64{},
-			PasswordResetTriggers: []int64{},
+			Type:                      models.ACCOUNT_TYPE_EMAIL,
+			AccountID:                 req.Email,
+			AccountConfirmedAt:        0, // not confirmed yet
+			Password:                  password,
+			PreferredLanguage:         req.PreferredLanguage,
+			FailedLoginAttempts:       []int64{},
+			PasswordResetTriggers:     []int64{},
+			PhoneVerificationAttempts: []int64{},
 		},
 		Roles: []string{constants.USER_ROLE_PARTICIPANT},
 		Profiles: []models.Profile{

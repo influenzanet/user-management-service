@@ -8,7 +8,7 @@ const (
 	signupRateLimitWindow              = 5 * 60  // to count the new signup, seconds
 	loginFailedAttemptWindow           = 5 * 50  // to count the login failure, seconds
 	phoneVerificationRateLimitWindow    = 5 * 60 // to count phone verification sends, seconds
-	allowedPhoneVerificationAttempts    = 3       // block after more than 3 sends in the window (i.e. 4th is blocked)
+	allowedPhoneVerificationAttempts    = 3       // sends allowed in the window, the next one (i.e. the 4th) is blocked
 	passwordResetAttemptWindow      = 60 * 60 // to count the password failure, in seconds, default=1 hour
 	allowedPasswordAttempts         = 10
 	allowedVerificationCodeAttempts = 3

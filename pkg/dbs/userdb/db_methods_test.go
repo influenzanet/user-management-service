@@ -521,3 +521,70 @@ func TestFindInactiveUsers(t *testing.T) {
 		}
 	})
 }
+
+func TestDbSavePhoneVerificationAttempt(t *testing.T) {
+	t.Run("with attempts field stored as null (legacy user)", func(t *testing.T) {
+		testUser := models.User{
+			Account: models.Account{
+				Type:      "email",
+				AccountID: "save_phone_attempt_legacy@test.com",
+				Password:  "testhashedpassword-youcantreadme",
+			},
+			Timestamps: models.Timestamps{
+				CreatedAt: time.Now().Unix(),
+			},
+		}
+		id, err := testDBService.AddUser(testInstanceID, testUser)
+		if err != nil {
+			t.Errorf(err.Error())
+			return
+		}
+		err = testDBService.SavePhoneVerificationAttempt(testInstanceID, id)
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+			return
+		}
+		user, err := testDBService.GetUserByID(testInstanceID, id)
+		if err != nil {
+			t.Errorf(err.Error())
+			return
+		}
+		if len(user.Account.PhoneVerificationAttempts) != 1 {
+			t.Errorf("wrong number of attempts: %d instead of %d", len(user.Account.PhoneVerificationAttempts), 1)
+		}
+	})
+
+	t.Run("with initialised attempts field", func(t *testing.T) {
+		testUser := models.User{
+			Account: models.Account{
+				Type:                      "email",
+				AccountID:                 "save_phone_attempt_new@test.com",
+				Password:                  "testhashedpassword-youcantreadme",
+				PhoneVerificationAttempts: []int64{},
+			},
+			Timestamps: models.Timestamps{
+				CreatedAt: time.Now().Unix(),
+			},
+		}
+		id, err := testDBService.AddUser(testInstanceID, testUser)
+		if err != nil {
+			t.Errorf(err.Error())
+			return
+		}
+		for i := 0; i < 2; i++ {
+			err = testDBService.SavePhoneVerificationAttempt(testInstanceID, id)
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+		}
+		user, err := testDBService.GetUserByID(testInstanceID, id)
+		if err != nil {
+			t.Errorf(err.Error())
+			return
+		}
+		if len(user.Account.PhoneVerificationAttempts) != 2 {
+			t.Errorf("wrong number of attempts: %d instead of %d", len(user.Account.PhoneVerificationAttempts), 2)
+		}
+	})
+}

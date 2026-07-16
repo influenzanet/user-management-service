@@ -7,12 +7,14 @@ import (
 
 	"github.com/golang/mock/gomock"
 	api_types "github.com/influenzanet/go-utils/pkg/api_types"
+	"github.com/influenzanet/user-management-service/internal/config"
 	"github.com/influenzanet/user-management-service/pkg/api"
 	"github.com/influenzanet/user-management-service/pkg/models"
 	"github.com/influenzanet/user-management-service/pkg/pwhash"
 	loggingMock "github.com/influenzanet/user-management-service/test/mocks/logging_service"
 	messageMock "github.com/influenzanet/user-management-service/test/mocks/messaging_service"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
@@ -1306,6 +1308,102 @@ func TestRemoveEmailEndpoint(t *testing.T) {
 		}
 		if len(resp.ContactInfos) != 2 || resp.ContactInfos[1].Id != testUsers[0].ContactInfos[2].ID.Hex() {
 			t.Errorf("wrong response: %s", resp)
+		}
+	})
+}
+
+func TestPhoneVerificationRateLimit(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	mockMessagingClient := messageMock.NewMockMessagingServiceApiClient(mockCtrl)
+	mockLoggingClient := loggingMock.NewMockLoggingServiceApiClient(mockCtrl)
+
+	s := userManagementServer{
+		userDBservice:   testUserDBService,
+		globalDBService: testGlobalDBService,
+		instanceIDs:     []string{testInstanceID},
+		Intervals: models.Intervals{
+			TokenExpiryInterval:      time.Second * 2,
+			VerificationCodeLifetime: 60,
+		},
+		clients: &models.APIClients{
+			MessagingService: mockMessagingClient,
+			LoggingService:   mockLoggingClient,
+		},
+		newUserCountLimit: 100,
+		whatsAppConfig: config.WhatsAppConfig{
+			Enabled:                  true,
+			VerificationTemplateLang: "en",
+		},
+	}
+
+	signupReq := &api.SignupWithEmailMsg{
+		Email:             "test-phone-rate-limit@test.com",
+		Password:          "SuperSecurePassword123!§$",
+		InstanceId:        testInstanceID,
+		PreferredLanguage: "en",
+	}
+
+	var testUser models.User
+
+	t.Run("attempts field is initialised at signup", func(t *testing.T) {
+		mockMessagingClient.EXPECT().SendInstantEmail(
+			gomock.Any(),
+			gomock.Any(),
+		).Return(nil, nil)
+		mockLoggingClient.EXPECT().SaveLogEvent(
+			gomock.Any(),
+			gomock.Any(),
+		).Return(nil, nil)
+
+		_, err := s.SignupWithEmail(context.Background(), signupReq)
+		if err != nil {
+			t.Errorf("unexpected error: %s", err.Error())
+			return
+		}
+		testUser, err = testUserDBService.GetUserByAccountID(testInstanceID, signupReq.Email)
+		if err != nil {
+			t.Errorf("unexpected error: %s", err.Error())
+			return
+		}
+		if testUser.Account.PhoneVerificationAttempts == nil {
+			t.Error("phoneVerificationAttempts should be initialised at signup")
+		}
+	})
+
+	t.Run("attempts of a new user are recorded", func(t *testing.T) {
+		for i := 0; i < allowedPhoneVerificationAttempts; i++ {
+			if err := testUserDBService.SavePhoneVerificationAttempt(testInstanceID, testUser.ID.Hex()); err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+		}
+		user, err := testUserDBService.GetUserByID(testInstanceID, testUser.ID.Hex())
+		if err != nil {
+			t.Errorf("unexpected error: %s", err.Error())
+			return
+		}
+		if len(user.Account.PhoneVerificationAttempts) != allowedPhoneVerificationAttempts {
+			t.Errorf("wrong number of attempts: %d instead of %d", len(user.Account.PhoneVerificationAttempts), allowedPhoneVerificationAttempts)
+		}
+	})
+
+	t.Run("send after the allowed attempts is rejected", func(t *testing.T) {
+		req := &api.PhoneMsg{
+			Token: &api_types.TokenInfos{
+				Id:         testUser.ID.Hex(),
+				InstanceId: testInstanceID,
+			},
+			NewPhone: "+391234567890",
+		}
+		_, err := s.AddPhoneNumber(context.Background(), req)
+		if status.Code(err) != codes.ResourceExhausted {
+			t.Errorf("wrong error code: %v instead of %v", status.Code(err), codes.ResourceExhausted)
+			return
+		}
+		ok, msg := shouldHaveGrpcErrorStatus(err, "too many phone verification attempts, try again later")
+		if !ok {
+			t.Error(msg)
 		}
 	})
 }

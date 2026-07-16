@@ -131,6 +131,15 @@ func (dbService *UserDBService) SavePhoneVerificationAttempt(instanceID string, 
 	defer cancel()
 
 	_id, _ := primitive.ObjectIDFromHex(userID)
+
+	// Legacy users may have the field stored as null: $push on null fails
+	// with "The field must be an array", so initialise it first.
+	initFilter := bson.M{"_id": _id, "account.phoneVerificationAttempts": nil}
+	initUpdate := bson.M{"$set": bson.M{"account.phoneVerificationAttempts": []int64{}}}
+	if _, err := dbService.collectionRefUsers(instanceID).UpdateOne(ctx, initFilter, initUpdate); err != nil {
+		return err
+	}
+
 	filter := bson.M{"_id": _id}
 	update := bson.M{"$push": bson.M{"account.phoneVerificationAttempts": time.Now().Unix()}}
 	_, err := dbService.collectionRefUsers(instanceID).UpdateOne(ctx, filter, update)

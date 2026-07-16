@@ -505,7 +505,8 @@ func (s *userManagementServer) AddPhoneNumber(ctx context.Context, req *api.Phon
 		return nil, status.Error(codes.Internal, "user not found")
 	}
 
-	if utils.HasMoreAttemptsRecently(user.Account.PhoneVerificationAttempts, allowedPhoneVerificationAttempts, phoneVerificationRateLimitWindow) {
+	// Reject when the allowed sends in the window are already used up (the check is a strict greater-than, hence -1)
+	if utils.HasMoreAttemptsRecently(user.Account.PhoneVerificationAttempts, allowedPhoneVerificationAttempts-1, phoneVerificationRateLimitWindow) {
 		return nil, status.Error(codes.ResourceExhausted, "too many phone verification attempts, try again later")
 	}
 
@@ -596,7 +597,8 @@ func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.Pho
 		return nil, status.Error(codes.Internal, "user not found")
 	}
 
-	if utils.HasMoreAttemptsRecently(user.Account.PhoneVerificationAttempts, allowedPhoneVerificationAttempts, phoneVerificationRateLimitWindow) {
+	// Reject when the allowed sends in the window are already used up (the check is a strict greater-than, hence -1)
+	if utils.HasMoreAttemptsRecently(user.Account.PhoneVerificationAttempts, allowedPhoneVerificationAttempts-1, phoneVerificationRateLimitWindow) {
 		return nil, status.Error(codes.ResourceExhausted, "too many phone verification attempts, try again later")
 	}
 
