@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -15,7 +16,25 @@ import (
 const (
 	whatsAppHTTPTimeout = 30 * time.Second
 	whatsAppAPIBaseURL  = "https://graph.facebook.com/v19.0"
+
+	// Meta Graph API error code: "Recipient phone number not in allowed list"
+	// (returned e.g. for numbers not whitelisted while the WABA is in test mode)
+	metaErrCodeRecipientNotAllowed = 131030
 )
+
+// ErrRecipientNotAllowed is returned when Meta rejects the recipient itself,
+// so callers can surface a meaningful message instead of a generic send failure
+var ErrRecipientNotAllowed = errors.New("recipient phone number not allowed by WhatsApp")
+
+// parseSendError maps a non-2xx Meta response to an error, detecting known error codes
+func parseSendError(statusCode int, respObj map[string]any) error {
+	if errObj, ok := respObj["error"].(map[string]any); ok {
+		if code, ok := errObj["code"].(float64); ok && int(code) == metaErrCodeRecipientNotAllowed {
+			return ErrRecipientNotAllowed
+		}
+	}
+	return fmt.Errorf("failed to send message, status code: %d", statusCode)
+}
 
 // WhatsAppClient handles communication with the WhatsApp Business API
 type WhatsAppClient struct {
@@ -117,7 +136,7 @@ func (c *WhatsAppClient) SendVerificationCode(ctx context.Context, toPhoneNumber
 		var respObj map[string]any
 		_ = json.NewDecoder(resp.Body).Decode(&respObj)
 		logger.Error.Printf("WhatsApp SendVerificationCode failed status=%d resp=%v", resp.StatusCode, respObj)
-		return fmt.Errorf("failed to send message, status code: %d", resp.StatusCode)
+		return parseSendError(resp.StatusCode, respObj)
 	}
 	logger.Info.Println("WhatsApp SendVerificationCode: delivered to API")
 

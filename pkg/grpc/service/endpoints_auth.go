@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	messageAPI "github.com/influenzanet/messaging-service/pkg/api/messaging_service"
 	"github.com/influenzanet/user-management-service/pkg/api"
 	"github.com/influenzanet/user-management-service/pkg/dbs/userdb"
+	httpClients "github.com/influenzanet/user-management-service/pkg/http/clients"
 	"github.com/influenzanet/user-management-service/pkg/models"
 	"github.com/influenzanet/user-management-service/pkg/pwhash"
 	"github.com/influenzanet/user-management-service/pkg/tokens"
@@ -835,6 +837,9 @@ func (s *userManagementServer) ResendContactVerification(ctx context.Context, re
 			// A failed send still consumed a Meta call: record the attempt so retries stay rate limited
 			if err := s.userDBservice.SavePhoneVerificationAttempt(req.Token.InstanceId, req.Token.Id); err != nil {
 				logger.Error.Printf("ResendContactVerification: failed to save rate limit timestamp: %v", err)
+			}
+			if errors.Is(err, httpClients.ErrRecipientNotAllowed) {
+				return nil, status.Error(codes.FailedPrecondition, "phone number not enabled to receive WhatsApp messages")
 			}
 			return nil, status.Error(codes.Internal, "failed to send verification code")
 		}

@@ -10,12 +10,14 @@ import (
 	api_types "github.com/influenzanet/go-utils/pkg/api_types"
 	"github.com/influenzanet/go-utils/pkg/constants"
 	"github.com/influenzanet/user-management-service/pkg/api"
+	httpClients "github.com/influenzanet/user-management-service/pkg/http/clients"
 	"github.com/influenzanet/user-management-service/pkg/models"
 	"github.com/influenzanet/user-management-service/pkg/pwhash"
 	"github.com/influenzanet/user-management-service/pkg/tokens"
 	loggingMock "github.com/influenzanet/user-management-service/test/mocks/logging_service"
 	messageMock "github.com/influenzanet/user-management-service/test/mocks/messaging_service"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
@@ -1046,6 +1048,26 @@ func TestResendContactVerificationEndpoint(t *testing.T) {
 				},
 			},
 		},
+		{
+			Account: models.Account{
+				Type:              "email",
+				AccountID:         "test_for_resend_not_allowed@test.com",
+				PreferredLanguage: "en",
+			},
+			Profiles: []models.Profile{
+				{
+					ID:    primitive.NewObjectID(),
+					Alias: "main",
+				},
+			},
+			ContactInfos: []models.ContactInfo{
+				{
+					ID:    primitive.NewObjectID(),
+					Type:  "phone",
+					Phone: "+391234567006",
+				},
+			},
+		},
 	})
 	if err != nil {
 		t.Errorf("failed to create testusers: %s", err.Error())
@@ -1201,6 +1223,28 @@ func TestResendContactVerificationEndpoint(t *testing.T) {
 		}
 		_, err := s.ResendContactVerification(context.Background(), req)
 		ok, msg := shouldHaveGrpcErrorStatus(err, "too many phone verification attempts, try again later")
+		if !ok {
+			t.Error(msg)
+		}
+	})
+
+	t.Run("with phone when the recipient is not allowed", func(t *testing.T) {
+		mockWhatsApp.err = httpClients.ErrRecipientNotAllowed
+
+		req := &api.ResendContactVerificationReq{
+			Token: &api_types.TokenInfos{
+				Id:         testUsers[3].ID.Hex(),
+				InstanceId: testInstanceID,
+			},
+			Address: "+391234567006",
+			Type:    "phone",
+		}
+		_, err := s.ResendContactVerification(context.Background(), req)
+		if status.Code(err) != codes.FailedPrecondition {
+			t.Errorf("wrong error code: %v instead of %v", status.Code(err), codes.FailedPrecondition)
+			return
+		}
+		ok, msg := shouldHaveGrpcErrorStatus(err, "phone number not enabled to receive WhatsApp messages")
 		if !ok {
 			t.Error(msg)
 		}

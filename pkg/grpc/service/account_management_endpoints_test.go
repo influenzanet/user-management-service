@@ -10,6 +10,7 @@ import (
 	api_types "github.com/influenzanet/go-utils/pkg/api_types"
 	"github.com/influenzanet/user-management-service/internal/config"
 	"github.com/influenzanet/user-management-service/pkg/api"
+	httpClients "github.com/influenzanet/user-management-service/pkg/http/clients"
 	"github.com/influenzanet/user-management-service/pkg/models"
 	"github.com/influenzanet/user-management-service/pkg/pwhash"
 	loggingMock "github.com/influenzanet/user-management-service/test/mocks/logging_service"
@@ -1521,6 +1522,24 @@ func TestAddPhoneNumberEndpoint(t *testing.T) {
 			t.Errorf("wrong number of recorded attempts: %d instead of %d", len(user.Account.PhoneVerificationAttempts), 2)
 		}
 	})
+
+	t.Run("when the recipient is not allowed", func(t *testing.T) {
+		mockWhatsApp.err = httpClients.ErrRecipientNotAllowed
+
+		req := &api.PhoneMsg{
+			Token:    &token,
+			NewPhone: "+391234567002",
+		}
+		_, err := s.AddPhoneNumber(context.Background(), req)
+		if status.Code(err) != codes.FailedPrecondition {
+			t.Errorf("wrong error code: %v instead of %v", status.Code(err), codes.FailedPrecondition)
+			return
+		}
+		ok, msg := shouldHaveGrpcErrorStatus(err, "phone number not enabled to receive WhatsApp messages")
+		if !ok {
+			t.Error(msg)
+		}
+	})
 }
 
 func TestEditPhoneNumberEndpoint(t *testing.T) {
@@ -1638,6 +1657,24 @@ func TestEditPhoneNumberEndpoint(t *testing.T) {
 		}
 		if len(user.Account.PhoneVerificationAttempts) != 2 {
 			t.Errorf("wrong number of recorded attempts: %d instead of %d", len(user.Account.PhoneVerificationAttempts), 2)
+		}
+	})
+
+	t.Run("when the recipient is not allowed", func(t *testing.T) {
+		mockWhatsApp.err = httpClients.ErrRecipientNotAllowed
+
+		req := &api.PhoneMsg{
+			Token:    &token,
+			NewPhone: "+391234567004",
+		}
+		_, err := s.EditPhoneNumber(context.Background(), req)
+		if status.Code(err) != codes.FailedPrecondition {
+			t.Errorf("wrong error code: %v instead of %v", status.Code(err), codes.FailedPrecondition)
+			return
+		}
+		ok, msg := shouldHaveGrpcErrorStatus(err, "phone number not enabled to receive WhatsApp messages")
+		if !ok {
+			t.Error(msg)
 		}
 	})
 }

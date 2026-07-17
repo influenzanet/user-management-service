@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	loggingAPI "github.com/influenzanet/logging-service/pkg/api"
 	messageAPI "github.com/influenzanet/messaging-service/pkg/api/messaging_service"
 	"github.com/influenzanet/user-management-service/pkg/api"
+	httpClients "github.com/influenzanet/user-management-service/pkg/http/clients"
 	"github.com/influenzanet/user-management-service/pkg/models"
 	"github.com/influenzanet/user-management-service/pkg/pwhash"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -571,6 +573,9 @@ func (s *userManagementServer) AddPhoneNumber(ctx context.Context, req *api.Phon
 		if err := s.userDBservice.SavePhoneVerificationAttempt(req.Token.InstanceId, req.Token.Id); err != nil {
 			logger.Error.Printf("AddPhoneNumber: failed to save rate limit timestamp: %v", err)
 		}
+		if errors.Is(err, httpClients.ErrRecipientNotAllowed) {
+			return nil, status.Error(codes.FailedPrecondition, "phone number not enabled to receive WhatsApp messages")
+		}
 		return nil, status.Error(codes.Internal, "failed to send verification code")
 	}
 	// Mark the cooldown only after the message was accepted; the full-document update must
@@ -669,6 +674,9 @@ func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.Pho
 		// A failed send still consumed a Meta call: record the attempt so retries stay rate limited
 		if err := s.userDBservice.SavePhoneVerificationAttempt(req.Token.InstanceId, req.Token.Id); err != nil {
 			logger.Error.Printf("EditPhoneNumber: failed to save rate limit timestamp: %v", err)
+		}
+		if errors.Is(err, httpClients.ErrRecipientNotAllowed) {
+			return nil, status.Error(codes.FailedPrecondition, "phone number not enabled to receive WhatsApp messages")
 		}
 		return nil, status.Error(codes.Internal, "failed to send verification code")
 	}
