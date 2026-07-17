@@ -558,9 +558,7 @@ func (s *userManagementServer) AddPhoneNumber(ctx context.Context, req *api.Phon
 		CreatedAt: time.Now().Unix(),
 		ExpiresAt: time.Now().Unix() + s.Intervals.VerificationCodeLifetime,
 	}
-	// mark cooldown timestamp for this phone
-	user.SetContactInfoVerificationSent(models.ContactTypePhone, phone)
-
+	// Persist the code and the new contact info before sending, so a delivered code is always verifiable
 	updUser, err := s.userDBservice.UpdateUser(req.Token.InstanceId, user)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
@@ -570,6 +568,12 @@ func (s *userManagementServer) AddPhoneNumber(ctx context.Context, req *api.Phon
 	if err := s.whatsAppClient.SendVerificationCode(ctx, phone, vc, s.whatsAppConfig.VerificationTemplateLang); err != nil {
 		logger.Error.Printf("AddPhoneNumber: %s", err.Error())
 		return nil, status.Error(codes.Internal, "failed to send verification code")
+	}
+	// Mark the cooldown only after the message was accepted; the full-document update must
+	// happen before the attempt is recorded, so its $push is not overwritten by the replace
+	updUser.SetContactInfoVerificationSent(models.ContactTypePhone, phone)
+	if _, err := s.userDBservice.UpdateUser(req.Token.InstanceId, updUser); err != nil {
+		logger.Error.Printf("AddPhoneNumber: %s", err.Error())
 	}
 	if err := s.userDBservice.SavePhoneVerificationAttempt(req.Token.InstanceId, req.Token.Id); err != nil {
 		logger.Error.Printf("AddPhoneNumber: failed to save rate limit timestamp: %v", err)
@@ -649,10 +653,7 @@ func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.Pho
 		CreatedAt: time.Now().Unix(),
 		ExpiresAt: time.Now().Unix() + s.Intervals.VerificationCodeLifetime,
 	}
-	// mark cooldown timestamp for this phone
-	user.SetContactInfoVerificationSent(models.ContactTypePhone, phone)
-
-	// persist changes
+	// Persist the code and the updated contact info before sending, so a delivered code is always verifiable
 	updUser, err := s.userDBservice.UpdateUser(req.Token.InstanceId, user)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
@@ -662,6 +663,12 @@ func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.Pho
 	if err := s.whatsAppClient.SendVerificationCode(ctx, phone, vc, s.whatsAppConfig.VerificationTemplateLang); err != nil {
 		logger.Error.Printf("EditPhoneNumber: %s", err.Error())
 		return nil, status.Error(codes.Internal, "failed to send verification code")
+	}
+	// Mark the cooldown only after the message was accepted; the full-document update must
+	// happen before the attempt is recorded, so its $push is not overwritten by the replace
+	updUser.SetContactInfoVerificationSent(models.ContactTypePhone, phone)
+	if _, err := s.userDBservice.UpdateUser(req.Token.InstanceId, updUser); err != nil {
+		logger.Error.Printf("EditPhoneNumber: %s", err.Error())
 	}
 	if err := s.userDBservice.SavePhoneVerificationAttempt(req.Token.InstanceId, req.Token.Id); err != nil {
 		logger.Error.Printf("EditPhoneNumber: failed to save rate limit timestamp: %v", err)

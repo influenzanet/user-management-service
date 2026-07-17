@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -1404,6 +1405,233 @@ func TestPhoneVerificationRateLimit(t *testing.T) {
 		ok, msg := shouldHaveGrpcErrorStatus(err, "too many phone verification attempts, try again later")
 		if !ok {
 			t.Error(msg)
+		}
+	})
+}
+
+func TestAddPhoneNumberEndpoint(t *testing.T) {
+	mockWhatsApp := &mockWhatsAppClient{}
+
+	s := userManagementServer{
+		userDBservice:   testUserDBService,
+		globalDBService: testGlobalDBService,
+		Intervals: models.Intervals{
+			TokenExpiryInterval:      time.Second * 2,
+			VerificationCodeLifetime: 60,
+		},
+		whatsAppClient: mockWhatsApp,
+		whatsAppConfig: config.WhatsAppConfig{
+			Enabled:                  true,
+			VerificationTemplateLang: "en",
+		},
+	}
+
+	testUsers, err := addTestUsers([]models.User{
+		{
+			Account: models.Account{
+				Type:      "email",
+				AccountID: "test_for_add_phone_cooldown@test.com",
+			},
+			ContactInfos: []models.ContactInfo{
+				{
+					ID:          primitive.NewObjectID(),
+					Type:        "email",
+					Email:       "test_for_add_phone_cooldown@test.com",
+					ConfirmedAt: time.Now().Unix(),
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Errorf("failed to create testusers: %s", err.Error())
+		return
+	}
+
+	token := api_types.TokenInfos{
+		Id:         testUsers[0].ID.Hex(),
+		InstanceId: testInstanceID,
+	}
+
+	t.Run("when sending fails", func(t *testing.T) {
+		mockWhatsApp.err = errors.New("meta rejected the message")
+
+		req := &api.PhoneMsg{
+			Token:    &token,
+			NewPhone: "+391234567002",
+		}
+		_, err := s.AddPhoneNumber(context.Background(), req)
+		ok, msg := shouldHaveGrpcErrorStatus(err, "failed to send verification code")
+		if !ok {
+			t.Error(msg)
+			return
+		}
+
+		user, err := testUserDBService.GetUserByID(testInstanceID, testUsers[0].ID.Hex())
+		if err != nil {
+			t.Errorf("unexpected error: %s", err.Error())
+			return
+		}
+		ci, found := user.FindContactInfoByTypeAndAddr(models.ContactTypePhone, "+391234567002")
+		if !found {
+			t.Error("phone contact info not found")
+			return
+		}
+		if ci.ConfirmationLinkSentAt != 0 {
+			t.Errorf("cooldown timestamp should not be set after a failed send: %d", ci.ConfirmationLinkSentAt)
+		}
+		if len(user.Account.PhoneVerificationCode.Code) != 6 {
+			t.Errorf("verification code should be persisted even if the send fails: %s", user.Account.PhoneVerificationCode.Code)
+		}
+	})
+
+	t.Run("when sending succeeds", func(t *testing.T) {
+		mockWhatsApp.err = nil
+
+		req := &api.PhoneMsg{
+			Token:    &token,
+			NewPhone: "+391234567002",
+		}
+		resp, err := s.AddPhoneNumber(context.Background(), req)
+		if err != nil {
+			t.Errorf("unexpected error: %s", err.Error())
+			return
+		}
+		if resp == nil {
+			t.Error("unexpected nil response")
+			return
+		}
+
+		user, err := testUserDBService.GetUserByID(testInstanceID, testUsers[0].ID.Hex())
+		if err != nil {
+			t.Errorf("unexpected error: %s", err.Error())
+			return
+		}
+		ci, found := user.FindContactInfoByTypeAndAddr(models.ContactTypePhone, "+391234567002")
+		if !found {
+			t.Error("phone contact info not found")
+			return
+		}
+		if ci.ConfirmationLinkSentAt == 0 {
+			t.Error("cooldown timestamp should be set after a successful send")
+		}
+		if len(user.Account.PhoneVerificationAttempts) != 1 {
+			t.Errorf("wrong number of recorded attempts: %d instead of %d", len(user.Account.PhoneVerificationAttempts), 1)
+		}
+	})
+}
+
+func TestEditPhoneNumberEndpoint(t *testing.T) {
+	mockWhatsApp := &mockWhatsAppClient{}
+
+	s := userManagementServer{
+		userDBservice:   testUserDBService,
+		globalDBService: testGlobalDBService,
+		Intervals: models.Intervals{
+			TokenExpiryInterval:      time.Second * 2,
+			VerificationCodeLifetime: 60,
+		},
+		whatsAppClient: mockWhatsApp,
+		whatsAppConfig: config.WhatsAppConfig{
+			Enabled:                  true,
+			VerificationTemplateLang: "en",
+		},
+	}
+
+	testUsers, err := addTestUsers([]models.User{
+		{
+			Account: models.Account{
+				Type:      "email",
+				AccountID: "test_for_edit_phone_cooldown@test.com",
+			},
+			ContactInfos: []models.ContactInfo{
+				{
+					ID:          primitive.NewObjectID(),
+					Type:        "email",
+					Email:       "test_for_edit_phone_cooldown@test.com",
+					ConfirmedAt: time.Now().Unix(),
+				},
+				{
+					ID:    primitive.NewObjectID(),
+					Type:  "phone",
+					Phone: "+391234567003",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Errorf("failed to create testusers: %s", err.Error())
+		return
+	}
+
+	token := api_types.TokenInfos{
+		Id:         testUsers[0].ID.Hex(),
+		InstanceId: testInstanceID,
+	}
+
+	t.Run("when sending fails", func(t *testing.T) {
+		mockWhatsApp.err = errors.New("meta rejected the message")
+
+		req := &api.PhoneMsg{
+			Token:    &token,
+			NewPhone: "+391234567004",
+		}
+		_, err := s.EditPhoneNumber(context.Background(), req)
+		ok, msg := shouldHaveGrpcErrorStatus(err, "failed to send verification code")
+		if !ok {
+			t.Error(msg)
+			return
+		}
+
+		user, err := testUserDBService.GetUserByID(testInstanceID, testUsers[0].ID.Hex())
+		if err != nil {
+			t.Errorf("unexpected error: %s", err.Error())
+			return
+		}
+		ci, found := user.FindContactInfoByTypeAndAddr(models.ContactTypePhone, "+391234567004")
+		if !found {
+			t.Error("phone contact info not found")
+			return
+		}
+		if ci.ConfirmationLinkSentAt != 0 {
+			t.Errorf("cooldown timestamp should not be set after a failed send: %d", ci.ConfirmationLinkSentAt)
+		}
+		if len(user.Account.PhoneVerificationCode.Code) != 6 {
+			t.Errorf("verification code should be persisted even if the send fails: %s", user.Account.PhoneVerificationCode.Code)
+		}
+	})
+
+	t.Run("when sending succeeds", func(t *testing.T) {
+		mockWhatsApp.err = nil
+
+		req := &api.PhoneMsg{
+			Token:    &token,
+			NewPhone: "+391234567004",
+		}
+		resp, err := s.EditPhoneNumber(context.Background(), req)
+		if err != nil {
+			t.Errorf("unexpected error: %s", err.Error())
+			return
+		}
+		if resp == nil {
+			t.Error("unexpected nil response")
+			return
+		}
+
+		user, err := testUserDBService.GetUserByID(testInstanceID, testUsers[0].ID.Hex())
+		if err != nil {
+			t.Errorf("unexpected error: %s", err.Error())
+			return
+		}
+		ci, found := user.FindContactInfoByTypeAndAddr(models.ContactTypePhone, "+391234567004")
+		if !found {
+			t.Error("phone contact info not found")
+			return
+		}
+		if ci.ConfirmationLinkSentAt == 0 {
+			t.Error("cooldown timestamp should be set after a successful send")
+		}
+		if len(user.Account.PhoneVerificationAttempts) != 1 {
+			t.Errorf("wrong number of recorded attempts: %d instead of %d", len(user.Account.PhoneVerificationAttempts), 1)
 		}
 	})
 }

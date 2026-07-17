@@ -12,7 +12,6 @@ import (
 	"github.com/influenzanet/user-management-service/pkg/dbs/globaldb"
 	"github.com/influenzanet/user-management-service/pkg/dbs/userdb"
 	itc "github.com/influenzanet/user-management-service/pkg/grpc/interceptors"
-	httpClients "github.com/influenzanet/user-management-service/pkg/http/clients"
 	"github.com/influenzanet/user-management-service/pkg/models"
 	"github.com/influenzanet/user-management-service/pkg/utils"
 	"google.golang.org/grpc"
@@ -23,6 +22,12 @@ const (
 	apiVersion = "v1"
 )
 
+// WhatsAppClient abstracts the WhatsApp HTTP client so it can be replaced in tests
+type WhatsAppClient interface {
+	SendVerificationCode(ctx context.Context, toPhoneNumber, code, lang string) error
+	SendTemplateMessage(ctx context.Context, toPhoneNumber, templateName, lang string, params map[string]string) error
+}
+
 type userManagementServer struct {
 	api.UnimplementedUserManagementApiServer
 	clients           *models.APIClients
@@ -32,7 +37,7 @@ type userManagementServer struct {
 	newUserCountLimit int64
 	weekdayStrategy   utils.WeekDayStrategy
 	instanceIDs       []string
-	whatsAppClient    *httpClients.WhatsAppClient
+	whatsAppClient    WhatsAppClient
 	whatsAppConfig    config.WhatsAppConfig
 }
 
@@ -45,7 +50,7 @@ func NewUserManagementServer(
 	newUserCountLimit int64,
 	weekdayStrategy utils.WeekDayStrategy,
 	instanceIDs []string,
-	whatsAppClient *httpClients.WhatsAppClient,
+	whatsAppClient WhatsAppClient,
 	whatsAppConfig config.WhatsAppConfig,
 ) api.UserManagementApiServer {
 	return &userManagementServer{
@@ -70,7 +75,7 @@ func RunServer(ctx context.Context, port string,
 	newUserCountLimit int64,
 	weekdayStrategy utils.WeekDayStrategy,
 	instanceIDs []string,
-	whatsAppClient *httpClients.WhatsAppClient,
+	whatsAppClient WhatsAppClient,
 	whatsAppConfig config.WhatsAppConfig,
 ) error {
 	lis, err := net.Listen("tcp", ":"+port)

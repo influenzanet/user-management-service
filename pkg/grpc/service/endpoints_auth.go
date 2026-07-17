@@ -815,8 +815,9 @@ func (s *userManagementServer) ResendContactVerification(ctx context.Context, re
 			CreatedAt: time.Now().Unix(),
 			ExpiresAt: time.Now().Unix() + s.Intervals.VerificationCodeLifetime,
 		}
-		user.SetContactInfoVerificationSent(models.ContactTypePhone, req.Address)
-		if _, err := s.userDBservice.UpdateUser(req.Token.InstanceId, user); err != nil {
+		// Persist the code before sending it, so a delivered code is always verifiable
+		user, err = s.userDBservice.UpdateUser(req.Token.InstanceId, user)
+		if err != nil {
 			logger.Error.Printf("ResendContactVerification: %s", err.Error())
 			return nil, status.Error(codes.Internal, err.Error())
 		}
@@ -828,6 +829,11 @@ func (s *userManagementServer) ResendContactVerification(ctx context.Context, re
 		if err := s.whatsAppClient.SendVerificationCode(ctx, req.Address, vc, lang); err != nil {
 			logger.Error.Printf("ResendContactVerification (phone): %s", err.Error())
 			return nil, status.Error(codes.Internal, "failed to send verification code")
+		}
+		// Mark the cooldown only after the message was accepted, like the email branch
+		user.SetContactInfoVerificationSent(models.ContactTypePhone, req.Address)
+		if _, err := s.userDBservice.UpdateUser(req.Token.InstanceId, user); err != nil {
+			logger.Error.Printf("ResendContactVerification: %s", err.Error())
 		}
 	default:
 		return nil, status.Error(codes.InvalidArgument, "unsupported contact type")
