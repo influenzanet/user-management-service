@@ -803,6 +803,10 @@ func (s *userManagementServer) ResendContactVerification(ctx context.Context, re
 		if ci.ConfirmationLinkSentAt > time.Now().Unix()-contactVerificationMessageCooldown {
 			return nil, status.Error(codes.InvalidArgument, "cannot send verification so often")
 		}
+		// Reject when the allowed sends in the window are already used up (the check is a strict greater-than, hence -1)
+		if utils.HasMoreAttemptsRecently(user.Account.PhoneVerificationAttempts, allowedPhoneVerificationAttempts-1, phoneVerificationRateLimitWindow) {
+			return nil, status.Error(codes.ResourceExhausted, "too many phone verification attempts, try again later")
+		}
 		// Generate and store new phone verification code (separate from login 2FA — G-3 fix)
 		vc, err := tokens.GenerateVerificationCode(6)
 		if err != nil {
@@ -828,12 +832,19 @@ func (s *userManagementServer) ResendContactVerification(ctx context.Context, re
 		}
 		if err := s.whatsAppClient.SendVerificationCode(ctx, req.Address, vc, lang); err != nil {
 			logger.Error.Printf("ResendContactVerification (phone): %s", err.Error())
+			// A failed send still consumed a Meta call: record the attempt so retries stay rate limited
+			if err := s.userDBservice.SavePhoneVerificationAttempt(req.Token.InstanceId, req.Token.Id); err != nil {
+				logger.Error.Printf("ResendContactVerification: failed to save rate limit timestamp: %v", err)
+			}
 			return nil, status.Error(codes.Internal, "failed to send verification code")
 		}
 		// Mark the cooldown only after the message was accepted, like the email branch
 		user.SetContactInfoVerificationSent(models.ContactTypePhone, req.Address)
 		if _, err := s.userDBservice.UpdateUser(req.Token.InstanceId, user); err != nil {
 			logger.Error.Printf("ResendContactVerification: %s", err.Error())
+		}
+		if err := s.userDBservice.SavePhoneVerificationAttempt(req.Token.InstanceId, req.Token.Id); err != nil {
+			logger.Error.Printf("ResendContactVerification: failed to save rate limit timestamp: %v", err)
 		}
 	default:
 		return nil, status.Error(codes.InvalidArgument, "unsupported contact type")

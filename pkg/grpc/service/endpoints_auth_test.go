@@ -1026,6 +1026,26 @@ func TestResendContactVerificationEndpoint(t *testing.T) {
 				},
 			},
 		},
+		{
+			Account: models.Account{
+				Type:              "email",
+				AccountID:         "test_for_resend_rate_limit@test.com",
+				PreferredLanguage: "en",
+			},
+			Profiles: []models.Profile{
+				{
+					ID:    primitive.NewObjectID(),
+					Alias: "main",
+				},
+			},
+			ContactInfos: []models.ContactInfo{
+				{
+					ID:    primitive.NewObjectID(),
+					Type:  "phone",
+					Phone: "+391234567005",
+				},
+			},
+		},
 	})
 	if err != nil {
 		t.Errorf("failed to create testusers: %s", err.Error())
@@ -1154,6 +1174,35 @@ func TestResendContactVerificationEndpoint(t *testing.T) {
 		}
 		if len(user.Account.PhoneVerificationCode.Code) != 6 {
 			t.Errorf("unexpected verification code: %s", user.Account.PhoneVerificationCode.Code)
+		}
+		if len(user.Account.PhoneVerificationAttempts) != 2 {
+			t.Errorf("wrong number of recorded attempts: %d instead of %d", len(user.Account.PhoneVerificationAttempts), 2)
+		}
+	})
+
+	t.Run("with phone when failing sends exceed the rate limit", func(t *testing.T) {
+		mockWhatsApp.err = errors.New("meta rejected the message")
+
+		req := &api.ResendContactVerificationReq{
+			Token: &api_types.TokenInfos{
+				Id:         testUsers[2].ID.Hex(),
+				InstanceId: testInstanceID,
+			},
+			Address: "+391234567005",
+			Type:    "phone",
+		}
+		for i := 0; i < allowedPhoneVerificationAttempts; i++ {
+			_, err := s.ResendContactVerification(context.Background(), req)
+			ok, msg := shouldHaveGrpcErrorStatus(err, "failed to send verification code")
+			if !ok {
+				t.Error(msg)
+				return
+			}
+		}
+		_, err := s.ResendContactVerification(context.Background(), req)
+		ok, msg := shouldHaveGrpcErrorStatus(err, "too many phone verification attempts, try again later")
+		if !ok {
+			t.Error(msg)
 		}
 	})
 }

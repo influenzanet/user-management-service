@@ -1482,6 +1482,9 @@ func TestAddPhoneNumberEndpoint(t *testing.T) {
 		if len(user.Account.PhoneVerificationCode.Code) != 6 {
 			t.Errorf("verification code should be persisted even if the send fails: %s", user.Account.PhoneVerificationCode.Code)
 		}
+		if len(user.Account.PhoneVerificationAttempts) != 1 {
+			t.Errorf("wrong number of recorded attempts: %d instead of %d", len(user.Account.PhoneVerificationAttempts), 1)
+		}
 	})
 
 	t.Run("when sending succeeds", func(t *testing.T) {
@@ -1514,8 +1517,8 @@ func TestAddPhoneNumberEndpoint(t *testing.T) {
 		if ci.ConfirmationLinkSentAt == 0 {
 			t.Error("cooldown timestamp should be set after a successful send")
 		}
-		if len(user.Account.PhoneVerificationAttempts) != 1 {
-			t.Errorf("wrong number of recorded attempts: %d instead of %d", len(user.Account.PhoneVerificationAttempts), 1)
+		if len(user.Account.PhoneVerificationAttempts) != 2 {
+			t.Errorf("wrong number of recorded attempts: %d instead of %d", len(user.Account.PhoneVerificationAttempts), 2)
 		}
 	})
 }
@@ -1598,6 +1601,9 @@ func TestEditPhoneNumberEndpoint(t *testing.T) {
 		if len(user.Account.PhoneVerificationCode.Code) != 6 {
 			t.Errorf("verification code should be persisted even if the send fails: %s", user.Account.PhoneVerificationCode.Code)
 		}
+		if len(user.Account.PhoneVerificationAttempts) != 1 {
+			t.Errorf("wrong number of recorded attempts: %d instead of %d", len(user.Account.PhoneVerificationAttempts), 1)
+		}
 	})
 
 	t.Run("when sending succeeds", func(t *testing.T) {
@@ -1630,8 +1636,8 @@ func TestEditPhoneNumberEndpoint(t *testing.T) {
 		if ci.ConfirmationLinkSentAt == 0 {
 			t.Error("cooldown timestamp should be set after a successful send")
 		}
-		if len(user.Account.PhoneVerificationAttempts) != 1 {
-			t.Errorf("wrong number of recorded attempts: %d instead of %d", len(user.Account.PhoneVerificationAttempts), 1)
+		if len(user.Account.PhoneVerificationAttempts) != 2 {
+			t.Errorf("wrong number of recorded attempts: %d instead of %d", len(user.Account.PhoneVerificationAttempts), 2)
 		}
 	})
 }

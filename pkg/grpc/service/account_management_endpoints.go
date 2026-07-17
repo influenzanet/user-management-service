@@ -567,6 +567,10 @@ func (s *userManagementServer) AddPhoneNumber(ctx context.Context, req *api.Phon
 	// Send WhatsApp verification code
 	if err := s.whatsAppClient.SendVerificationCode(ctx, phone, vc, s.whatsAppConfig.VerificationTemplateLang); err != nil {
 		logger.Error.Printf("AddPhoneNumber: %s", err.Error())
+		// A failed send still consumed a Meta call: record the attempt so retries stay rate limited
+		if err := s.userDBservice.SavePhoneVerificationAttempt(req.Token.InstanceId, req.Token.Id); err != nil {
+			logger.Error.Printf("AddPhoneNumber: failed to save rate limit timestamp: %v", err)
+		}
 		return nil, status.Error(codes.Internal, "failed to send verification code")
 	}
 	// Mark the cooldown only after the message was accepted; the full-document update must
@@ -662,6 +666,10 @@ func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.Pho
 	// Send WhatsApp verification code
 	if err := s.whatsAppClient.SendVerificationCode(ctx, phone, vc, s.whatsAppConfig.VerificationTemplateLang); err != nil {
 		logger.Error.Printf("EditPhoneNumber: %s", err.Error())
+		// A failed send still consumed a Meta call: record the attempt so retries stay rate limited
+		if err := s.userDBservice.SavePhoneVerificationAttempt(req.Token.InstanceId, req.Token.Id); err != nil {
+			logger.Error.Printf("EditPhoneNumber: failed to save rate limit timestamp: %v", err)
+		}
 		return nil, status.Error(codes.Internal, "failed to send verification code")
 	}
 	// Mark the cooldown only after the message was accepted; the full-document update must
