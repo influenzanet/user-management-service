@@ -126,27 +126,131 @@ func (dbService *UserDBService) SavePasswordResetTrigger(instanceID string, user
 	return nil
 }
 
-func (dbService *UserDBService) SavePhoneVerificationAttempt(instanceID string, userID string) error {
+// ReservePhoneVerificationSlot atomically consumes one send slot of the phone verification
+// rate limit: the filter admits the document only while fewer than maxAttempts recorded
+// attempts fall inside the window, and the pipeline update appends the new attempt in the
+// same operation (also normalising a legacy null field to an array). Check and increment
+// are therefore a single find-and-modify: concurrent requests, including ones running on
+// other replicas, cannot both pass the check on the same free slot.
+// Returns false when no document matched, i.e. the budget is used up or the user does not
+// exist — callers that already hold the user can safely map false to "budget exhausted".
+func (dbService *UserDBService) ReservePhoneVerificationSlot(instanceID string, userID string, maxAttempts int, windowSeconds int64) (bool, error) {
 	ctx, cancel := dbService.getContext()
 	defer cancel()
 
-	_id, _ := primitive.ObjectIDFromHex(userID)
-
-	// Legacy users may have the field stored as null: $push on null fails
-	// with "The field must be an array", so initialise it first.
-	initFilter := bson.M{"_id": _id, "account.phoneVerificationAttempts": nil}
-	initUpdate := bson.M{"$set": bson.M{"account.phoneVerificationAttempts": []int64{}}}
-	if _, err := dbService.collectionRefUsers(instanceID).UpdateOne(ctx, initFilter, initUpdate); err != nil {
-		return err
+	_id, err := primitive.ObjectIDFromHex(userID)
+	if err != nil {
+		return false, err
 	}
+	now := time.Now().Unix()
+	windowStart := now - windowSeconds
 
-	filter := bson.M{"_id": _id}
-	update := bson.M{"$push": bson.M{"account.phoneVerificationAttempts": time.Now().Unix()}}
-	_, err := dbService.collectionRefUsers(instanceID).UpdateOne(ctx, filter, update)
+	attemptsInWindow := bson.M{"$filter": bson.M{
+		"input": bson.M{"$ifNull": bson.A{"$account.phoneVerificationAttempts", bson.A{}}},
+		"as":    "attempt",
+		"cond":  bson.M{"$gt": bson.A{"$$attempt", windowStart}},
+	}}
+	filter := bson.M{
+		"_id":   _id,
+		"$expr": bson.M{"$lt": bson.A{bson.M{"$size": attemptsInWindow}, maxAttempts}},
+	}
+	update := mongo.Pipeline{bson.D{{Key: "$set", Value: bson.M{
+		"account.phoneVerificationAttempts": bson.M{"$concatArrays": bson.A{
+			bson.M{"$ifNull": bson.A{"$account.phoneVerificationAttempts", bson.A{}}},
+			bson.A{now},
+		}},
+	}}}}
+	res, err := dbService.collectionRefUsers(instanceID).UpdateOne(ctx, filter, update)
+	if err != nil {
+		return false, err
+	}
+	return res.MatchedCount > 0, nil
+}
+
+// SetPhoneVerificationCode persists the phone verification code with a targeted $set, so
+// concurrently updated fields (like the atomically managed attempts array) are not rewritten.
+func (dbService *UserDBService) SetPhoneVerificationCode(instanceID string, userID string, code models.VerificationCode) error {
+	ctx, cancel := dbService.getContext()
+	defer cancel()
+
+	_id, err := primitive.ObjectIDFromHex(userID)
 	if err != nil {
 		return err
 	}
-	return nil
+	filter := bson.M{"_id": _id}
+	update := bson.M{"$set": bson.M{
+		"account.phoneVerificationCode": code,
+		"timestamps.updatedAt":          time.Now().Unix(),
+	}}
+	_, err = dbService.collectionRefUsers(instanceID).UpdateOne(ctx, filter, update)
+	return err
+}
+
+// AddPhoneContactInfoIfAbsent appends the phone contact info only when the user has no phone
+// contact info yet; the guard lives in the filter, so two concurrent requests cannot both add
+// one. Returns false when a phone contact info already exists.
+func (dbService *UserDBService) AddPhoneContactInfoIfAbsent(instanceID string, userID string, ci models.ContactInfo) (bool, error) {
+	ctx, cancel := dbService.getContext()
+	defer cancel()
+
+	_id, err := primitive.ObjectIDFromHex(userID)
+	if err != nil {
+		return false, err
+	}
+	filter := bson.M{
+		"_id":          _id,
+		"contactInfos": bson.M{"$not": bson.M{"$elemMatch": bson.M{"type": models.ContactTypePhone}}},
+	}
+	update := bson.M{
+		"$push": bson.M{"contactInfos": ci},
+		"$set":  bson.M{"timestamps.updatedAt": time.Now().Unix()},
+	}
+	res, err := dbService.collectionRefUsers(instanceID).UpdateOne(ctx, filter, update)
+	if err != nil {
+		return false, err
+	}
+	return res.MatchedCount > 0, nil
+}
+
+// ReplacePhoneContactInfo overwrites the user's phone contact info entry in place with a
+// targeted positional $set, leaving every other field of the document untouched.
+func (dbService *UserDBService) ReplacePhoneContactInfo(instanceID string, userID string, ci models.ContactInfo) error {
+	ctx, cancel := dbService.getContext()
+	defer cancel()
+
+	_id, err := primitive.ObjectIDFromHex(userID)
+	if err != nil {
+		return err
+	}
+	filter := bson.M{"_id": _id}
+	update := bson.M{"$set": bson.M{
+		"contactInfos.$[ci]":   ci,
+		"timestamps.updatedAt": time.Now().Unix(),
+	}}
+	opts := options.Update().SetArrayFilters(options.ArrayFilters{
+		Filters: []interface{}{bson.M{"ci.type": models.ContactTypePhone}},
+	})
+	_, err = dbService.collectionRefUsers(instanceID).UpdateOne(ctx, filter, update, opts)
+	return err
+}
+
+// SetPhoneVerificationSentAt stamps confirmationLinkSentAt on the matching phone contact info
+// with a targeted $set (the phone-flow cooldown marker).
+func (dbService *UserDBService) SetPhoneVerificationSentAt(instanceID string, userID string, phone string, sentAt int64) error {
+	ctx, cancel := dbService.getContext()
+	defer cancel()
+
+	_id, err := primitive.ObjectIDFromHex(userID)
+	if err != nil {
+		return err
+	}
+	filter := bson.M{"_id": _id}
+	update := bson.M{"$set": bson.M{"contactInfos.$[ci].confirmationLinkSentAt": sentAt}}
+	opts := options.Update().SetArrayFilters(options.ArrayFilters{
+		Filters: []interface{}{bson.M{"ci.type": models.ContactTypePhone, "ci.phone": phone}},
+	})
+	_, err = dbService.collectionRefUsers(instanceID).UpdateOne(ctx, filter, update, opts)
+	return err
 }
 
 func (dbService *UserDBService) UpdateAccountPreferredLang(instanceID string, userID string, lang string) (models.User, error) {

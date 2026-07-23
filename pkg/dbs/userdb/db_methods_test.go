@@ -522,27 +522,40 @@ func TestFindInactiveUsers(t *testing.T) {
 	})
 }
 
-func TestDbSavePhoneVerificationAttempt(t *testing.T) {
+func addReserveTestUser(t *testing.T, accountID string, attempts []int64, contactInfos []models.ContactInfo) string {
+	t.Helper()
+	testUser := models.User{
+		Account: models.Account{
+			Type:                      "email",
+			AccountID:                 accountID,
+			Password:                  "testhashedpassword-youcantreadme",
+			PhoneVerificationAttempts: attempts,
+		},
+		ContactInfos: contactInfos,
+		Timestamps: models.Timestamps{
+			CreatedAt: time.Now().Unix(),
+		},
+	}
+	id, err := testDBService.AddUser(testInstanceID, testUser)
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+	return id
+}
+
+func TestDbReservePhoneVerificationSlot(t *testing.T) {
+	const maxAttempts = 3
+	const window = int64(300)
+
 	t.Run("with attempts field stored as null (legacy user)", func(t *testing.T) {
-		testUser := models.User{
-			Account: models.Account{
-				Type:      "email",
-				AccountID: "save_phone_attempt_legacy@test.com",
-				Password:  "testhashedpassword-youcantreadme",
-			},
-			Timestamps: models.Timestamps{
-				CreatedAt: time.Now().Unix(),
-			},
-		}
-		id, err := testDBService.AddUser(testInstanceID, testUser)
-		if err != nil {
-			t.Errorf(err.Error())
-			return
-		}
-		err = testDBService.SavePhoneVerificationAttempt(testInstanceID, id)
+		id := addReserveTestUser(t, "reserve_slot_legacy@test.com", nil, nil)
+		ok, err := testDBService.ReservePhoneVerificationSlot(testInstanceID, id, maxAttempts, window)
 		if err != nil {
 			t.Errorf("unexpected error: %v", err)
 			return
+		}
+		if !ok {
+			t.Error("expected a free slot for a fresh user")
 		}
 		user, err := testDBService.GetUserByID(testInstanceID, id)
 		if err != nil {
@@ -554,37 +567,198 @@ func TestDbSavePhoneVerificationAttempt(t *testing.T) {
 		}
 	})
 
-	t.Run("with initialised attempts field", func(t *testing.T) {
-		testUser := models.User{
-			Account: models.Account{
-				Type:                      "email",
-				AccountID:                 "save_phone_attempt_new@test.com",
-				Password:                  "testhashedpassword-youcantreadme",
-				PhoneVerificationAttempts: []int64{},
-			},
-			Timestamps: models.Timestamps{
-				CreatedAt: time.Now().Unix(),
-			},
-		}
-		id, err := testDBService.AddUser(testInstanceID, testUser)
-		if err != nil {
-			t.Errorf(err.Error())
-			return
-		}
-		for i := 0; i < 2; i++ {
-			err = testDBService.SavePhoneVerificationAttempt(testInstanceID, id)
+	t.Run("consumes slots up to the limit then rejects", func(t *testing.T) {
+		id := addReserveTestUser(t, "reserve_slot_limit@test.com", []int64{}, nil)
+		for i := 0; i < maxAttempts; i++ {
+			ok, err := testDBService.ReservePhoneVerificationSlot(testInstanceID, id, maxAttempts, window)
 			if err != nil {
-				t.Errorf("unexpected error: %v", err)
+				t.Errorf("unexpected error on reserve #%d: %v", i+1, err)
 				return
 			}
+			if !ok {
+				t.Errorf("reserve #%d should have succeeded", i+1)
+				return
+			}
+		}
+		ok, err := testDBService.ReservePhoneVerificationSlot(testInstanceID, id, maxAttempts, window)
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+			return
+		}
+		if ok {
+			t.Errorf("reserve #%d should have been rejected", maxAttempts+1)
 		}
 		user, err := testDBService.GetUserByID(testInstanceID, id)
 		if err != nil {
 			t.Errorf(err.Error())
 			return
 		}
+		if len(user.Account.PhoneVerificationAttempts) != maxAttempts {
+			t.Errorf("wrong number of attempts: %d instead of %d", len(user.Account.PhoneVerificationAttempts), maxAttempts)
+		}
+	})
+
+	t.Run("attempts outside the window free their slots", func(t *testing.T) {
+		old := time.Now().Unix() - window - 10
+		id := addReserveTestUser(t, "reserve_slot_expired@test.com", []int64{old, old, old}, nil)
+		ok, err := testDBService.ReservePhoneVerificationSlot(testInstanceID, id, maxAttempts, window)
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+			return
+		}
+		if !ok {
+			t.Error("expected a free slot when all recorded attempts are outside the window")
+		}
+	})
+
+	t.Run("unknown user matches no document", func(t *testing.T) {
+		ok, err := testDBService.ReservePhoneVerificationSlot(testInstanceID, primitive.NewObjectID().Hex(), maxAttempts, window)
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+			return
+		}
+		if ok {
+			t.Error("expected no reservation for an unknown user")
+		}
+	})
+}
+
+func TestDbSetPhoneVerificationCode(t *testing.T) {
+	t.Run("sets the code without touching recorded attempts", func(t *testing.T) {
+		now := time.Now().Unix()
+		id := addReserveTestUser(t, "set_phone_code@test.com", []int64{now - 1, now - 2}, nil)
+		code := models.VerificationCode{Code: "123456", Attempts: 0, CreatedAt: now, ExpiresAt: now + 60}
+		if err := testDBService.SetPhoneVerificationCode(testInstanceID, id, code); err != nil {
+			t.Errorf("unexpected error: %v", err)
+			return
+		}
+		user, err := testDBService.GetUserByID(testInstanceID, id)
+		if err != nil {
+			t.Errorf(err.Error())
+			return
+		}
+		if user.Account.PhoneVerificationCode.Code != "123456" {
+			t.Errorf("code not persisted: %+v", user.Account.PhoneVerificationCode)
+		}
 		if len(user.Account.PhoneVerificationAttempts) != 2 {
-			t.Errorf("wrong number of attempts: %d instead of %d", len(user.Account.PhoneVerificationAttempts), 2)
+			t.Errorf("recorded attempts were touched: %d instead of 2", len(user.Account.PhoneVerificationAttempts))
+		}
+	})
+}
+
+func TestDbAddPhoneContactInfoIfAbsent(t *testing.T) {
+	newPhoneCI := func(phone string) models.ContactInfo {
+		return models.ContactInfo{
+			ID:    primitive.NewObjectID(),
+			Type:  models.ContactTypePhone,
+			Phone: phone,
+		}
+	}
+
+	t.Run("adds the phone when the user has none", func(t *testing.T) {
+		emailCI := models.ContactInfo{
+			ID: primitive.NewObjectID(), Type: models.ContactTypeEmail,
+			Email: "add_ci_absent@test.com", ConfirmedAt: time.Now().Unix(),
+		}
+		id := addReserveTestUser(t, "add_ci_absent@test.com", []int64{}, []models.ContactInfo{emailCI})
+		ok, err := testDBService.AddPhoneContactInfoIfAbsent(testInstanceID, id, newPhoneCI("+391230000001"))
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+			return
+		}
+		if !ok {
+			t.Error("expected the phone to be added")
+		}
+		user, _ := testDBService.GetUserByID(testInstanceID, id)
+		phones := 0
+		for _, ci := range user.ContactInfos {
+			if ci.Type == models.ContactTypePhone {
+				phones++
+			}
+		}
+		if phones != 1 {
+			t.Errorf("expected exactly 1 phone contact info, got %d", phones)
+		}
+	})
+
+	t.Run("refuses when a phone already exists", func(t *testing.T) {
+		id := addReserveTestUser(t, "add_ci_present@test.com", []int64{}, []models.ContactInfo{
+			{ID: primitive.NewObjectID(), Type: models.ContactTypePhone, Phone: "+391230000002"},
+		})
+		ok, err := testDBService.AddPhoneContactInfoIfAbsent(testInstanceID, id, newPhoneCI("+391230000003"))
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+			return
+		}
+		if ok {
+			t.Error("expected the add to be refused when a phone contact info exists")
+		}
+		user, _ := testDBService.GetUserByID(testInstanceID, id)
+		phones := 0
+		for _, ci := range user.ContactInfos {
+			if ci.Type == models.ContactTypePhone {
+				phones++
+			}
+		}
+		if phones != 1 {
+			t.Errorf("expected exactly 1 phone contact info, got %d", phones)
+		}
+	})
+}
+
+func TestDbReplacePhoneContactInfo(t *testing.T) {
+	t.Run("replaces the phone entry in place and keeps others", func(t *testing.T) {
+		emailCI := models.ContactInfo{
+			ID: primitive.NewObjectID(), Type: models.ContactTypeEmail,
+			Email: "replace_ci@test.com", ConfirmedAt: time.Now().Unix(),
+		}
+		oldPhone := models.ContactInfo{
+			ID: primitive.NewObjectID(), Type: models.ContactTypePhone,
+			Phone: "+391230000004", ConfirmedAt: time.Now().Unix(),
+		}
+		id := addReserveTestUser(t, "replace_ci@test.com", []int64{}, []models.ContactInfo{emailCI, oldPhone})
+		newCI := models.ContactInfo{
+			ID: primitive.NewObjectID(), Type: models.ContactTypePhone, Phone: "+391230000005",
+		}
+		if err := testDBService.ReplacePhoneContactInfo(testInstanceID, id, newCI); err != nil {
+			t.Errorf("unexpected error: %v", err)
+			return
+		}
+		user, _ := testDBService.GetUserByID(testInstanceID, id)
+		var phone *models.ContactInfo
+		emails := 0
+		for i, ci := range user.ContactInfos {
+			switch ci.Type {
+			case models.ContactTypePhone:
+				phone = &user.ContactInfos[i]
+			case models.ContactTypeEmail:
+				emails++
+			}
+		}
+		if phone == nil || phone.Phone != "+391230000005" || phone.ConfirmedAt != 0 {
+			t.Errorf("phone contact info not replaced correctly: %+v", phone)
+		}
+		if emails != 1 {
+			t.Errorf("email contact info lost: %d", emails)
+		}
+	})
+}
+
+func TestDbSetPhoneVerificationSentAt(t *testing.T) {
+	t.Run("stamps only the matching phone", func(t *testing.T) {
+		id := addReserveTestUser(t, "sent_at_ci@test.com", []int64{}, []models.ContactInfo{
+			{ID: primitive.NewObjectID(), Type: models.ContactTypePhone, Phone: "+391230000006"},
+		})
+		ts := time.Now().Unix()
+		if err := testDBService.SetPhoneVerificationSentAt(testInstanceID, id, "+391230000006", ts); err != nil {
+			t.Errorf("unexpected error: %v", err)
+			return
+		}
+		user, _ := testDBService.GetUserByID(testInstanceID, id)
+		for _, ci := range user.ContactInfos {
+			if ci.Type == models.ContactTypePhone && ci.ConfirmationLinkSentAt != ts {
+				t.Errorf("confirmationLinkSentAt not stamped: %d", ci.ConfirmationLinkSentAt)
+			}
 		}
 	})
 }

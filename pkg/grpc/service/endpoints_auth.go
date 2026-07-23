@@ -805,8 +805,15 @@ func (s *userManagementServer) ResendContactVerification(ctx context.Context, re
 		if ci.ConfirmationLinkSentAt > time.Now().Unix()-contactVerificationMessageCooldown {
 			return nil, status.Error(codes.InvalidArgument, "cannot send verification so often")
 		}
-		// Reject when the allowed sends in the window are already used up (the check is a strict greater-than, hence -1)
-		if utils.HasMoreAttemptsRecently(user.Account.PhoneVerificationAttempts, allowedPhoneVerificationAttempts-1, phoneVerificationRateLimitWindow) {
+		// Atomically reserve a send slot before touching Meta: check and increment are one
+		// find-and-modify (see ReservePhoneVerificationSlot); the user was loaded above, so a
+		// failed reservation means the budget is gone. A reserved slot stays consumed even if
+		// the send fails: a failed send still burned a Meta call.
+		slotFree, err := s.userDBservice.ReservePhoneVerificationSlot(req.Token.InstanceId, req.Token.Id, allowedPhoneVerificationAttempts, phoneVerificationRateLimitWindow)
+		if err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+		if !slotFree {
 			return nil, status.Error(codes.ResourceExhausted, "too many phone verification attempts, try again later")
 		}
 		// Generate and store new phone verification code (separate from login 2FA — G-3 fix)
@@ -815,15 +822,15 @@ func (s *userManagementServer) ResendContactVerification(ctx context.Context, re
 			logger.Error.Printf("ResendContactVerification: failed to generate verification code: %v", err)
 			return nil, status.Error(codes.Internal, "error while generating verification code")
 		}
-		user.Account.PhoneVerificationCode = models.VerificationCode{
+		code := models.VerificationCode{
 			Code:      vc,
 			Attempts:  0,
 			CreatedAt: time.Now().Unix(),
 			ExpiresAt: time.Now().Unix() + s.Intervals.VerificationCodeLifetime,
 		}
-		// Persist the code before sending it, so a delivered code is always verifiable
-		user, err = s.userDBservice.UpdateUser(req.Token.InstanceId, user)
-		if err != nil {
+		// Persist the code before sending it with a targeted $set, so a delivered code is
+		// always verifiable and no full-document replace can clobber concurrent writes
+		if err := s.userDBservice.SetPhoneVerificationCode(req.Token.InstanceId, req.Token.Id, code); err != nil {
 			logger.Error.Printf("ResendContactVerification: %s", err.Error())
 			return nil, status.Error(codes.Internal, err.Error())
 		}
@@ -834,22 +841,14 @@ func (s *userManagementServer) ResendContactVerification(ctx context.Context, re
 		}
 		if err := s.whatsAppClient.SendVerificationCode(ctx, req.Address, vc, lang); err != nil {
 			logger.Error.Printf("ResendContactVerification (phone): %s", err.Error())
-			// A failed send still consumed a Meta call: record the attempt so retries stay rate limited
-			if err := s.userDBservice.SavePhoneVerificationAttempt(req.Token.InstanceId, req.Token.Id); err != nil {
-				logger.Error.Printf("ResendContactVerification: failed to save rate limit timestamp: %v", err)
-			}
 			if errors.Is(err, httpClients.ErrRecipientNotAllowed) {
 				return nil, status.Error(codes.FailedPrecondition, "phone number not enabled to receive WhatsApp messages")
 			}
 			return nil, status.Error(codes.Internal, "failed to send verification code")
 		}
 		// Mark the cooldown only after the message was accepted, like the email branch
-		user.SetContactInfoVerificationSent(models.ContactTypePhone, req.Address)
-		if _, err := s.userDBservice.UpdateUser(req.Token.InstanceId, user); err != nil {
+		if err := s.userDBservice.SetPhoneVerificationSentAt(req.Token.InstanceId, req.Token.Id, req.Address, time.Now().Unix()); err != nil {
 			logger.Error.Printf("ResendContactVerification: %s", err.Error())
-		}
-		if err := s.userDBservice.SavePhoneVerificationAttempt(req.Token.InstanceId, req.Token.Id); err != nil {
-			logger.Error.Printf("ResendContactVerification: failed to save rate limit timestamp: %v", err)
 		}
 	default:
 		return nil, status.Error(codes.InvalidArgument, "unsupported contact type")

@@ -1375,8 +1375,13 @@ func TestPhoneVerificationRateLimit(t *testing.T) {
 
 	t.Run("attempts of a new user are recorded", func(t *testing.T) {
 		for i := 0; i < allowedPhoneVerificationAttempts; i++ {
-			if err := testUserDBService.SavePhoneVerificationAttempt(testInstanceID, testUser.ID.Hex()); err != nil {
+			ok, err := testUserDBService.ReservePhoneVerificationSlot(testInstanceID, testUser.ID.Hex(), allowedPhoneVerificationAttempts, phoneVerificationRateLimitWindow)
+			if err != nil {
 				t.Errorf("unexpected error: %v", err)
+				return
+			}
+			if !ok {
+				t.Errorf("reserve #%d should have succeeded", i+1)
 				return
 			}
 		}

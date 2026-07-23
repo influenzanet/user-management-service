@@ -15,6 +15,7 @@ import (
 	httpClients "github.com/influenzanet/user-management-service/pkg/http/clients"
 	"github.com/influenzanet/user-management-service/pkg/models"
 	"github.com/influenzanet/user-management-service/pkg/pwhash"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"github.com/influenzanet/user-management-service/pkg/tokens"
 	"github.com/influenzanet/user-management-service/pkg/utils"
@@ -507,11 +508,6 @@ func (s *userManagementServer) AddPhoneNumber(ctx context.Context, req *api.Phon
 		return nil, status.Error(codes.Internal, "user not found")
 	}
 
-	// Reject when the allowed sends in the window are already used up (the check is a strict greater-than, hence -1)
-	if utils.HasMoreAttemptsRecently(user.Account.PhoneVerificationAttempts, allowedPhoneVerificationAttempts-1, phoneVerificationRateLimitWindow) {
-		return nil, status.Error(codes.ResourceExhausted, "too many phone verification attempts, try again later")
-	}
-
 	// Check if user already has this phone number
 	var existingPhoneInfo *models.ContactInfo
 	for i, ci := range user.ContactInfos {
@@ -526,8 +522,8 @@ func (s *userManagementServer) AddPhoneNumber(ctx context.Context, req *api.Phon
 		return nil, status.Error(codes.InvalidArgument, "phone number already verified")
 	}
 
-	// If user already has this phone but unverified, allow re-sending verification code
-	if existingPhoneInfo == nil {
+	isNewPhone := existingPhoneInfo == nil
+	if isNewPhone {
 		// Phone doesn't belong to this user - check if it's taken by someone else (excluding this user)
 		phoneSlice := []string{phone}
 		isTaken, err := s.userDBservice.IsPhoneNumberTakenExcludingUser(ctx, req.Token.InstanceId, phoneSlice, req.Token.Id)
@@ -543,49 +539,81 @@ func (s *userManagementServer) AddPhoneNumber(ctx context.Context, req *api.Phon
 				return nil, status.Error(codes.InvalidArgument, "user already has a phone number")
 			}
 		}
-
-		// Add new phone number
-		user.AddNewPhone(phone, false)
 	}
 
-	// Set phone verification code (separate from login 2FA code — G-3 fix)
+	// Atomically reserve a send slot before touching Meta: check and increment are one
+	// find-and-modify, so overlapping requests (also across replicas) cannot exceed the
+	// budget. The user was loaded above, so a failed reservation means the budget is gone.
+	// A reserved slot stays consumed even if the send fails: a failed send still burned a
+	// Meta call.
+	slotFree, err := s.userDBservice.ReservePhoneVerificationSlot(req.Token.InstanceId, req.Token.Id, allowedPhoneVerificationAttempts, phoneVerificationRateLimitWindow)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	if !slotFree {
+		return nil, status.Error(codes.ResourceExhausted, "too many phone verification attempts, try again later")
+	}
+
+	if isNewPhone {
+		// The guard lives in the filter: only one concurrent request can add a phone.
+		added, err := s.userDBservice.AddPhoneContactInfoIfAbsent(req.Token.InstanceId, req.Token.Id, models.ContactInfo{
+			ID:    primitive.NewObjectID(),
+			Type:  models.ContactTypePhone,
+			Phone: phone,
+		})
+		if err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+		if !added {
+			// A concurrent request added a phone first: only the same-number resend is allowed.
+			fresh, err := s.userDBservice.GetUserByID(req.Token.InstanceId, req.Token.Id)
+			if err != nil {
+				return nil, status.Error(codes.Internal, "user not found")
+			}
+			ci, found := fresh.FindContactInfoByTypeAndAddr(models.ContactTypePhone, phone)
+			if !found {
+				return nil, status.Error(codes.InvalidArgument, "user already has a phone number")
+			}
+			if ci.ConfirmedAt > 0 {
+				return nil, status.Error(codes.InvalidArgument, "phone number already verified")
+			}
+		}
+	}
+
+	// Set phone verification code (separate from login 2FA code — G-3 fix); the targeted
+	// $set leaves the atomically managed attempts array untouched.
 	vc, err := tokens.GenerateVerificationCode(6)
 	if err != nil {
 		logger.Error.Printf("AddPhoneNumber: failed to generate verification code: %v", err)
 		return nil, status.Error(codes.Internal, "error while generating verification code")
 	}
-	user.Account.PhoneVerificationCode = models.VerificationCode{
+	code := models.VerificationCode{
 		Code:      vc,
 		Attempts:  0,
 		CreatedAt: time.Now().Unix(),
 		ExpiresAt: time.Now().Unix() + s.Intervals.VerificationCodeLifetime,
 	}
-	// Persist the code and the new contact info before sending, so a delivered code is always verifiable
-	updUser, err := s.userDBservice.UpdateUser(req.Token.InstanceId, user)
-	if err != nil {
+	// Persist the code before sending, so a delivered code is always verifiable
+	if err := s.userDBservice.SetPhoneVerificationCode(req.Token.InstanceId, req.Token.Id, code); err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
 	// Send WhatsApp verification code
 	if err := s.whatsAppClient.SendVerificationCode(ctx, phone, vc, s.whatsAppConfig.VerificationTemplateLang); err != nil {
 		logger.Error.Printf("AddPhoneNumber: %s", err.Error())
-		// A failed send still consumed a Meta call: record the attempt so retries stay rate limited
-		if err := s.userDBservice.SavePhoneVerificationAttempt(req.Token.InstanceId, req.Token.Id); err != nil {
-			logger.Error.Printf("AddPhoneNumber: failed to save rate limit timestamp: %v", err)
-		}
 		if errors.Is(err, httpClients.ErrRecipientNotAllowed) {
 			return nil, status.Error(codes.FailedPrecondition, "phone number not enabled to receive WhatsApp messages")
 		}
 		return nil, status.Error(codes.Internal, "failed to send verification code")
 	}
-	// Mark the cooldown only after the message was accepted; the full-document update must
-	// happen before the attempt is recorded, so its $push is not overwritten by the replace
-	updUser.SetContactInfoVerificationSent(models.ContactTypePhone, phone)
-	if _, err := s.userDBservice.UpdateUser(req.Token.InstanceId, updUser); err != nil {
+	// Mark the cooldown only after the message was accepted
+	if err := s.userDBservice.SetPhoneVerificationSentAt(req.Token.InstanceId, req.Token.Id, phone, time.Now().Unix()); err != nil {
 		logger.Error.Printf("AddPhoneNumber: %s", err.Error())
 	}
-	if err := s.userDBservice.SavePhoneVerificationAttempt(req.Token.InstanceId, req.Token.Id); err != nil {
-		logger.Error.Printf("AddPhoneNumber: failed to save rate limit timestamp: %v", err)
+	updUser, err := s.userDBservice.GetUserByID(req.Token.InstanceId, req.Token.Id)
+	if err != nil {
+		logger.Error.Printf("AddPhoneNumber: %s", err.Error())
+		return user.ToAPI(), nil
 	}
 	return updUser.ToAPI(), nil
 }
@@ -610,11 +638,6 @@ func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.Pho
 		return nil, status.Error(codes.Internal, "user not found")
 	}
 
-	// Reject when the allowed sends in the window are already used up (the check is a strict greater-than, hence -1)
-	if utils.HasMoreAttemptsRecently(user.Account.PhoneVerificationAttempts, allowedPhoneVerificationAttempts-1, phoneVerificationRateLimitWindow) {
-		return nil, status.Error(codes.ResourceExhausted, "too many phone verification attempts, try again later")
-	}
-
 	var contactInfo *models.ContactInfo = nil
 
 	// Check if user has a registered phone number
@@ -629,6 +652,7 @@ func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.Pho
 		return nil, status.Error(codes.InvalidArgument, "user has no phone number to edit")
 	}
 
+	changingNumber := false
 	// If trying to set the same phone number that's already unverified, allow re-sending code
 	if contactInfo.Phone == phone && contactInfo.ConfirmedAt == 0 {
 		// Same phone, not verified — keep ContactInfo, just regenerate code (G-8 fix)
@@ -643,12 +667,29 @@ func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.Pho
 		} else if isTaken {
 			return nil, status.Error(codes.InvalidArgument, "phone number already taken")
 		}
-		// Only remove+re-add when the number actually changes
-		err = user.RemoveContactInfo(contactInfo.ID.Hex())
-		if err != nil {
-			return nil, err
+		changingNumber = true
+	}
+
+	// Atomically reserve a send slot before touching Meta (see AddPhoneNumber); the user was
+	// loaded above, so a failed reservation means the budget is gone. A reserved slot stays
+	// consumed even if the send fails: a failed send still burned a Meta call.
+	slotFree, err := s.userDBservice.ReservePhoneVerificationSlot(req.Token.InstanceId, req.Token.Id, allowedPhoneVerificationAttempts, phoneVerificationRateLimitWindow)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	if !slotFree {
+		return nil, status.Error(codes.ResourceExhausted, "too many phone verification attempts, try again later")
+	}
+
+	if changingNumber {
+		// Overwrite the phone entry in place with a targeted update; no full-document replace.
+		if err := s.userDBservice.ReplacePhoneContactInfo(req.Token.InstanceId, req.Token.Id, models.ContactInfo{
+			ID:    primitive.NewObjectID(),
+			Type:  models.ContactTypePhone,
+			Phone: phone,
+		}); err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
 		}
-		user.AddNewPhone(phone, false)
 	}
 
 	vc, err := tokens.GenerateVerificationCode(6)
@@ -656,40 +697,34 @@ func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.Pho
 		logger.Error.Printf("EditPhoneNumber: failed to generate verification code: %v", err)
 		return nil, status.Error(codes.Internal, "error while generating verification code")
 	}
-	user.Account.PhoneVerificationCode = models.VerificationCode{
+	code := models.VerificationCode{
 		Code:      vc,
 		Attempts:  0,
 		CreatedAt: time.Now().Unix(),
 		ExpiresAt: time.Now().Unix() + s.Intervals.VerificationCodeLifetime,
 	}
-	// Persist the code and the updated contact info before sending, so a delivered code is always verifiable
-	updUser, err := s.userDBservice.UpdateUser(req.Token.InstanceId, user)
-	if err != nil {
+	// Persist the code before sending, so a delivered code is always verifiable
+	if err := s.userDBservice.SetPhoneVerificationCode(req.Token.InstanceId, req.Token.Id, code); err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
 	// Send WhatsApp verification code
 	if err := s.whatsAppClient.SendVerificationCode(ctx, phone, vc, s.whatsAppConfig.VerificationTemplateLang); err != nil {
 		logger.Error.Printf("EditPhoneNumber: %s", err.Error())
-		// A failed send still consumed a Meta call: record the attempt so retries stay rate limited
-		if err := s.userDBservice.SavePhoneVerificationAttempt(req.Token.InstanceId, req.Token.Id); err != nil {
-			logger.Error.Printf("EditPhoneNumber: failed to save rate limit timestamp: %v", err)
-		}
 		if errors.Is(err, httpClients.ErrRecipientNotAllowed) {
 			return nil, status.Error(codes.FailedPrecondition, "phone number not enabled to receive WhatsApp messages")
 		}
 		return nil, status.Error(codes.Internal, "failed to send verification code")
 	}
-	// Mark the cooldown only after the message was accepted; the full-document update must
-	// happen before the attempt is recorded, so its $push is not overwritten by the replace
-	updUser.SetContactInfoVerificationSent(models.ContactTypePhone, phone)
-	if _, err := s.userDBservice.UpdateUser(req.Token.InstanceId, updUser); err != nil {
+	// Mark the cooldown only after the message was accepted
+	if err := s.userDBservice.SetPhoneVerificationSentAt(req.Token.InstanceId, req.Token.Id, phone, time.Now().Unix()); err != nil {
 		logger.Error.Printf("EditPhoneNumber: %s", err.Error())
 	}
-	if err := s.userDBservice.SavePhoneVerificationAttempt(req.Token.InstanceId, req.Token.Id); err != nil {
-		logger.Error.Printf("EditPhoneNumber: failed to save rate limit timestamp: %v", err)
+	updUser, err := s.userDBservice.GetUserByID(req.Token.InstanceId, req.Token.Id)
+	if err != nil {
+		logger.Error.Printf("EditPhoneNumber: %s", err.Error())
+		return user.ToAPI(), nil
 	}
-
 	return updUser.ToAPI(), nil
 }
 
