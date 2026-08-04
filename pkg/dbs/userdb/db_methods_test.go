@@ -609,6 +609,21 @@ func TestDbReservePhoneVerificationSlot(t *testing.T) {
 		if !ok {
 			t.Error("expected a free slot when all recorded attempts are outside the window")
 		}
+		// Freeing a slot must also prune it: expired attempts are dropped by the same
+		// pipeline update, so the array cannot grow beyond the window's worth of entries.
+		user, err := testDBService.GetUserByID(testInstanceID, id)
+		if err != nil {
+			t.Errorf(err.Error())
+			return
+		}
+		if len(user.Account.PhoneVerificationAttempts) != 1 {
+			t.Errorf("expired attempts were not pruned: %d entries instead of 1 (%v)",
+				len(user.Account.PhoneVerificationAttempts), user.Account.PhoneVerificationAttempts)
+			return
+		}
+		if user.Account.PhoneVerificationAttempts[0] <= old {
+			t.Errorf("surviving entry should be the new attempt, got %d", user.Account.PhoneVerificationAttempts[0])
+		}
 	})
 
 	t.Run("unknown user matches no document", func(t *testing.T) {

@@ -128,10 +128,12 @@ func (dbService *UserDBService) SavePasswordResetTrigger(instanceID string, user
 
 // ReservePhoneVerificationSlot atomically consumes one send slot of the phone verification
 // rate limit: the filter admits the document only while fewer than maxAttempts recorded
-// attempts fall inside the window, and the pipeline update appends the new attempt in the
-// same operation (also normalising a legacy null field to an array). Check and increment
-// are therefore a single find-and-modify: concurrent requests, including ones running on
-// other replicas, cannot both pass the check on the same free slot.
+// attempts fall inside the window, and the pipeline update appends the new attempt to the
+// in-window subset in the same operation (also normalising a legacy null field to an
+// array), so expired attempts are pruned on every reservation and the array is bounded by
+// the window's worth of entries. Check, increment and pruning are therefore a single
+// find-and-modify: concurrent requests, including ones running on other replicas, cannot
+// both pass the check on the same free slot.
 // Returns false when no document matched, i.e. the budget is used up or the user does not
 // exist — callers that already hold the user can safely map false to "budget exhausted".
 func (dbService *UserDBService) ReservePhoneVerificationSlot(instanceID string, userID string, maxAttempts int, windowSeconds int64) (bool, error) {
@@ -156,7 +158,7 @@ func (dbService *UserDBService) ReservePhoneVerificationSlot(instanceID string, 
 	}
 	update := mongo.Pipeline{bson.D{{Key: "$set", Value: bson.M{
 		"account.phoneVerificationAttempts": bson.M{"$concatArrays": bson.A{
-			bson.M{"$ifNull": bson.A{"$account.phoneVerificationAttempts", bson.A{}}},
+			attemptsInWindow,
 			bson.A{now},
 		}},
 	}}}}
