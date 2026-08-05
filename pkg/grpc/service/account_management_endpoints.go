@@ -371,11 +371,60 @@ func (s *userManagementServer) UpdateContactPreferences(ctx context.Context, req
 		return nil, status.Error(codes.InvalidArgument, "missing argument")
 	}
 
-	user, err := s.userDBservice.UpdateContactPreferences(req.Token.InstanceId, req.Token.Id, models.ContactPreferencesFromAPI(req.ContactPreferences))
+	user, err := s.userDBservice.GetUserByID(req.Token.InstanceId, req.Token.Id)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "user not found")
+	}
+
+	prefs := models.ContactPreferencesFromAPI(req.ContactPreferences)
+	channels, err := resolvePreferredChannels(prefs.PreferredChannels, user)
+	if err != nil {
+		return nil, err
+	}
+	prefs.PreferredChannels = channels
+
+	updatedUser, err := s.userDBservice.UpdateContactPreferences(req.Token.InstanceId, req.Token.Id, prefs)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-	return user.ToAPI(), nil
+	return updatedUser.ToAPI(), nil
+}
+
+// resolvePreferredChannels checks the requested notification channels against what the user can
+// actually be reached on, and returns the list to persist.
+//
+// The channels say how a message is delivered, not whether the user wants it: whether is what the
+// newsletter and weekly subscription flags express. An empty list is therefore not a preference
+// but a message with no transport, and it is also indistinguishable from "never set" once stored,
+// which the bulk sender reads as "send on every channel" — the opposite of what the user asked.
+// Email is kept as the baseline so that case cannot arise.
+//
+// The verified-phone requirement is enforced here and not only in the interface: the interface can
+// only stop the honest client, while this is the boundary where the data enters the system.
+func resolvePreferredChannels(requested []string, user models.User) ([]string, error) {
+	hasVerifiedPhone := false
+	for _, ci := range user.ContactInfos {
+		if ci.Type == models.ContactTypePhone && ci.ConfirmedAt > 0 {
+			hasVerifiedPhone = true
+			break
+		}
+	}
+
+	channels := []string{models.ChannelEmail}
+	for _, channel := range requested {
+		switch channel {
+		case models.ChannelEmail:
+			// already the baseline
+		case models.ChannelWhatsApp:
+			if !hasVerifiedPhone {
+				return nil, status.Error(codes.InvalidArgument, "whatsapp channel requires a verified phone number")
+			}
+			channels = append(channels, channel)
+		default:
+			return nil, status.Errorf(codes.InvalidArgument, "unknown notification channel: %s", channel)
+		}
+	}
+	return channels, nil
 }
 
 func (s *userManagementServer) UseUnsubscribeToken(ctx context.Context, req *api.TempToken) (*api.ServiceStatus, error) {

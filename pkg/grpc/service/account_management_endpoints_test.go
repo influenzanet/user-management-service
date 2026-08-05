@@ -1012,6 +1012,99 @@ func TestUpdateContactPreferencesEndpoint(t *testing.T) {
 	})
 }
 
+// The notification channels say how a message is delivered, not whether the user wants it:
+// wanting or not is what SubscribedToWeekly and SubscribedToNewsletter express. A channel list
+// therefore cannot be empty, cannot name a transport the platform does not have, and cannot
+// name whatsapp for a user with no verified phone to receive it on.
+func TestUpdateContactPreferencesChannelRules(t *testing.T) {
+	s := userManagementServer{
+		userDBservice:   testUserDBService,
+		globalDBService: testGlobalDBService,
+		Intervals:       models.Intervals{TokenExpiryInterval: time.Second * 2},
+	}
+
+	newPrefsUser := func(t *testing.T, accountID string, phoneConfirmedAt int64) *api_types.TokenInfos {
+		t.Helper()
+		users, err := addTestUsers([]models.User{
+			{
+				Account: models.Account{Type: "email", AccountID: accountID},
+				ContactInfos: []models.ContactInfo{
+					{ID: primitive.NewObjectID(), Type: models.ContactTypeEmail, Email: accountID, ConfirmedAt: time.Now().Unix()},
+					{ID: primitive.NewObjectID(), Type: models.ContactTypePhone, Phone: "+391230000501", ConfirmedAt: phoneConfirmedAt},
+				},
+			},
+		})
+		if err != nil {
+			t.Fatalf("failed to create test user: %s", err.Error())
+		}
+		return &api_types.TokenInfos{Id: users[0].ID.Hex(), InstanceId: testInstanceID}
+	}
+
+	update := func(token *api_types.TokenInfos, channels []string) (*api.User, error) {
+		return s.UpdateContactPreferences(context.Background(), &api.ContactPreferencesMsg{
+			Token: token,
+			ContactPreferences: &api.ContactPreferences{
+				SubscribedToWeekly: true,
+				PreferredChannels:  channels,
+			},
+		})
+	}
+
+	t.Run("whatsapp is refused without a verified phone", func(t *testing.T) {
+		token := newPrefsUser(t, "prefs_no_phone@test.com", 0)
+		_, err := update(token, []string{models.ChannelEmail, models.ChannelWhatsApp})
+		if status.Code(err) != codes.InvalidArgument {
+			t.Errorf("expected InvalidArgument, got %v", err)
+		}
+		user, _ := testUserDBService.GetUserByID(testInstanceID, token.Id)
+		if len(user.ContactPreferences.PreferredChannels) != 0 {
+			t.Errorf("a refused request must not be persisted: %v", user.ContactPreferences.PreferredChannels)
+		}
+	})
+
+	t.Run("whatsapp is accepted with a verified phone", func(t *testing.T) {
+		token := newPrefsUser(t, "prefs_with_phone@test.com", time.Now().Unix())
+		resp, err := update(token, []string{models.ChannelEmail, models.ChannelWhatsApp})
+		if err != nil {
+			t.Fatalf("unexpected error: %s", err.Error())
+		}
+		if len(resp.ContactPreferences.PreferredChannels) != 2 {
+			t.Errorf("expected both channels, got %v", resp.ContactPreferences.PreferredChannels)
+		}
+	})
+
+	t.Run("an unknown channel is refused", func(t *testing.T) {
+		token := newPrefsUser(t, "prefs_unknown_channel@test.com", time.Now().Unix())
+		_, err := update(token, []string{models.ChannelEmail, "telegram"})
+		if status.Code(err) != codes.InvalidArgument {
+			t.Errorf("expected InvalidArgument, got %v", err)
+		}
+	})
+
+	t.Run("an empty list keeps email rather than meaning no channel at all", func(t *testing.T) {
+		token := newPrefsUser(t, "prefs_empty_list@test.com", time.Now().Unix())
+		resp, err := update(token, []string{})
+		if err != nil {
+			t.Fatalf("unexpected error: %s", err.Error())
+		}
+		got := resp.ContactPreferences.PreferredChannels
+		if len(got) != 1 || got[0] != models.ChannelEmail {
+			t.Errorf("expected the email channel to survive, got %v", got)
+		}
+	})
+
+	t.Run("the other preferences are passed through untouched", func(t *testing.T) {
+		token := newPrefsUser(t, "prefs_passthrough@test.com", time.Now().Unix())
+		resp, err := update(token, []string{models.ChannelEmail})
+		if err != nil {
+			t.Fatalf("unexpected error: %s", err.Error())
+		}
+		if !resp.ContactPreferences.SubscribedToWeekly {
+			t.Errorf("subscription flags must not be touched by the channel rules: %+v", resp.ContactPreferences)
+		}
+	})
+}
+
 func TestUseUnsubscribeTokenEndpoint(t *testing.T) {
 	s := userManagementServer{
 		userDBservice:   testUserDBService,
