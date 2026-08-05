@@ -791,10 +791,10 @@ func (s *userManagementServer) ResendContactVerification(ctx context.Context, re
 		if err != nil {
 			logger.Error.Printf("ResendContactVerification: %s", err.Error())
 		}
-		// update last verification sent time
-		user.SetContactInfoVerificationSent(models.ContactTypeEmail, req.Address)
-		_, err = s.userDBservice.UpdateUser(req.Token.InstanceId, user)
-		if err != nil {
+		// Stamp the cooldown with a targeted update: saving the whole user here would write
+		// back the snapshot read at the top of the request, dropping the phone verification
+		// slots reserved while the email was on its way.
+		if err := s.userDBservice.SetContactVerificationSentAt(req.Token.InstanceId, req.Token.Id, models.ContactTypeEmail, req.Address, time.Now().Unix()); err != nil {
 			logger.Error.Printf("ResendContactVerification: %s", err.Error())
 		}
 	case models.ContactTypePhone:
@@ -847,7 +847,7 @@ func (s *userManagementServer) ResendContactVerification(ctx context.Context, re
 			return nil, status.Error(codes.Internal, "failed to send verification code")
 		}
 		// Mark the cooldown only after the message was accepted, like the email branch
-		if err := s.userDBservice.SetPhoneVerificationSentAt(req.Token.InstanceId, req.Token.Id, req.Address, time.Now().Unix()); err != nil {
+		if err := s.userDBservice.SetContactVerificationSentAt(req.Token.InstanceId, req.Token.Id, models.ContactTypePhone, req.Address, time.Now().Unix()); err != nil {
 			logger.Error.Printf("ResendContactVerification: %s", err.Error())
 		}
 	default:

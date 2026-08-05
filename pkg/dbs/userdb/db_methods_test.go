@@ -12,6 +12,7 @@ import (
 	"github.com/coneno/logger"
 	"github.com/influenzanet/user-management-service/pkg/models"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
 var testDBService *UserDBService
@@ -759,13 +760,13 @@ func TestDbReplacePhoneContactInfo(t *testing.T) {
 	})
 }
 
-func TestDbSetPhoneVerificationSentAt(t *testing.T) {
+func TestDbSetContactVerificationSentAt(t *testing.T) {
 	t.Run("stamps only the matching phone", func(t *testing.T) {
 		id := addReserveTestUser(t, "sent_at_ci@test.com", []int64{}, []models.ContactInfo{
 			{ID: primitive.NewObjectID(), Type: models.ContactTypePhone, Phone: "+391230000006"},
 		})
 		ts := time.Now().Unix()
-		if err := testDBService.SetPhoneVerificationSentAt(testInstanceID, id, "+391230000006", ts); err != nil {
+		if err := testDBService.SetContactVerificationSentAt(testInstanceID, id, models.ContactTypePhone, "+391230000006", ts); err != nil {
 			t.Errorf("unexpected error: %v", err)
 			return
 		}
@@ -776,4 +777,102 @@ func TestDbSetPhoneVerificationSentAt(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("stamps the email without touching the phone", func(t *testing.T) {
+		id := addReserveTestUser(t, "sent_at_email@test.com", []int64{}, []models.ContactInfo{
+			{ID: primitive.NewObjectID(), Type: models.ContactTypeEmail, Email: "sent_at_email@test.com"},
+			{ID: primitive.NewObjectID(), Type: models.ContactTypePhone, Phone: "+391230000007"},
+		})
+		ts := time.Now().Unix()
+		if err := testDBService.SetContactVerificationSentAt(testInstanceID, id, models.ContactTypeEmail, "sent_at_email@test.com", ts); err != nil {
+			t.Errorf("unexpected error: %v", err)
+			return
+		}
+		user, _ := testDBService.GetUserByID(testInstanceID, id)
+		for _, ci := range user.ContactInfos {
+			switch ci.Type {
+			case models.ContactTypeEmail:
+				if ci.ConfirmationLinkSentAt != ts {
+					t.Errorf("email confirmationLinkSentAt not stamped: %d", ci.ConfirmationLinkSentAt)
+				}
+			case models.ContactTypePhone:
+				if ci.ConfirmationLinkSentAt != 0 {
+					t.Errorf("phone contact info was touched: %d", ci.ConfirmationLinkSentAt)
+				}
+			}
+		}
+	})
+}
+
+func TestDbFinalizePhoneVerification(t *testing.T) {
+	now := time.Now().Unix()
+
+	t.Run("confirms the phone and enables both channels without touching the ledger", func(t *testing.T) {
+		ledger := []int64{now - 20, now - 10}
+		id := addReserveTestUser(t, "finalize_ok@test.com", ledger, []models.ContactInfo{
+			{ID: primitive.NewObjectID(), Type: models.ContactTypeEmail, Email: "finalize_ok@test.com", ConfirmedAt: now},
+			{ID: primitive.NewObjectID(), Type: models.ContactTypePhone, Phone: "+391230000010"},
+		})
+		if err := testDBService.SetPhoneVerificationCode(testInstanceID, id, models.VerificationCode{Code: "123456"}); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		updated, err := testDBService.FinalizePhoneVerification(testInstanceID, id)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		phone, found := updated.FindContactInfoByTypeAndAddr(models.ContactTypePhone, "+391230000010")
+		if !found || phone.ConfirmedAt == 0 {
+			t.Errorf("phone was not marked as verified: %+v", phone)
+		}
+		channels := updated.ContactPreferences.PreferredChannels
+		if !containsChannel(channels, models.ChannelEmail) || !containsChannel(channels, models.ChannelWhatsApp) {
+			t.Errorf("both email and whatsapp channels must be enabled, got %v", channels)
+		}
+		if updated.Account.PhoneVerificationCode.Code != "" {
+			t.Errorf("spent verification code was not cleared: %+v", updated.Account.PhoneVerificationCode)
+		}
+		if len(updated.Account.PhoneVerificationAttempts) != len(ledger) {
+			t.Errorf("the attempts ledger was rewritten: %v instead of %v", updated.Account.PhoneVerificationAttempts, ledger)
+		}
+	})
+
+	t.Run("refuses to finalize when the phone is gone", func(t *testing.T) {
+		id := addReserveTestUser(t, "finalize_no_phone@test.com", []int64{}, []models.ContactInfo{
+			{ID: primitive.NewObjectID(), Type: models.ContactTypeEmail, Email: "finalize_no_phone@test.com"},
+		})
+		if _, err := testDBService.FinalizePhoneVerification(testInstanceID, id); err != mongo.ErrNoDocuments {
+			t.Errorf("expected mongo.ErrNoDocuments, got %v", err)
+		}
+		user, _ := testDBService.GetUserByID(testInstanceID, id)
+		if len(user.ContactPreferences.PreferredChannels) != 0 {
+			t.Errorf("the whatsapp channel must not be enabled without a phone: %v", user.ContactPreferences.PreferredChannels)
+		}
+	})
+
+	t.Run("does not duplicate channels already enabled", func(t *testing.T) {
+		id := addReserveTestUser(t, "finalize_idempotent@test.com", []int64{}, []models.ContactInfo{
+			{ID: primitive.NewObjectID(), Type: models.ContactTypePhone, Phone: "+391230000011"},
+		})
+		if _, err := testDBService.FinalizePhoneVerification(testInstanceID, id); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		updated, err := testDBService.FinalizePhoneVerification(testInstanceID, id)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(updated.ContactPreferences.PreferredChannels) != 2 {
+			t.Errorf("channels were duplicated: %v", updated.ContactPreferences.PreferredChannels)
+		}
+	})
+}
+
+func containsChannel(channels []string, channel string) bool {
+	for _, c := range channels {
+		if c == channel {
+			return true
+		}
+	}
+	return false
 }

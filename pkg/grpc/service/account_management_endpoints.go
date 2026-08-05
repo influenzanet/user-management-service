@@ -607,7 +607,7 @@ func (s *userManagementServer) AddPhoneNumber(ctx context.Context, req *api.Phon
 		return nil, status.Error(codes.Internal, "failed to send verification code")
 	}
 	// Mark the cooldown only after the message was accepted
-	if err := s.userDBservice.SetPhoneVerificationSentAt(req.Token.InstanceId, req.Token.Id, phone, time.Now().Unix()); err != nil {
+	if err := s.userDBservice.SetContactVerificationSentAt(req.Token.InstanceId, req.Token.Id, models.ContactTypePhone, phone, time.Now().Unix()); err != nil {
 		logger.Error.Printf("AddPhoneNumber: %s", err.Error())
 	}
 	updUser, err := s.userDBservice.GetUserByID(req.Token.InstanceId, req.Token.Id)
@@ -717,7 +717,7 @@ func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.Pho
 		return nil, status.Error(codes.Internal, "failed to send verification code")
 	}
 	// Mark the cooldown only after the message was accepted
-	if err := s.userDBservice.SetPhoneVerificationSentAt(req.Token.InstanceId, req.Token.Id, phone, time.Now().Unix()); err != nil {
+	if err := s.userDBservice.SetContactVerificationSentAt(req.Token.InstanceId, req.Token.Id, models.ContactTypePhone, phone, time.Now().Unix()); err != nil {
 		logger.Error.Printf("EditPhoneNumber: %s", err.Error())
 	}
 	updUser, err := s.userDBservice.GetUserByID(req.Token.InstanceId, req.Token.Id)
@@ -753,10 +753,11 @@ func (s *userManagementServer) VerifyWhatsAppCode(ctx context.Context, req *api.
 		req.Token.InstanceId, req.Token.Id, s.Intervals.MaxVerificationAttempts,
 	)
 	if err == mongo.ErrNoDocuments {
-		// Limit reached — remove phone number
-		user, _ = s.userDBservice.GetUserByID(req.Token.InstanceId, req.Token.Id)
-		user.RemovePhone()
-		if _, updErr := s.userDBservice.UpdateUser(req.Token.InstanceId, user); updErr != nil {
+		// Limit reached — remove the phone with the targeted delete, which also drops the
+		// whatsapp channel and clears the code, instead of saving a user read a moment ago:
+		// a full document save would carry a stale attempts ledger and drop the slots
+		// reserved by concurrent sends.
+		if _, updErr := s.userDBservice.DeletePhoneNumber(req.Token.InstanceId, req.Token.Id); updErr != nil {
 			logger.Error.Printf("VerifyWhatsAppCode: failed to remove phone: %v", updErr)
 		}
 		return nil, status.Error(codes.PermissionDenied, "too many attempts, phone number removed")
@@ -777,33 +778,12 @@ func (s *userManagementServer) VerifyWhatsAppCode(ctx context.Context, req *api.
 		return nil, status.Error(codes.PermissionDenied, "invalid verification code")
 	}
 
-	// Code correct, mark phone as verified
-	user.MarkPhoneAsVerified()
-
-	// Enable WhatsApp as notification channel.
-	// Both "email" and "whatsapp" must be present to avoid disabling email delivery.
-	channels := user.ContactPreferences.PreferredChannels
-	hasEmail, hasWhatsapp := false, false
-	for _, ch := range channels {
-		if ch == models.ChannelEmail {
-			hasEmail = true
-		}
-		if ch == models.ChannelWhatsApp {
-			hasWhatsapp = true
-		}
-	}
-	if !hasEmail {
-		channels = append(channels, models.ChannelEmail)
-	}
-	if !hasWhatsapp {
-		channels = append(channels, models.ChannelWhatsApp)
-	}
-	user.ContactPreferences.PreferredChannels = channels
-
-	// Remove verification code
-	user.Account.PhoneVerificationCode = models.VerificationCode{}
-
-	updatedUser, err := s.userDBservice.UpdateUser(req.Token.InstanceId, user)
+	// Code correct: mark the phone as verified, enable the whatsapp channel next to email
+	// (both, so enabling whatsapp never silences email delivery) and clear the spent code —
+	// all with targeted updates, in one atomic operation. Adding the channels is left to
+	// $addToSet, so a concurrent change of the notification preferences is not overwritten
+	// by the list this request read.
+	updatedUser, err := s.userDBservice.FinalizePhoneVerification(req.Token.InstanceId, req.Token.Id)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}

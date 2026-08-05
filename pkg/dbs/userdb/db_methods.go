@@ -236,9 +236,23 @@ func (dbService *UserDBService) ReplacePhoneContactInfo(instanceID string, userI
 	return err
 }
 
-// SetPhoneVerificationSentAt stamps confirmationLinkSentAt on the matching phone contact info
-// with a targeted $set (the phone-flow cooldown marker).
-func (dbService *UserDBService) SetPhoneVerificationSentAt(instanceID string, userID string, phone string, sentAt int64) error {
+// contactInfoElementFilter builds the array filter that selects one contact info by type and
+// address, so updates reach a single entry of contactInfos and leave the rest of the array,
+// and of the document, as they are.
+func contactInfoElementFilter(contactType string, address string) bson.M {
+	elem := bson.M{"ci.type": contactType}
+	switch contactType {
+	case models.ContactTypeEmail:
+		elem["ci.email"] = address
+	case models.ContactTypePhone:
+		elem["ci.phone"] = address
+	}
+	return elem
+}
+
+// SetContactVerificationSentAt stamps confirmationLinkSentAt on the matching contact info with
+// a targeted $set (the cooldown marker of both the email and the phone flow).
+func (dbService *UserDBService) SetContactVerificationSentAt(instanceID string, userID string, contactType string, address string, sentAt int64) error {
 	ctx, cancel := dbService.getContext()
 	defer cancel()
 
@@ -249,10 +263,56 @@ func (dbService *UserDBService) SetPhoneVerificationSentAt(instanceID string, us
 	filter := bson.M{"_id": _id}
 	update := bson.M{"$set": bson.M{"contactInfos.$[ci].confirmationLinkSentAt": sentAt}}
 	opts := options.Update().SetArrayFilters(options.ArrayFilters{
-		Filters: []interface{}{bson.M{"ci.type": models.ContactTypePhone, "ci.phone": phone}},
+		Filters: []interface{}{contactInfoElementFilter(contactType, address)},
 	})
 	_, err = dbService.collectionRefUsers(instanceID).UpdateOne(ctx, filter, update, opts)
 	return err
+}
+
+// FinalizePhoneVerification records a successful phone verification with targeted updates: the
+// phone contact info is marked as confirmed, the whatsapp channel is enabled together with
+// email (so enabling whatsapp never silences email delivery), and the spent code is cleared.
+// The attempts ledger is deliberately absent from the update: a verification sends no message,
+// so it has no attempt to account for and must not rewrite what the atomic reservation
+// maintains — a field that is never named cannot be clobbered.
+// The filter requires a phone contact info to still be there, so a number deleted while the code
+// was being verified yields mongo.ErrNoDocuments instead of enabling the whatsapp channel for a
+// user who has no phone left.
+func (dbService *UserDBService) FinalizePhoneVerification(instanceID string, userID string) (models.User, error) {
+	ctx, cancel := dbService.getContext()
+	defer cancel()
+
+	_id, err := primitive.ObjectIDFromHex(userID)
+	if err != nil {
+		return models.User{}, err
+	}
+	now := time.Now().Unix()
+	update := bson.M{
+		"$set": bson.M{
+			"contactInfos.$[ci].confirmedAt": now,
+			"account.phoneVerificationCode":  models.VerificationCode{},
+			"timestamps.updatedAt":           now,
+		},
+		"$addToSet": bson.M{
+			"contactPreferences.preferredChannels": bson.M{
+				"$each": bson.A{models.ChannelEmail, models.ChannelWhatsApp},
+			},
+		},
+	}
+	opts := options.FindOneAndUpdate().
+		SetArrayFilters(options.ArrayFilters{
+			Filters: []interface{}{bson.M{"ci.type": models.ContactTypePhone}},
+		}).
+		SetReturnDocument(options.After)
+
+	filter := bson.M{
+		"_id":          _id,
+		"contactInfos": bson.M{"$elemMatch": bson.M{"type": models.ContactTypePhone}},
+	}
+
+	var updated models.User
+	err = dbService.collectionRefUsers(instanceID).FindOneAndUpdate(ctx, filter, update, opts).Decode(&updated)
+	return updated, err
 }
 
 func (dbService *UserDBService) UpdateAccountPreferredLang(instanceID string, userID string, lang string) (models.User, error) {

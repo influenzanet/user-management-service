@@ -252,21 +252,5 @@ func (o Timestamps) ToAPI() *api.User_Timestamps {
 }
 
 // RemovePhone removes the phone contact info from the user
-func (u *User) RemovePhone() {
-	for i := len(u.ContactInfos) - 1; i >= 0; i-- {
-		ci := u.ContactInfos[i]
-		if ci.Type == ContactTypePhone {
-			u.ContactInfos = append(u.ContactInfos[:i], u.ContactInfos[i+1:]...)
-		}
-	}
-}
 
 // MarkPhoneAsVerified marks the user's phone number as verified
-func (u *User) MarkPhoneAsVerified() {
-	for i, ci := range u.ContactInfos {
-		if ci.Type == ContactTypePhone {
-			u.ContactInfos[i].ConfirmedAt = time.Now().Unix()
-			return
-		}
-	}
-}
