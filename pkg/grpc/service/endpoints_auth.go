@@ -798,9 +798,26 @@ func (s *userManagementServer) ResendContactVerification(ctx context.Context, re
 			logger.Error.Printf("ResendContactVerification: %s", err.Error())
 		}
 	case models.ContactTypePhone:
+		// AddPhoneNumber and EditPhoneNumber refuse a send when WhatsApp is not configured,
+		// and the routes that start one are behind the account-confirmed middleware. This
+		// branch reaches the same paid send, so it answers the same way — and it checks here
+		// rather than relying on a route, because the RPC is also reachable from
+		// /resend-verification-message, which carries no middleware. The email branch stays
+		// open to an unconfirmed account: resending that verification is how one confirms it.
+		if !s.whatsAppConfig.Enabled {
+			return nil, status.Error(codes.Unavailable, "WhatsApp is not configured")
+		}
+		if user.Account.AccountConfirmedAt <= 0 {
+			return nil, status.Error(codes.InvalidArgument, "account not confirmed yet")
+		}
 		ci, found := user.FindContactInfoByTypeAndAddr(models.ContactTypePhone, req.Address)
 		if !found {
 			return nil, status.Error(codes.InvalidArgument, "address not found")
+		}
+		// A verified number has nothing left to verify: without this, an account could keep
+		// asking for codes it does not need, three paid messages per window, indefinitely.
+		if ci.ConfirmedAt > 0 {
+			return nil, status.Error(codes.InvalidArgument, "phone number already verified")
 		}
 		if ci.ConfirmationLinkSentAt > time.Now().Unix()-contactVerificationMessageCooldown {
 			return nil, status.Error(codes.InvalidArgument, "cannot send verification so often")

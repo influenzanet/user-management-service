@@ -9,6 +9,7 @@ import (
 	"github.com/golang/mock/gomock"
 	api_types "github.com/influenzanet/go-utils/pkg/api_types"
 	"github.com/influenzanet/go-utils/pkg/constants"
+	"github.com/influenzanet/user-management-service/internal/config"
 	"github.com/influenzanet/user-management-service/pkg/api"
 	httpClients "github.com/influenzanet/user-management-service/pkg/http/clients"
 	"github.com/influenzanet/user-management-service/pkg/models"
@@ -987,6 +988,10 @@ func TestResendContactVerificationEndpoint(t *testing.T) {
 			MessagingService: mockMessagingClient,
 		},
 		whatsAppClient: mockWhatsApp,
+		whatsAppConfig: config.WhatsAppConfig{
+			Enabled:                  true,
+			VerificationTemplateLang: "en",
+		},
 	}
 
 	testUsers, err := addTestUsers([]models.User{
@@ -1010,9 +1015,10 @@ func TestResendContactVerificationEndpoint(t *testing.T) {
 		},
 		{
 			Account: models.Account{
-				Type:              "email",
-				AccountID:         "test_for_resend_verify_phone@test.com",
-				PreferredLanguage: "en",
+				Type:               "email",
+				AccountID:          "test_for_resend_verify_phone@test.com",
+				PreferredLanguage:  "en",
+				AccountConfirmedAt: time.Now().Unix(),
 			},
 			Profiles: []models.Profile{
 				{
@@ -1030,9 +1036,10 @@ func TestResendContactVerificationEndpoint(t *testing.T) {
 		},
 		{
 			Account: models.Account{
-				Type:              "email",
-				AccountID:         "test_for_resend_rate_limit@test.com",
-				PreferredLanguage: "en",
+				Type:               "email",
+				AccountID:          "test_for_resend_rate_limit@test.com",
+				PreferredLanguage:  "en",
+				AccountConfirmedAt: time.Now().Unix(),
 			},
 			Profiles: []models.Profile{
 				{
@@ -1050,9 +1057,10 @@ func TestResendContactVerificationEndpoint(t *testing.T) {
 		},
 		{
 			Account: models.Account{
-				Type:              "email",
-				AccountID:         "test_for_resend_not_allowed@test.com",
-				PreferredLanguage: "en",
+				Type:               "email",
+				AccountID:          "test_for_resend_not_allowed@test.com",
+				PreferredLanguage:  "en",
+				AccountConfirmedAt: time.Now().Unix(),
 			},
 			Profiles: []models.Profile{
 				{
