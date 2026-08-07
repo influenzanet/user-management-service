@@ -225,10 +225,19 @@ func (dbService *UserDBService) ReplacePhoneContactInfo(instanceID string, userI
 		return err
 	}
 	filter := bson.M{"_id": _id}
-	update := bson.M{"$set": bson.M{
-		"contactInfos.$[ci]":   ci,
-		"timestamps.updatedAt": time.Now().Unix(),
-	}}
+	update := bson.M{
+		"$set": bson.M{
+			"contactInfos.$[ci]":   ci,
+			"timestamps.updatedAt": time.Now().Unix(),
+		},
+		// The replacement is unverified, so the whatsapp channel loses the destination it
+		// stood for and goes with it, in this same operation: leaving it on would describe a
+		// delivery the platform cannot make until the new number is verified. Deleting a
+		// number already revokes it the same way.
+		"$pull": bson.M{
+			"contactPreferences.preferredChannels": models.ChannelWhatsApp,
+		},
+	}
 	opts := options.Update().SetArrayFilters(options.ArrayFilters{
 		Filters: []interface{}{bson.M{"ci.type": models.ContactTypePhone}},
 	})

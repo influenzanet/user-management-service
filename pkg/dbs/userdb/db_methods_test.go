@@ -760,6 +760,34 @@ func TestDbReplacePhoneContactInfo(t *testing.T) {
 	})
 }
 
+func TestDbReplacePhoneContactInfoRevokesTheChannel(t *testing.T) {
+	t.Run("the whatsapp channel goes with the number it depended on", func(t *testing.T) {
+		id := addReserveTestUser(t, "replace_ci_channel@test.com", []int64{}, []models.ContactInfo{
+			{ID: primitive.NewObjectID(), Type: models.ContactTypeEmail, Email: "replace_ci_channel@test.com", ConfirmedAt: time.Now().Unix()},
+			{ID: primitive.NewObjectID(), Type: models.ContactTypePhone, Phone: "+391230000701", ConfirmedAt: time.Now().Unix()},
+		})
+		if _, err := testDBService.UpdateContactPreferences(testInstanceID, id, models.ContactPreferences{
+			PreferredChannels: []string{models.ChannelEmail, models.ChannelWhatsApp},
+		}); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		newCI := models.ContactInfo{ID: primitive.NewObjectID(), Type: models.ContactTypePhone, Phone: "+391230000702"}
+		if err := testDBService.ReplacePhoneContactInfo(testInstanceID, id, newCI); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		user, _ := testDBService.GetUserByID(testInstanceID, id)
+		channels := user.ContactPreferences.PreferredChannels
+		if containsChannel(channels, models.ChannelWhatsApp) {
+			t.Errorf("the new number is unverified, so whatsapp cannot stay enabled: %v", channels)
+		}
+		if !containsChannel(channels, models.ChannelEmail) {
+			t.Errorf("email delivery must survive a phone change: %v", channels)
+		}
+	})
+}
+
 func TestDbSetContactVerificationSentAt(t *testing.T) {
 	t.Run("stamps only the matching phone", func(t *testing.T) {
 		id := addReserveTestUser(t, "sent_at_ci@test.com", []int64{}, []models.ContactInfo{
