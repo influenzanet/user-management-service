@@ -178,6 +178,43 @@ func TestVerifyWhatsAppCode(t *testing.T) {
 		}
 	})
 
+	// The attempt counter exists to stop someone guessing a six digit code. A code that
+	// cannot be verified at all — expired, or none pending — tells the guesser nothing, so
+	// answering it must not spend one of the three attempts, and must never be the reason a
+	// participant loses the number they registered.
+	t.Run("an expired code is refused without spending an attempt", func(t *testing.T) {
+		expired := validCode("123456")
+		expired.ExpiresAt = time.Now().Unix() - 1
+		token := addVerifyCodeTestUser(t, "verify_expired_budget@test.com", "+391230000407", expired, nil, nil)
+
+		for i := 0; i < s.Intervals.MaxVerificationAttempts+1; i++ {
+			_, err := s.VerifyWhatsAppCode(context.Background(), &api.VerifyWhatsAppCodeReq{Token: &token, Code: "123456"})
+			if status.Code(err) != codes.PermissionDenied {
+				t.Fatalf("attempt %d: expected PermissionDenied, got %v", i+1, err)
+			}
+		}
+
+		if _, found := phoneOf(t, token.Id); !found {
+			t.Error("the phone was removed because the code had expired, which is not a failed guess")
+		}
+		user, _ := testUserDBService.GetUserByID(testInstanceID, token.Id)
+		if user.Account.PhoneVerificationCode.Attempts != 0 {
+			t.Errorf("an expired code spent %d attempts", user.Account.PhoneVerificationCode.Attempts)
+		}
+	})
+
+	t.Run("says that no verification is in progress instead of removing the phone", func(t *testing.T) {
+		token := addVerifyCodeTestUser(t, "verify_no_code_pending@test.com", "+391230000408", models.VerificationCode{}, nil, nil)
+
+		_, err := s.VerifyWhatsAppCode(context.Background(), &api.VerifyWhatsAppCodeReq{Token: &token, Code: "123456"})
+		if status.Code(err) != codes.InvalidArgument {
+			t.Errorf("expected InvalidArgument, got %v", err)
+		}
+		if _, found := phoneOf(t, token.Id); !found {
+			t.Error("the phone must survive a request that had no code to verify")
+		}
+	})
+
 	t.Run("too many attempts removes the phone together with its channel", func(t *testing.T) {
 		exhausted := validCode("123456")
 		exhausted.Attempts = 3 // at the cap: the next attempt takes the punitive branch

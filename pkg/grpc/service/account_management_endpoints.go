@@ -796,6 +796,22 @@ func (s *userManagementServer) VerifyWhatsAppCode(ctx context.Context, req *api.
 		return nil, status.Error(codes.InvalidArgument, "missing argument")
 	}
 
+	// A code that cannot be verified at all — none pending, or expired — is answered before
+	// the counter is touched. The attempts exist to stop someone guessing a six digit code,
+	// and refusing these two cases tells a guesser nothing; spending an attempt on them only
+	// takes the budget away from the participant, who loses the registered number once it
+	// runs out.
+	pending, err := s.userDBservice.GetUserByID(req.Token.InstanceId, req.Token.Id)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "user not found")
+	}
+	if pending.Account.PhoneVerificationCode.Code == "" {
+		return nil, status.Error(codes.InvalidArgument, "no phone verification in progress")
+	}
+	if time.Now().Unix() > pending.Account.PhoneVerificationCode.ExpiresAt {
+		return nil, status.Error(codes.PermissionDenied, "verification code expired")
+	}
+
 	// Atomically increment attempts via $inc with a filter that caps at max.
 	// This prevents race conditions: concurrent requests each get a distinct counter value.
 	user, err := s.userDBservice.IncrementVerificationCodeAttempts(
@@ -815,15 +831,9 @@ func (s *userManagementServer) VerifyWhatsAppCode(ctx context.Context, req *api.
 		return nil, status.Error(codes.Internal, "user not found")
 	}
 
-	vc := user.Account.PhoneVerificationCode
-
-	// Check if code expired
-	if time.Now().Unix() > vc.ExpiresAt {
-		return nil, status.Error(codes.PermissionDenied, "verification code expired")
-	}
-
-	// Check if code is correct
-	if req.Code != vc.Code {
+	// Compare against the document the increment returned rather than the one read above: a
+	// resend running in between replaces the code, and the participant is typing the new one.
+	if req.Code != user.Account.PhoneVerificationCode.Code {
 		return nil, status.Error(codes.PermissionDenied, "invalid verification code")
 	}
 
