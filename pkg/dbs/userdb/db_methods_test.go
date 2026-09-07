@@ -167,7 +167,7 @@ func TestDbInterfaceMethods(t *testing.T) {
 
 	t.Run("Testing updating existing user's attributes", func(t *testing.T) {
 		testUser.Account.AccountConfirmedAt = time.Now().Unix()
-		_, err := testDBService.UpdateUser(testInstanceID, testUser)
+		_, err := testDBService.UpdateUser(testInstanceID, testUser, "account.accountConfirmedAt")
 		if err != nil {
 			t.Errorf(err.Error())
 			return
@@ -184,7 +184,7 @@ func TestDbInterfaceMethods(t *testing.T) {
 			return
 		}
 		currentUser.ID = id
-		_, err = testDBService.UpdateUser(testInstanceID, currentUser)
+		_, err = testDBService.UpdateUser(testInstanceID, currentUser, "account.accountConfirmedAt")
 		if err == nil {
 			t.Errorf("cannot update not existing user")
 			return

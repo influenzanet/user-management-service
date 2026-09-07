@@ -3,6 +3,7 @@ package userdb
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/coneno/logger"
@@ -39,25 +40,137 @@ func (dbService *UserDBService) AddUser(instanceID string, user models.User) (id
 	return
 }
 
-// low level find and replace
-func (dbService *UserDBService) _updateUserInDB(orgID string, user models.User) (models.User, error) {
+func (dbService *UserDBService) updateUser(instanceID string, filter bson.M, update interface{}) (models.User, error) {
 	ctx, cancel := dbService.getContext()
 	defer cancel()
 
 	elem := models.User{}
-	filter := bson.M{"_id": user.ID}
-	rd := options.After
-	fro := options.FindOneAndReplaceOptions{
-		ReturnDocument: &rd,
-	}
-	err := dbService.collectionRefUsers(orgID).FindOneAndReplace(ctx, filter, user, &fro).Decode(&elem)
+	err := dbService.collectionRefUsers(instanceID).FindOneAndUpdate(ctx, filter, update,
+		options.FindOneAndUpdate().SetReturnDocument(options.After)).Decode(&elem)
 	return elem, err
 }
 
-func (dbService *UserDBService) UpdateUser(instanceID string, updatedUser models.User) (models.User, error) {
-	// Set last update time
-	updatedUser.Timestamps.UpdatedAt = time.Now().Unix()
-	return dbService._updateUserInDB(instanceID, updatedUser)
+// UpdateUser saves only explicitly owned fields, never a complete stale user snapshot.
+// Phone state and channel preferences belong to their dedicated atomic writers.
+// The contactInfos mask is email-only: current phone entries are retained in place.
+func (dbService *UserDBService) UpdateUser(instanceID string, user models.User, field string, otherFields ...string) (models.User, error) {
+	allowed := bson.M{
+		"account.accountID":                                user.Account.AccountID,
+		"account.accountConfirmedAt":                       user.Account.AccountConfirmedAt,
+		"account.verificationCode":                         user.Account.VerificationCode,
+		"account.failedLoginAttempts":                      user.Account.FailedLoginAttempts,
+		"account.passwordResetTriggers":                    user.Account.PasswordResetTriggers,
+		"timestamps.lastLogin":                             user.Timestamps.LastLogin,
+		"timestamps.lastTokenRefresh":                      user.Timestamps.LastTokenRefresh,
+		"timestamps.markedForDeletion":                     user.Timestamps.MarkedForDeletion,
+		"profiles":                                         user.Profiles,
+		"roles":                                            user.Roles,
+		"contactPreferences.sendNewsletterTo":              user.ContactPreferences.SendNewsletterTo,
+		"contactPreferences.subscribedToNewsletter":        user.ContactPreferences.SubscribedToNewsletter,
+		"contactPreferences.subscribedToWeekly":            user.ContactPreferences.SubscribedToWeekly,
+		"contactPreferences.receiveWeeklyMessageDayOfWeek": user.ContactPreferences.ReceiveWeeklyMessageDayOfWeek,
+	}
+	set := bson.M{"timestamps.updatedAt": time.Now().Unix()}
+	for _, name := range append([]string{field}, otherFields...) {
+		if name == "contactInfos" {
+			set[name] = emailContactsWithCurrentPhones(user.ContactInfos)
+			continue
+		}
+		value, ok := allowed[name]
+		if !ok {
+			return models.User{}, fmt.Errorf("unsupported user update field: %s", name)
+		}
+		// Pipeline strings (including profile aliases) must be data, not expressions.
+		set[name] = bson.M{"$literal": value}
+	}
+	return dbService.updateUser(instanceID, bson.M{"_id": user.ID}, mongo.Pipeline{bson.D{{Key: "$set", Value: set}}})
+}
+
+// Preserve phone slots in the incoming contact order, filling them from the current
+// document. Deleted phones leave no slot; newly added phones are appended. This is
+// used only by account-email changes, which may edit several email entries at once.
+func emailContactsWithCurrentPhones(incoming []models.ContactInfo) bson.M {
+	parts := bson.A{}
+	phoneSlots := 0
+	for _, ci := range incoming {
+		if ci.Type == models.ContactTypePhone {
+			parts = append(parts, bson.M{"$slice": bson.A{"$$phones", phoneSlots, 1}})
+			phoneSlots++
+		} else {
+			parts = append(parts, bson.M{"$literal": []models.ContactInfo{ci}})
+		}
+	}
+	parts = append(parts, bson.M{"$slice": bson.A{"$$phones", phoneSlots,
+		bson.M{"$add": bson.A{bson.M{"$size": "$$phones"}, 1}}}})
+	return bson.M{"$let": bson.M{
+		"vars": bson.M{"phones": bson.M{"$filter": bson.M{
+			"input": bson.M{"$ifNull": bson.A{"$contactInfos", bson.A{}}},
+			"as":    "ci", "cond": bson.M{"$eq": bson.A{"$$ci.type", models.ContactTypePhone}},
+		}}},
+		"in": bson.M{"$concatArrays": parts},
+	}}
+}
+
+func (dbService *UserDBService) AddEmailContactInfo(instanceID string, userID primitive.ObjectID, ci models.ContactInfo) (models.User, error) {
+	if ci.Type != models.ContactTypeEmail {
+		return models.User{}, errors.New("wrong contact type")
+	}
+	return dbService.updateUser(instanceID, bson.M{"_id": userID}, mongo.Pipeline{bson.D{{Key: "$set", Value: bson.M{
+		"contactInfos": bson.M{"$concatArrays": bson.A{
+			bson.M{"$ifNull": bson.A{"$contactInfos", bson.A{}}}, bson.M{"$literal": []models.ContactInfo{ci}},
+		}},
+		"timestamps.updatedAt": time.Now().Unix(),
+	}}}})
+}
+
+func (dbService *UserDBService) RemoveContactInfo(instanceID string, userID primitive.ObjectID, contactID string) (models.User, error) {
+	id, err := primitive.ObjectIDFromHex(contactID)
+	if err != nil {
+		return models.User{}, err
+	}
+	// Match the model's first-ID semantics, including legacy entries whose zero ID
+	// is omitted in BSON. Slicing the current array never restores a stale phone.
+	index := bson.M{"$indexOfArray": bson.A{bson.M{"$map": bson.M{
+		"input": bson.M{"$ifNull": bson.A{"$contactInfos", bson.A{}}},
+		"as":    "ci", "in": bson.M{"$ifNull": bson.A{"$$ci._id", primitive.NilObjectID}},
+	}}, id}}
+	filter := bson.M{"_id": userID, "$expr": bson.M{"$gte": bson.A{index, 0}}}
+	return dbService.updateUser(instanceID, filter, mongo.Pipeline{bson.D{{Key: "$set", Value: bson.M{
+		"contactInfos": bson.M{"$let": bson.M{
+			"vars": bson.M{"index": index},
+			"in": bson.M{"$concatArrays": bson.A{
+				bson.M{"$slice": bson.A{"$contactInfos", "$$index"}},
+				bson.M{"$slice": bson.A{"$contactInfos", bson.M{"$add": bson.A{"$$index", 1}},
+					bson.M{"$add": bson.A{bson.M{"$size": "$contactInfos"}, 1}}}},
+			}},
+		}},
+		"timestamps.updatedAt": time.Now().Unix(),
+	}}}})
+}
+
+// Confirm only the contact that was validated. A replaced/deleted phone must not
+// be restored, and confirming an email must not rewrite any phone state.
+func (dbService *UserDBService) ConfirmContactInfo(instanceID string, user models.User, ci models.ContactInfo) (models.User, error) {
+	contact := bson.M{"type": ci.Type}
+	// Legacy email entries may predate contact IDs (the zero ID is omitted in BSON).
+	if !ci.ID.IsZero() {
+		contact["_id"] = ci.ID
+	}
+	switch ci.Type {
+	case models.ContactTypeEmail:
+		contact["email"] = ci.Email
+	case models.ContactTypePhone:
+		contact["phone"] = ci.Phone
+	default:
+		return models.User{}, errors.New("wrong contact type")
+	}
+	filter := bson.M{"_id": user.ID, "contactInfos": bson.M{"$elemMatch": contact}}
+	set := bson.M{"contactInfos.$.confirmedAt": ci.ConfirmedAt, "timestamps.updatedAt": time.Now().Unix()}
+	if ci.Type == models.ContactTypeEmail && user.Account.Type == models.ACCOUNT_TYPE_EMAIL && user.Account.AccountID == ci.Email {
+		filter["account.accountID"] = ci.Email
+		set["account.accountConfirmedAt"] = ci.ConfirmedAt
+	}
+	return dbService.updateUser(instanceID, filter, bson.M{"$set": set})
 }
 
 func (dbService *UserDBService) GetUserByID(instanceID string, id string) (models.User, error) {
@@ -348,6 +461,15 @@ func (dbService *UserDBService) UpdateContactPreferences(instanceID string, user
 
 	_id, _ := primitive.ObjectIDFromHex(userID)
 	filter := bson.M{"_id": _id}
+	for _, channel := range prefs.PreferredChannels {
+		if channel == models.ChannelWhatsApp {
+			// The phone may have been removed or replaced since the API validation.
+			filter["contactInfos"] = bson.M{"$elemMatch": bson.M{
+				"type": models.ContactTypePhone, "confirmedAt": bson.M{"$gt": 0},
+			}}
+			break
+		}
+	}
 
 	elem := models.User{}
 
@@ -355,7 +477,20 @@ func (dbService *UserDBService) UpdateContactPreferences(instanceID string, user
 	fro := options.FindOneAndUpdateOptions{
 		ReturnDocument: &rd,
 	}
-	update := bson.M{"$set": bson.M{"contactPreferences": prefs, "timestamps.updatedAt": time.Now().Unix()}}
+	set := bson.M{
+		"contactPreferences.subscribedToNewsletter":        prefs.SubscribedToNewsletter,
+		"contactPreferences.sendNewsletterTo":              prefs.SendNewsletterTo,
+		"contactPreferences.subscribedToWeekly":            prefs.SubscribedToWeekly,
+		"contactPreferences.receiveWeeklyMessageDayOfWeek": prefs.ReceiveWeeklyMessageDayOfWeek,
+		"timestamps.updatedAt":                             time.Now().Unix(),
+	}
+	update := bson.M{"$set": set}
+	if len(prefs.PreferredChannels) == 0 {
+		// Preserve the model's omitempty semantics; null would break later $addToSet.
+		update["$unset"] = bson.M{"contactPreferences.preferredChannels": ""}
+	} else {
+		set["contactPreferences.preferredChannels"] = prefs.PreferredChannels
+	}
 	err := dbService.collectionRefUsers(instanceID).FindOneAndUpdate(ctx, filter, update, &fro).Decode(&elem)
 	return elem, err
 }
@@ -787,7 +922,7 @@ func (dbService *UserDBService) DeletePhoneNumber(instanceID, userID string) (mo
 	filter := bson.M{"_id": userObjID}
 	update := bson.M{
 		"$pull": bson.M{
-			"contactInfos":                        bson.M{"type": models.ContactTypePhone},
+			"contactInfos":                         bson.M{"type": models.ContactTypePhone},
 			"contactPreferences.preferredChannels": models.ChannelWhatsApp,
 		},
 		"$set": bson.M{
@@ -843,7 +978,7 @@ func (dbService *UserDBService) IncrementVerificationCodeAttempts(instanceID, us
 	}
 
 	filter := bson.M{
-		"_id": userObjID,
+		"_id":                                    userObjID,
 		"account.phoneVerificationCode.attempts": bson.M{"$lt": maxAttempts},
 	}
 	update := bson.M{

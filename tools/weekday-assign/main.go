@@ -89,7 +89,7 @@ func main() {
 		if params.commit {
 			// Do update
 			user.ContactPreferences.ReceiveWeeklyMessageDayOfWeek = int32(newDay)
-			_, e := userDBService.UpdateUser(instanceID, user)
+			_, e := userDBService.UpdateUser(instanceID, user, "contactPreferences.receiveWeeklyMessageDayOfWeek")
 			if e != nil {
 				logger.Error.Printf("updating user %s : %s", user.ID, e)
 			}

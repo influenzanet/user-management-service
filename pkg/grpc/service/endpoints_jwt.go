@@ -102,7 +102,7 @@ func (s *userManagementServer) RenewJWT(ctx context.Context, req *api.RefreshJWT
 	}
 	//reset markedForDeletionTime
 	user.Timestamps.MarkedForDeletion = 0
-	user, err = s.userDBservice.UpdateUser(parsedToken.InstanceID, user)
+	user, err = s.userDBservice.UpdateUser(parsedToken.InstanceID, user, "timestamps.lastTokenRefresh", "timestamps.markedForDeletion")
 	if err != nil {
 		logger.Error.Printf("renew token error: %v", err.Error())
 		return nil, status.Error(codes.Internal, err.Error())

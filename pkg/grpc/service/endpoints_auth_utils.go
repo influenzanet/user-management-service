@@ -27,7 +27,7 @@ func (s *userManagementServer) generateAndSendVerificationCode(instanceID string
 		CreatedAt: time.Now().Unix(),
 		ExpiresAt: time.Now().Unix() + s.Intervals.VerificationCodeLifetime,
 	}
-	user, err = s.userDBservice.UpdateUser(instanceID, user)
+	user, err = s.userDBservice.UpdateUser(instanceID, user, "account.verificationCode")
 	if err != nil {
 		logger.Error.Printf("generateAndSendVerificationCode: unexpected error when saving user -> %v", err)
 		return status.Error(codes.Internal, "user couldn't be updated")

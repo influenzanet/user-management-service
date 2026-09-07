@@ -15,10 +15,10 @@ import (
 	httpClients "github.com/influenzanet/user-management-service/pkg/http/clients"
 	"github.com/influenzanet/user-management-service/pkg/models"
 	"github.com/influenzanet/user-management-service/pkg/pwhash"
-	"go.mongodb.org/mongo-driver/bson/primitive"
-	"go.mongodb.org/mongo-driver/mongo"
 	"github.com/influenzanet/user-management-service/pkg/tokens"
 	"github.com/influenzanet/user-management-service/pkg/utils"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -238,7 +238,8 @@ func (s *userManagementServer) ChangeAccountIDEmail(ctx context.Context, req *ap
 	}
 
 	// Save user:
-	updUser, err := s.userDBservice.UpdateUser(req.Token.InstanceId, user)
+	updUser, err := s.userDBservice.UpdateUser(req.Token.InstanceId, user,
+		"account.accountID", "account.accountConfirmedAt", "profiles", "contactInfos", "contactPreferences.sendNewsletterTo")
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
@@ -330,7 +331,7 @@ func (s *userManagementServer) SaveProfile(ctx context.Context, req *api.Profile
 		}
 	}
 
-	updUser, err := s.userDBservice.UpdateUser(req.Token.InstanceId, user)
+	updUser, err := s.userDBservice.UpdateUser(req.Token.InstanceId, user, "profiles")
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
@@ -357,7 +358,7 @@ func (s *userManagementServer) RemoveProfile(ctx context.Context, req *api.Profi
 	if err := user.RemoveProfile(req.Profile.Id); err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-	updUser, err := s.userDBservice.UpdateUser(req.Token.InstanceId, user)
+	updUser, err := s.userDBservice.UpdateUser(req.Token.InstanceId, user, "profiles")
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
@@ -384,6 +385,9 @@ func (s *userManagementServer) UpdateContactPreferences(ctx context.Context, req
 	prefs.PreferredChannels = channels
 
 	updatedUser, err := s.userDBservice.UpdateContactPreferences(req.Token.InstanceId, req.Token.Id, prefs)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, status.Error(codes.InvalidArgument, "user or verified phone changed; reload preferences")
+	}
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
@@ -445,7 +449,7 @@ func (s *userManagementServer) UseUnsubscribeToken(ctx context.Context, req *api
 
 	user.ContactPreferences.SubscribedToNewsletter = false
 
-	_, err = s.userDBservice.UpdateContactPreferences(tokenInfos.InstanceID, user.ID.Hex(), user.ContactPreferences)
+	_, err = s.userDBservice.UpdateUser(tokenInfos.InstanceID, user, "contactPreferences.subscribedToNewsletter")
 	if err != nil {
 		logger.Error.Printf("UseUnsubscribeToken: %s", err.Error())
 		return nil, status.Error(codes.Internal, err.Error())
@@ -509,7 +513,7 @@ func (s *userManagementServer) AddEmail(ctx context.Context, req *api.ContactInf
 	}
 	// <---
 
-	updUser, err := s.userDBservice.UpdateUser(req.Token.InstanceId, user)
+	updUser, err := s.userDBservice.AddEmailContactInfo(req.Token.InstanceId, user.ID, user.ContactInfos[len(user.ContactInfos)-1])
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
@@ -530,7 +534,7 @@ func (s *userManagementServer) RemoveEmail(ctx context.Context, req *api.Contact
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-	updUser, err := s.userDBservice.UpdateUser(req.Token.InstanceId, user)
+	updUser, err := s.userDBservice.RemoveContactInfo(req.Token.InstanceId, user.ID, req.ContactInfo.Id)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}

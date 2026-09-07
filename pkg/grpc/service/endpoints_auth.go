@@ -144,7 +144,7 @@ func (s *userManagementServer) AutoValidateTempToken(ctx context.Context, req *a
 		Code:      vc,
 		ExpiresAt: time.Now().Unix() + s.Intervals.VerificationCodeLifetime,
 	}
-	user, err = s.userDBservice.UpdateUser(tokenInfos.InstanceID, user)
+	user, err = s.userDBservice.UpdateUser(tokenInfos.InstanceID, user, "account.verificationCode")
 	if err != nil {
 		logger.Error.Printf("AutoValidateTempToken: unexpected error when saving user [%s] -> %v", user.ID.Hex(), err)
 		return nil, status.Error(codes.Internal, "user couldn't be updated")
@@ -239,7 +239,7 @@ func (s *userManagementServer) LoginWithEmail(ctx context.Context, req *api.Logi
 
 				if user.Account.VerificationCode.Attempts <= allowedVerificationCodeAttempts {
 					user.Account.VerificationCode.Attempts += 1
-					user, err = s.userDBservice.UpdateUser(req.InstanceId, user)
+					user, err = s.userDBservice.UpdateUser(req.InstanceId, user, "account.verificationCode")
 					if err != nil {
 						logger.Error.Printf("LoginWithEmail: unexpected error when saving user -> %v", err)
 					}
@@ -310,7 +310,10 @@ func (s *userManagementServer) LoginWithEmail(ctx context.Context, req *api.Logi
 	user.Account.FailedLoginAttempts = utils.RemoveAttemptsOlderThan(user.Account.FailedLoginAttempts, 3600)
 	user.Account.PasswordResetTriggers = utils.RemoveAttemptsOlderThan(user.Account.PasswordResetTriggers, 7200)
 
-	if _, err := s.userDBservice.UpdateUser(req.InstanceId, user); err != nil {
+	user, err = s.userDBservice.UpdateUser(req.InstanceId, user,
+		"timestamps.lastLogin", "timestamps.markedForDeletion", "account.verificationCode",
+		"account.failedLoginAttempts", "account.passwordResetTriggers")
+	if err != nil {
 		logger.Error.Printf("LoginWithEmail: unexpected error when saving user -> %v", err)
 		return nil, status.Error(codes.Internal, "user couldn't be updated")
 	}
@@ -447,7 +450,9 @@ func (s *userManagementServer) LoginWithExternalIDP(ctx context.Context, req *ap
 	user.Account.FailedLoginAttempts = utils.RemoveAttemptsOlderThan(user.Account.FailedLoginAttempts, 3600)
 	user.Account.PasswordResetTriggers = utils.RemoveAttemptsOlderThan(user.Account.PasswordResetTriggers, 7200)
 
-	user, err = s.userDBservice.UpdateUser(req.InstanceId, user)
+	user, err = s.userDBservice.UpdateUser(req.InstanceId, user,
+		"timestamps.lastLogin", "timestamps.markedForDeletion", "account.verificationCode",
+		"account.failedLoginAttempts", "account.passwordResetTriggers", "roles")
 	if err != nil {
 		logger.Error.Printf("[ERROR] LoginWithExternalIDP: unexpected error when saving user -> %v", err)
 		return nil, status.Error(codes.Internal, "user couldn't be updated")
@@ -651,7 +656,7 @@ func (s *userManagementServer) SignupWithEmail(ctx context.Context, req *api.Sig
 
 	newUser.Timestamps.LastLogin = time.Now().Unix()
 
-	newUser, err = s.userDBservice.UpdateUser(req.InstanceId, newUser)
+	newUser, err = s.userDBservice.UpdateUser(req.InstanceId, newUser, "timestamps.lastLogin")
 	if err != nil {
 		logger.Error.Printf("ERROR: signup method failed to save refresh token: %s", err.Error())
 		return nil, status.Error(codes.Internal, "user created, but token could not be saved")
@@ -737,7 +742,8 @@ func (s *userManagementServer) VerifyContact(ctx context.Context, req *api.TempT
 			}
 		*/
 	}
-	user, err = s.userDBservice.UpdateUser(tokenInfos.InstanceID, user)
+	ci, _ := user.FindContactInfoByTypeAndAddr(cType, email)
+	user, err = s.userDBservice.ConfirmContactInfo(tokenInfos.InstanceID, user, ci)
 
 	s.SaveLogEvent(tokenInfos.InstanceID, tokenInfos.UserID, loggingAPI.LogEventType_LOG, constants.LOG_EVENT_CONTACT_VERIFIED, email)
 	return user.ToAPI(), err

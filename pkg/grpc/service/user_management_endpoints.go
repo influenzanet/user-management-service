@@ -151,7 +151,7 @@ func (s *userManagementServer) AddRoleForUser(ctx context.Context, req *api.Role
 	if err := user.AddRole(req.Role); err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-	user, err = s.userDBservice.UpdateUser(req.Token.InstanceId, user)
+	user, err = s.userDBservice.UpdateUser(req.Token.InstanceId, user, "roles")
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
@@ -175,7 +175,7 @@ func (s *userManagementServer) RemoveRoleForUser(ctx context.Context, req *api.R
 	if err := user.RemoveRole(req.Role); err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-	user, err = s.userDBservice.UpdateUser(req.Token.InstanceId, user)
+	user, err = s.userDBservice.UpdateUser(req.Token.InstanceId, user, "roles")
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
