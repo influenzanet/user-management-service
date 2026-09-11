@@ -399,9 +399,9 @@ func (s *userManagementServer) UpdateContactPreferences(ctx context.Context, req
 //
 // The channels say how a message is delivered, not whether the user wants it: whether is what the
 // newsletter and weekly subscription flags express. An empty list is therefore not a preference
-// but a message with no transport, and it is also indistinguishable from "never set" once stored,
-// which the bulk sender reads as "send on every channel" — the opposite of what the user asked.
-// Email is kept as the baseline so that case cannot arise.
+// but a message with no transport, and it is also indistinguishable from "never set" once stored.
+// The bulk sender reads both as e-mail only; e-mail is kept as the baseline here so that what is
+// stored says the same thing as what is sent.
 //
 // The verified-phone requirement is enforced here and not only in the interface: the interface can
 // only stop the honest client, while this is the boundary where the data enters the system.
