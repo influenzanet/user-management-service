@@ -21,3 +21,4 @@ tools/key-generator/key-generator
 tools/create-admin-user/create-admin-user
 tools/weekday-assign/weekday-assign
 __debug_bin*
+/build/user-management-service
