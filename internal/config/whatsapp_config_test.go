@@ -76,3 +76,22 @@ func TestWhatsAppConfigEnabled(t *testing.T) {
 		}
 	})
 }
+
+func TestWhatsAppAPIVersionIsReadFromEnv(t *testing.T) {
+	// InitConfig exits on missing DB credentials and counters, so give it the minimum it needs.
+	for name, value := range map[string]string{
+		"USER_DB_CONNECTION_STR": "localhost:27017", "USER_DB_USERNAME": "u", "USER_DB_PASSWORD": "p",
+		"GLOBAL_DB_CONNECTION_STR": "localhost:27017", "GLOBAL_DB_USERNAME": "u", "GLOBAL_DB_PASSWORD": "p",
+		"DB_TIMEOUT": "30", "DB_IDLE_CONN_TIMEOUT": "45", "DB_MAX_POOL_SIZE": "8",
+		ENV_NEW_USER_RATE_LIMIT: "100", ENV_CLEAN_UP_UNVERIFIED_USERS_AFTER: "1",
+		ENV_SEND_REMINDER_TO_UNVERIFIED_USERS_AFTER: "1",
+		ENV_WEEKDAY_ASSIGNATION_WEIGHTS:             "",
+	} {
+		t.Setenv(name, value)
+	}
+	t.Setenv(ENV_WHATSAPP_API_VERSION, "v25.0")
+	conf := InitConfig()
+	if conf.WhatsApp.ApiVersion != "v25.0" {
+		t.Fatalf("WhatsApp.ApiVersion = %q, want the value of %s", conf.WhatsApp.ApiVersion, ENV_WHATSAPP_API_VERSION)
+	}
+}

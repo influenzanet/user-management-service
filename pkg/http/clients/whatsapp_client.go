@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -15,7 +16,12 @@ import (
 
 const (
 	whatsAppHTTPTimeout = 30 * time.Second
-	whatsAppAPIBaseURL  = "https://graph.facebook.com/v19.0"
+	whatsAppGraphHost   = "https://graph.facebook.com"
+	// Graph API version used when WHATSAPP_API_VERSION is not set or not well formed.
+	// Meta retires each version about two years after release and silently serves a
+	// retired version with the oldest one still available, so keep this current:
+	// https://developers.facebook.com/docs/graph-api/changelog (v26.0: released 2026-07-29).
+	whatsAppDefaultAPIVersion = "v26.0"
 
 	// Meta Graph API error code: "Recipient phone number not in allowed list"
 	// (returned e.g. for numbers not whitelisted while the WABA is in test mode)
@@ -36,21 +42,43 @@ func parseSendError(statusCode int, respObj map[string]any) error {
 	return fmt.Errorf("failed to send message, status code: %d", statusCode)
 }
 
+var whatsAppAPIVersionPattern = regexp.MustCompile(`^v[0-9]+\.[0-9]+$`)
+
+// ResolveAPIVersion returns the Graph API version to call: the configured value when it looks
+// like "v26.0", otherwise the default. A malformed value is logged and ignored rather than
+// refused, so a typo in the environment cannot stop the service.
+func ResolveAPIVersion(configured string) string {
+	if configured == "" {
+		logger.Info.Printf("WHATSAPP_API_VERSION not set, using %s", whatsAppDefaultAPIVersion)
+		return whatsAppDefaultAPIVersion
+	}
+	if !whatsAppAPIVersionPattern.MatchString(configured) {
+		logger.Error.Printf("invalid WHATSAPP_API_VERSION %q, using %s", configured, whatsAppDefaultAPIVersion)
+		return whatsAppDefaultAPIVersion
+	}
+	return configured
+}
+
 // WhatsAppClient handles communication with the WhatsApp Business API
 type WhatsAppClient struct {
 	httpClient    *http.Client
 	apiToken      string
 	phoneNumberID string
 	templateName  string
+	apiBaseURL    string
 }
 
-// NewWhatsAppClient creates a new client instance
-func NewWhatsAppClient(token, phoneID, templateName string) *WhatsAppClient {
+// NewWhatsAppClient creates a new client instance.
+// apiVersion is the value of WHATSAPP_API_VERSION; see ResolveAPIVersion for how it is read.
+func NewWhatsAppClient(token, phoneID, templateName, apiVersion string) *WhatsAppClient {
+	version := ResolveAPIVersion(apiVersion)
+	logger.Info.Printf("WhatsApp Graph API version: %s", version)
 	return &WhatsAppClient{
 		httpClient:    &http.Client{Timeout: whatsAppHTTPTimeout},
 		apiToken:      token,
 		phoneNumberID: phoneID,
 		templateName:  templateName,
+		apiBaseURL:    whatsAppGraphHost + "/" + version,
 	}
 }
 
@@ -78,7 +106,7 @@ func maskPhone(phone string) string {
 // SendVerificationCode sends a verification code using a pre-approved template.
 // Always sends with parameters — Meta ignores extra params for templates without variables.
 func (c *WhatsAppClient) SendVerificationCode(ctx context.Context, toPhoneNumber, code, lang string) error {
-	apiURL := fmt.Sprintf("%s/%s/messages", whatsAppAPIBaseURL, c.phoneNumberID)
+	apiURL := fmt.Sprintf("%s/%s/messages", c.apiBaseURL, c.phoneNumberID)
 
 	whatsappLangCode := mapLanguageCode(lang)
 
@@ -145,7 +173,7 @@ func (c *WhatsAppClient) SendVerificationCode(ctx context.Context, toPhoneNumber
 
 // SendTextMessage sends a simple text message
 func (c *WhatsAppClient) SendTextMessage(ctx context.Context, toPhoneNumber, message string) error {
-	apiURL := fmt.Sprintf("%s/%s/messages", whatsAppAPIBaseURL, c.phoneNumberID)
+	apiURL := fmt.Sprintf("%s/%s/messages", c.apiBaseURL, c.phoneNumberID)
 
 	payload := map[string]interface{}{
 		"messaging_product": "whatsapp",
@@ -189,7 +217,7 @@ func (c *WhatsAppClient) SendTextMessage(ctx context.Context, toPhoneNumber, mes
 
 // SendTemplateMessage sends a message using a specific WhatsApp template with named parameters.
 func (c *WhatsAppClient) SendTemplateMessage(ctx context.Context, toPhoneNumber, templateName, lang string, params map[string]string) error {
-	apiURL := fmt.Sprintf("%s/%s/messages", whatsAppAPIBaseURL, c.phoneNumberID)
+	apiURL := fmt.Sprintf("%s/%s/messages", c.apiBaseURL, c.phoneNumberID)
 
 	whatsappLangCode := mapLanguageCode(lang)
 

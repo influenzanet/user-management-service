@@ -21,6 +21,7 @@ type WhatsAppConfig struct {
 	WeeklyReminderTemplateName     string
 	WeeklyReminderTemplateLang     string
 	WeeklyReminderTemplateCategory string
+	ApiVersion                     string
 }
 type Config struct {
 	LogLevel    logger.LogLevel
@@ -64,6 +65,7 @@ func InitConfig() Config {
 	conf.WhatsApp.WeeklyReminderTemplateName = os.Getenv(ENV_WHATSAPP_WEEKLY_REMINDER_TEMPLATE_NAME)
 	conf.WhatsApp.WeeklyReminderTemplateLang = os.Getenv(ENV_WHATSAPP_WEEKLY_REMINDER_TEMPLATE_LANG)
 	conf.WhatsApp.WeeklyReminderTemplateCategory = os.Getenv(ENV_WHATSAPP_WEEKLY_REMINDER_TEMPLATE_CATEGORY)
+	conf.WhatsApp.ApiVersion = os.Getenv(ENV_WHATSAPP_API_VERSION)
 
 	if conf.WhatsApp.ApiToken == "" || conf.WhatsApp.PhoneNumberID == "" || conf.WhatsApp.VerificationTemplateName == "" || conf.WhatsApp.VerificationTemplateLang == "" || conf.WhatsApp.VerificationTemplateCategory == "" {
 		logger.Warning.Printf("WhatsApp disabled: incomplete configuration. Missing env vars among: %s, %s, %s, %s, %s",
