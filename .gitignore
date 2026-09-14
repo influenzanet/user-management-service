@@ -11,9 +11,13 @@ run-with-local.sh
 tools/migrate-refresh-tokens/.env
 .idea
 
-# Compiled binaries
-user-management-service-app
-key-generator
-create-admin-user
-weekday-assign
+# Compiled binaries (anchored: a bare name would also ignore the cmd/ and tools/ directories)
+/user-management-service-app
+/key-generator
+/create-admin-user
+/weekday-assign
+cmd/user-management-service-app/user-management-service-app
+tools/key-generator/key-generator
+tools/create-admin-user/create-admin-user
+tools/weekday-assign/weekday-assign
 __debug_bin*
