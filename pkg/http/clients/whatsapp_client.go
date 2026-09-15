@@ -32,6 +32,16 @@ const (
 // so callers can surface a meaningful message instead of a generic send failure
 var ErrRecipientNotAllowed = errors.New("recipient phone number not allowed by WhatsApp")
 
+// metaErrorFields describes a failed Meta response with its numeric fields and trace id only.
+// Meta's "message" and "error_data.details" are free text and never reach the logs.
+func metaErrorFields(respObj map[string]any) string {
+	errObj, _ := respObj["error"].(map[string]any)
+	code, _ := errObj["code"].(float64)
+	subcode, _ := errObj["error_subcode"].(float64)
+	trace, _ := errObj["fbtrace_id"].(string)
+	return fmt.Sprintf("code=%d subcode=%d fbtrace_id=%s", int(code), int(subcode), trace)
+}
+
 // parseSendError maps a non-2xx Meta response to an error, detecting known error codes
 func parseSendError(statusCode int, respObj map[string]any) error {
 	if errObj, ok := respObj["error"].(map[string]any); ok {
@@ -163,7 +173,7 @@ func (c *WhatsAppClient) SendVerificationCode(ctx context.Context, toPhoneNumber
 	if resp.StatusCode >= 300 {
 		var respObj map[string]any
 		_ = json.NewDecoder(resp.Body).Decode(&respObj)
-		logger.Error.Printf("WhatsApp SendVerificationCode failed status=%d resp=%v", resp.StatusCode, respObj)
+		logger.Error.Printf("WhatsApp SendVerificationCode failed status=%d %s", resp.StatusCode, metaErrorFields(respObj))
 		return parseSendError(resp.StatusCode, respObj)
 	}
 	logger.Info.Println("WhatsApp SendVerificationCode: delivered to API")
@@ -207,7 +217,7 @@ func (c *WhatsAppClient) SendTextMessage(ctx context.Context, toPhoneNumber, mes
 	if resp.StatusCode >= 300 {
 		var respObj map[string]any
 		_ = json.NewDecoder(resp.Body).Decode(&respObj)
-		logger.Error.Printf("WhatsApp SendTextMessage failed status=%d resp=%v", resp.StatusCode, respObj)
+		logger.Error.Printf("WhatsApp SendTextMessage failed status=%d %s", resp.StatusCode, metaErrorFields(respObj))
 		return fmt.Errorf("failed to send message, status code: %d", resp.StatusCode)
 	}
 	logger.Info.Println("WhatsApp SendTextMessage: delivered to API")
@@ -293,7 +303,7 @@ func (c *WhatsAppClient) SendTemplateMessage(ctx context.Context, toPhoneNumber,
 	if resp.StatusCode >= 300 {
 		var respObj map[string]any
 		_ = json.NewDecoder(resp.Body).Decode(&respObj)
-		logger.Error.Printf("WhatsApp SendTemplateMessage failed status=%d resp=%v", resp.StatusCode, respObj)
+		logger.Error.Printf("WhatsApp SendTemplateMessage failed status=%d %s", resp.StatusCode, metaErrorFields(respObj))
 		return fmt.Errorf("failed to send template message, status code: %d", resp.StatusCode)
 	}
 	logger.Info.Println("WhatsApp SendTemplateMessage: delivered to API")
