@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/coneno/logger"
@@ -12,11 +13,14 @@ import (
 
 // Config is the structure that holds all global configuration data
 type WhatsAppConfig struct {
-	Enabled                        bool
-	ApiToken                       string
-	PhoneNumberID                  string
-	VerificationTemplateName       string
-	VerificationTemplateLang       string
+	Enabled                  bool
+	ApiToken                 string
+	PhoneNumberID            string
+	VerificationTemplateName string
+	VerificationTemplateLang string
+	// Languages the verification template is approved in on Meta's side; always contains
+	// VerificationTemplateLang. A user's language outside this list falls back to it.
+	VerificationTemplateLangs      []string
 	VerificationTemplateCategory   string
 	WeeklyReminderTemplateName     string
 	WeeklyReminderTemplateLang     string
@@ -66,6 +70,7 @@ func InitConfig() Config {
 	conf.WhatsApp.WeeklyReminderTemplateLang = os.Getenv(ENV_WHATSAPP_WEEKLY_REMINDER_TEMPLATE_LANG)
 	conf.WhatsApp.WeeklyReminderTemplateCategory = os.Getenv(ENV_WHATSAPP_WEEKLY_REMINDER_TEMPLATE_CATEGORY)
 	conf.WhatsApp.ApiVersion = os.Getenv(ENV_WHATSAPP_API_VERSION)
+	conf.WhatsApp.VerificationTemplateLangs = verificationTemplateLangs(os.Getenv(ENV_WHATSAPP_VERIFICATION_TEMPLATE_LANGS), conf.WhatsApp.VerificationTemplateLang)
 
 	if conf.WhatsApp.ApiToken == "" || conf.WhatsApp.PhoneNumberID == "" || conf.WhatsApp.VerificationTemplateName == "" || conf.WhatsApp.VerificationTemplateLang == "" || conf.WhatsApp.VerificationTemplateCategory == "" {
 		logger.Warning.Printf("WhatsApp disabled: incomplete configuration. Missing env vars among: %s, %s, %s, %s, %s",
@@ -74,7 +79,7 @@ func InitConfig() Config {
 			ENV_WHATSAPP_VERIFICATION_TEMPLATE_CATEGORY)
 	} else {
 		conf.WhatsApp.Enabled = true
-		logger.Info.Println("WhatsApp enabled")
+		logger.Info.Printf("WhatsApp enabled, verification template languages: %s", strings.Join(conf.WhatsApp.VerificationTemplateLangs, ","))
 		if conf.WhatsApp.WeeklyReminderTemplateName != "" {
 			logger.Info.Printf("WhatsApp weekly reminder template configured: %s (%s)", conf.WhatsApp.WeeklyReminderTemplateName, conf.WhatsApp.WeeklyReminderTemplateLang)
 		}
@@ -188,4 +193,26 @@ func getIntervalsConfig() models.Intervals {
 	intervals.ContactVerificationTokenLifetime = parseEnvDuration(ENV_TOKEN_CONTACT_VERIFICATION_LIFETIME, defaultContactVerificationTokenLifetime, "m")
 
 	return intervals
+}
+
+// verificationTemplateLangs parses the comma-separated list of languages the verification
+// template is available in and makes sure the configured default is among them. Entries are
+// written in Meta's form ("en_US"); a hyphenated region ("de-CH") is accepted and normalised.
+func verificationTemplateLangs(list, defaultLang string) []string {
+	langs := []string{}
+	for _, l := range strings.Split(list, ",") {
+		if l = strings.ReplaceAll(strings.TrimSpace(l), "-", "_"); l != "" {
+			langs = append(langs, l)
+		}
+	}
+	defaultLang = strings.ReplaceAll(strings.TrimSpace(defaultLang), "-", "_")
+	for _, l := range langs {
+		if strings.EqualFold(l, defaultLang) {
+			return langs
+		}
+	}
+	if defaultLang == "" {
+		return langs
+	}
+	return append(langs, defaultLang)
 }

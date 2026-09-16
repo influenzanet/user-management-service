@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"testing"
 )
 
@@ -93,5 +94,24 @@ func TestWhatsAppAPIVersionIsReadFromEnv(t *testing.T) {
 	conf := InitConfig()
 	if conf.WhatsApp.ApiVersion != "v25.0" {
 		t.Fatalf("WhatsApp.ApiVersion = %q, want the value of %s", conf.WhatsApp.ApiVersion, ENV_WHATSAPP_API_VERSION)
+	}
+}
+
+func TestVerificationTemplateLangsAlwaysContainTheConfiguredLanguage(t *testing.T) {
+	for _, tc := range []struct {
+		list, defaultLang string
+		want              []string
+	}{
+		{"", "it", []string{"it"}},
+		{"it, en", "it", []string{"it", "en"}},
+		{"en", "it", []string{"en", "it"}},
+		{" it ,, en ,", "it", []string{"it", "en"}},
+		{"it, de-CH", "it", []string{"it", "de_CH"}},
+		{"IT, en_US", "it", []string{"IT", "en_US"}},
+	} {
+		got := verificationTemplateLangs(tc.list, tc.defaultLang)
+		if fmt.Sprint(got) != fmt.Sprint(tc.want) {
+			t.Errorf("verificationTemplateLangs(%q, %q) = %v, want %v", tc.list, tc.defaultLang, got, tc.want)
+		}
 	}
 }

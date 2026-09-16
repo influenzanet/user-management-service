@@ -857,12 +857,8 @@ func (s *userManagementServer) ResendContactVerification(ctx context.Context, re
 			logger.Error.Printf("ResendContactVerification: %s", err.Error())
 			return nil, status.Error(codes.Internal, err.Error())
 		}
-		// Send via WhatsApp client using user's preferred language
-		lang := user.Account.PreferredLanguage
-		if lang == "" {
-			lang = s.whatsAppConfig.VerificationTemplateLang // fallback to default if not set
-		}
-		if err := s.whatsAppClient.SendVerificationCode(ctx, req.Address, vc, lang); err != nil {
+		// Same language rule as AddPhoneNumber and EditPhoneNumber
+		if err := s.whatsAppClient.SendVerificationCode(ctx, req.Address, vc, verificationTemplateLang(s.whatsAppConfig, user)); err != nil {
 			logger.Error.Printf("ResendContactVerification (phone): %s", err.Error())
 			if errors.Is(err, httpClients.ErrRecipientNotAllowed) {
 				return nil, status.Error(codes.FailedPrecondition, "phone number not enabled to receive WhatsApp messages")
