@@ -554,8 +554,15 @@ func (s *userManagementServer) SignupWithEmail(ctx context.Context, req *api.Sig
 				logger.Error.Printf("ERROR: signup method failed to check phone availability: %s", err.Error())
 				return nil, status.Error(codes.Internal, "failed to check phone availability")
 			} else if isTaken {
-				logger.Warning.Printf("Phone number %s already taken during signup", utils.MaskPhone(phone))
-				return nil, status.Error(codes.AlreadyExists, "phone number already registered")
+				// Whether a number already belongs to a participant is not something an
+				// anonymous caller may learn: answered on its own, before an account exists and
+				// before anything is spent, this endpoint reports membership of an
+				// epidemiological study for any number fed to it. The refusal is therefore the
+				// one a duplicate account address gets from AddUser below, byte for byte, so
+				// the two cases cannot be told apart from the outside. The real reason stays
+				// where only the operator can read it.
+				logger.Warning.Printf("SECURITY WARNING: signup attempt with an already registered phone number %s", utils.MaskPhone(phone))
+				return nil, status.Error(codes.Internal, "user creation failed")
 			} else {
 				newUser.AddNewPhone(phone, false) // Add as unverified
 				logger.Debug.Printf("Added unverified phone %s for new user", utils.MaskPhone(phone))

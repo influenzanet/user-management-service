@@ -578,15 +578,6 @@ func (s *userManagementServer) AddPhoneNumber(ctx context.Context, req *api.Phon
 
 	isNewPhone := existingPhoneInfo == nil
 	if isNewPhone {
-		// Phone doesn't belong to this user - check if it's taken by someone else (excluding this user)
-		phoneSlice := []string{phone}
-		isTaken, err := s.userDBservice.IsPhoneNumberTakenExcludingUser(ctx, req.Token.InstanceId, phoneSlice, req.Token.Id)
-		if err != nil {
-			return nil, status.Error(codes.Internal, err.Error())
-		} else if isTaken {
-			return nil, status.Error(codes.InvalidArgument, "phone number already taken")
-		}
-
 		// Check if user already has a different phone number
 		for _, ci := range user.ContactInfos {
 			if ci.Type == models.ContactTypePhone && ci.Phone != "" && ci.Phone != phone {
@@ -600,6 +591,11 @@ func (s *userManagementServer) AddPhoneNumber(ctx context.Context, req *api.Phon
 	// budget. The user was loaded above, so a failed reservation means the budget is gone.
 	// A reserved slot stays consumed even if the send fails: a failed send still burned a
 	// Meta call.
+	// The reservation also comes before the uniqueness check below, which used to answer for
+	// free: "this number belongs to someone else" is an answer about a third party, and an
+	// unmetered one lets an account holder walk a list of numbers and learn which of them
+	// belong to participants. Charged to this budget, a probe costs exactly what a real send
+	// costs and stops after three in the window, like everything else that leaves here.
 	slotFree, err := s.userDBservice.ReservePhoneVerificationSlot(req.Token.InstanceId, req.Token.Id, allowedPhoneVerificationAttempts, phoneVerificationRateLimitWindow)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
@@ -609,6 +605,15 @@ func (s *userManagementServer) AddPhoneNumber(ctx context.Context, req *api.Phon
 	}
 
 	if isNewPhone {
+		// Phone doesn't belong to this user - check if it's taken by someone else (excluding this user)
+		phoneSlice := []string{phone}
+		isTaken, err := s.userDBservice.IsPhoneNumberTakenExcludingUser(ctx, req.Token.InstanceId, phoneSlice, req.Token.Id)
+		if err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
+		} else if isTaken {
+			return nil, status.Error(codes.InvalidArgument, "phone number already taken")
+		}
+
 		// The guard lives in the filter: only one concurrent request can add a phone.
 		added, err := s.userDBservice.AddPhoneContactInfoIfAbsent(req.Token.InstanceId, req.Token.Id, models.ContactInfo{
 			ID:    primitive.NewObjectID(),
@@ -719,20 +724,15 @@ func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.Pho
 	} else if contactInfo.Phone == phone && contactInfo.ConfirmedAt > 0 {
 		return nil, status.Error(codes.InvalidArgument, "phone number already verified")
 	} else {
-		// Different phone number - check if it's taken by someone else
-		phoneSlice := []string{phone}
-		isTaken, err := s.userDBservice.IsPhoneNumberTakenExcludingUser(ctx, req.Token.InstanceId, phoneSlice, req.Token.Id)
-		if err != nil {
-			return nil, status.Error(codes.Internal, err.Error())
-		} else if isTaken {
-			return nil, status.Error(codes.InvalidArgument, "phone number already taken")
-		}
 		changingNumber = true
 	}
 
 	// Atomically reserve a send slot before touching Meta (see AddPhoneNumber); the user was
 	// loaded above, so a failed reservation means the budget is gone. A reserved slot stays
-	// consumed even if the send fails: a failed send still burned a Meta call.
+	// consumed even if the send fails: a failed send still burned a Meta call. The uniqueness
+	// check below is likewise charged to this budget rather than answered for free, so this
+	// endpoint cannot be walked through a list of numbers to learn which of them are
+	// registered (see AddPhoneNumber).
 	slotFree, err := s.userDBservice.ReservePhoneVerificationSlot(req.Token.InstanceId, req.Token.Id, allowedPhoneVerificationAttempts, phoneVerificationRateLimitWindow)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
@@ -742,6 +742,15 @@ func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.Pho
 	}
 
 	if changingNumber {
+		// Different phone number - check if it's taken by someone else
+		phoneSlice := []string{phone}
+		isTaken, err := s.userDBservice.IsPhoneNumberTakenExcludingUser(ctx, req.Token.InstanceId, phoneSlice, req.Token.Id)
+		if err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
+		} else if isTaken {
+			return nil, status.Error(codes.InvalidArgument, "phone number already taken")
+		}
+
 		// Overwrite the phone entry in place with a targeted update; no full-document replace.
 		if err := s.userDBservice.ReplacePhoneContactInfo(req.Token.InstanceId, req.Token.Id, models.ContactInfo{
 			ID:    primitive.NewObjectID(),
