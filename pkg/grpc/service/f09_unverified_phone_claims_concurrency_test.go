@@ -16,16 +16,17 @@ import (
 // F-09 removed the rule that made a number exclusive before anybody had proved anything, so for
 // the first time two accounts can hold the same number, both unverified, both with a live code,
 // and verify it at the same moment. That is a deliberate residual, not an oversight: settling it
-// needs a unique partial index or a transaction, which is a schema decision. A residual that is
-// only asserted in a commit message is worth nothing, so this test states where its edges are.
+// needs uniqueness kept outside the contact array (a collection keyed by the number, written with
+// the confirmation) or a transaction, which is a schema decision; a partial unique index on the
+// array would not do, since partial filters apply per document, not per element. A residual that
+// is only asserted in a commit message is worth nothing, so this test states where its edges are.
 //
 // There is no seam to hold open: both ends of the window are database calls. So, like the F-02
 // concurrency test, this overlaps the operation many times over and asserts the invariants that
 // must hold whatever order the writes landed in, rather than a particular interleaving.
 //
-// Holds, and this is what bounds the damage:
+// Enforced on every round, and this is what bounds the damage:
 //   - a contact that is verified is never removed from any account, by any release;
-//   - a released claimant keeps no usable code and can verify nothing afterwards;
 //   - nobody is ever confirmed for a number they did not hold;
 //   - somebody always wins, which is structural rather than lucky: VerifyWhatsAppCode calls
 //     FinalizePhoneVerification and only then, in the same handler and strictly after it,
@@ -33,6 +34,13 @@ import (
 //     release only runs once the account that triggered it has already been confirmed. "Both
 //     fail" is therefore unreachable. If those two calls are ever reordered, this assumption
 //     goes with them and this test should fail loudly rather than turn flaky.
+//
+// Checked only when a round happens to serialise, which with the barrier is rare: the loser-side
+// assertions below, that a released claimant keeps no usable code and can verify nothing
+// afterwards. Do not read this test's green as proof of that path. It is pinned deterministically,
+// on every run and without goroutines, by TestVerifyWhatsAppCodeReleasesUnverifiedClaims and by
+// TestConcurrentAddPhoneNumberOnOneNumber. Making both accounts land inside the window is what
+// makes the residual below reproduce every time, and that is this test's real job.
 //
 // Does not hold, and this is the residual: BOTH accounts can end up confirmed on the number.
 // The test accepts either outcome on purpose. Asserting "exactly one wins" would write today's
