@@ -901,5 +901,19 @@ func (s *userManagementServer) VerifyWhatsAppCode(ctx context.Context, req *api.
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
+	// Control of the number has now been proved, which settles every competing claim to it: any
+	// other account carrying it unverified was asserting it, and that assertion used to hold the
+	// number against its real owner for good. This is the moment the question is decided, and the
+	// only moment it can be decided in the participant's favour.
+	// A failure is logged and not returned: the verification itself succeeded and is already
+	// persisted, the claims it leaves behind are stale either way, and telling the participant
+	// their own verification failed would be both wrong and not something they can act on.
+	released, releaseErr := s.userDBservice.ReleaseUnverifiedPhoneClaims(req.Token.InstanceId, user.Account.PhoneVerificationCode.Phone, req.Token.Id)
+	if releaseErr != nil {
+		logger.Error.Printf("VerifyWhatsAppCode: failed to release unverified claims to the verified number: %v", releaseErr)
+	} else if released > 0 {
+		logger.Info.Printf("VerifyWhatsAppCode: released %d unverified claim(s) to a number that has now been verified", released)
+	}
+
 	return updatedUser.ToAPI(), nil
 }

@@ -921,13 +921,22 @@ func (dbService *UserDBService) IsPhoneNumberTaken(ctx context.Context, instance
 	return dbService.IsPhoneNumberTakenExcludingUser(ctx, instanceID, phoneNumbers, "")
 }
 
-// IsPhoneNumberTakenExcludingUser checks if a phone number is taken by any user except the specified one
+// IsPhoneNumberTakenExcludingUser checks if a phone number is taken by any user except the specified one.
+//
+// Only a verified contact counts. An account that merely carries a number has asserted it, not
+// proved it, and an assertion used to be enough to hold the number for good: one mistyped digit
+// at signup, or a signup abandoned before the code was used, and the participant the number
+// actually belongs to could never register it. What an unverified claim still does is keep its
+// own account from starting a second verification, which the per-account guards in AddPhoneNumber
+// and EditPhoneNumber enforce; holding the number against everybody else is reserved to proof.
+// See ReleaseUnverifiedPhoneClaims for what happens to those claims once somebody proves it.
 func (dbService *UserDBService) IsPhoneNumberTakenExcludingUser(ctx context.Context, instanceID string, phoneNumbers []string, excludeUserID string) (bool, error) {
 	filter := bson.M{
 		"contactInfos": bson.M{
 			"$elemMatch": bson.M{
-				"type":  models.ContactTypePhone,
-				"phone": bson.M{"$in": phoneNumbers},
+				"type":        models.ContactTypePhone,
+				"phone":       bson.M{"$in": phoneNumbers},
+				"confirmedAt": bson.M{"$gt": 0},
 			},
 		},
 	}
@@ -947,6 +956,112 @@ func (dbService *UserDBService) IsPhoneNumberTakenExcludingUser(ctx context.Cont
 		return false, err
 	}
 	return count > 0, nil
+}
+
+// unverifiedPhoneClaim matches a phone contact info that carries this number without anybody
+// having proved control of it. It states the same condition as SetPhoneVerificationCode and
+// IsPhoneNumberTakenExcludingUser, so the three agree on what "not verified" means, including
+// for documents written before confirmedAt existed, where the field is absent rather than zero.
+func unverifiedPhoneClaim(phone string) bson.M {
+	return bson.M{
+		"type":        models.ContactTypePhone,
+		"phone":       phone,
+		"confirmedAt": bson.M{"$not": bson.M{"$gt": 0}},
+	}
+}
+
+// ReleaseUnverifiedPhoneClaims removes the number from every other account that carries it
+// without having verified it, and clears the verification code those accounts had bound to it.
+//
+// It exists because a number is held by proof, not by assertion: until this ran, a digit
+// mistyped in somebody else's signup kept the real owner from ever registering their own
+// number, and nothing released it. It is called once control of the number has actually been
+// proved, so the claims it removes are by construction claims to a number that belongs to
+// somebody else.
+//
+// A released account also loses the whatsapp channel and keeps (or regains) the e-mail one, so
+// it is never left with whatsapp enabled and no number to deliver it to, and never left with no
+// channel at all.
+//
+// exceptUserID is the account that did the proving and is never touched. Verified contacts are
+// never touched either, on any account: this method removes claims, never proven contacts.
+// Both writes are targeted — a $pull of the one contact and a $set of the one code — so nothing
+// else on those documents is rewritten and no concurrent update is clobbered.
+//
+// It returns how many accounts lost a claim, for the caller's log.
+func (dbService *UserDBService) ReleaseUnverifiedPhoneClaims(instanceID string, phone string, exceptUserID string) (int64, error) {
+	if phone == "" {
+		return 0, errors.New("no phone number given")
+	}
+	ctx, cancel := dbService.getContext()
+	defer cancel()
+
+	others := bson.M{}
+	// An unparsable id would silently widen the write to every account, including the one that
+	// just verified, so it is refused instead.
+	if exceptUserID != "" {
+		_id, err := primitive.ObjectIDFromHex(exceptUserID)
+		if err != nil {
+			return 0, err
+		}
+		others["_id"] = bson.M{"$ne": _id}
+	}
+
+	claimFilter := bson.M{}
+	for k, v := range others {
+		claimFilter[k] = v
+	}
+	claimFilter["contactInfos"] = bson.M{"$elemMatch": unverifiedPhoneClaim(phone)}
+
+	now := time.Now().Unix()
+
+	// The e-mail channel is restored before the claim goes, and in a write of its own, because
+	// MongoDB refuses $pull and $addToSet on one path in a single update ("would create a
+	// conflict"). Restoring it first also means the filter still matches these accounts: after
+	// the $pull below they no longer carry the claim. An account that already had e-mail is
+	// unaffected, $addToSet being what it is, and an account that gains it cannot be silenced
+	// by this method — which is the point, since the next write takes its whatsapp channel away.
+	if _, err := dbService.collectionRefUsers(instanceID).UpdateMany(ctx, claimFilter, bson.M{
+		"$addToSet": bson.M{"contactPreferences.preferredChannels": models.ChannelEmail},
+	}); err != nil {
+		return 0, err
+	}
+
+	// The claim and the whatsapp channel go together, in one write: the channel stood for a
+	// number this account is about to stop having, and an account left with whatsapp enabled and
+	// no phone describes a delivery the platform cannot make. DeletePhoneNumber and
+	// ReplacePhoneContactInfo revoke it the same way. Two different paths under one $pull is
+	// allowed, unlike mixing $pull and $addToSet on the same one.
+	res, err := dbService.collectionRefUsers(instanceID).UpdateMany(ctx, claimFilter, bson.M{
+		"$pull": bson.M{
+			"contactInfos":                         unverifiedPhoneClaim(phone),
+			"contactPreferences.preferredChannels": models.ChannelWhatsApp,
+		},
+		"$set": bson.M{"timestamps.updatedAt": now},
+	})
+	if err != nil {
+		return 0, err
+	}
+
+	// The code outlives the contact it was issued for, so it is cleared separately and only
+	// where it names this number: a code bound to any other number is somebody else's pending
+	// verification and is left alone.
+	codeFilter := bson.M{}
+	for k, v := range others {
+		codeFilter[k] = v
+	}
+	codeFilter["account.phoneVerificationCode.phone"] = phone
+
+	if _, err := dbService.collectionRefUsers(instanceID).UpdateMany(ctx, codeFilter, bson.M{
+		"$set": bson.M{
+			"account.phoneVerificationCode": bson.M{},
+			"timestamps.updatedAt":          now,
+		},
+	}); err != nil {
+		return res.ModifiedCount, err
+	}
+
+	return res.ModifiedCount, nil
 }
 
 // DeletePhoneNumber removes a phone number from a user
