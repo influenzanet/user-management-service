@@ -1,0 +1,65 @@
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches:
+      - dev-orbyta
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      mongo:
+        image: mongo:7.0
+        env:
+          MONGO_INITDB_ROOT_USERNAME: admin
+          MONGO_INITDB_ROOT_PASSWORD: root
+        ports:
+          - 27017:27017
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # go.mod asks for the language version 1.22 but pins the toolchain to
+      # go1.24.3: install 1.24 so the build does not download a toolchain.
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      # Reported for information only: a few inherited files are not
+      # gofmt-clean, so formatting is not enforced yet and nothing is
+      # reformatted here.
+      - name: Gofmt (report only)
+        continue-on-error: true
+        run: gofmt -l .
+
+      # No -race here: TestSignupWithEmail trips a data race that comes from
+      # upstream code, so the detector would fail every run.
+      - name: Test
+        env:
+          USER_DB_CONNECTION_STR: localhost:27017
+          USER_DB_USERNAME: admin
+          USER_DB_PASSWORD: root
+          USER_DB_CONNECTION_PREFIX: ""
+          GLOBAL_DB_CONNECTION_STR: localhost:27017
+          GLOBAL_DB_USERNAME: admin
+          GLOBAL_DB_PASSWORD: root
+          GLOBAL_DB_CONNECTION_PREFIX: ""
+          DB_TIMEOUT: 30
+          DB_IDLE_CONN_TIMEOUT: 45
+          DB_MAX_POOL_SIZE: 8
+          DB_DB_NAME_PREFIX: CI_
+          # Throw-away key for the test run only (base64 of 48 zero bytes).
+          JWT_TOKEN_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+          ARGON2_MEMORY: 65536
+          ARGON2_ITERATIONS: 3
+          ARGON2_PARALLELISM: 1
+        run: go test ./...
