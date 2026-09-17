@@ -5,6 +5,15 @@ This is a Go implementation of the [User Management Service](https://github.com/
 It provides operations to manage User accounts and profiles for an InfluenzaNet platform.
 
 
+## Generated API
+The Go code under `pkg/api` is generated from the proto contracts of the `api` repository:
+```
+make api
+```
+The target expects that repository as a sibling of this one, at `../api`. Generate with protoc
+v4.25.3, protoc-gen-go v1.34.1 and protoc-gen-go-grpc v1.3.0, the versions recorded in the header
+of every file under `pkg/api`, so that the diff carries the contract change and nothing else.
+
 ## Test
 Before running the test first you have to generate the client mock services:
 ```
