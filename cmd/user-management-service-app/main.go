@@ -101,6 +101,11 @@ func ensureDBIndexes(instanceIDs []string, udb *userdb.UserDBService) {
 
 		udb.CreateIndexForRenewTokens(i)
 		udb.CreateIndexForUser(i)
+		// The only index that is not merely an optimisation: without it the per-destination send
+		// records are never expired, so a failure here has to be visible.
+		if err := udb.CreateIndexForPhoneVerificationSends(i); err != nil {
+			logger.Error.Printf("could not create the phone verification send index for instance %s: %v", i, err)
+		}
 		// TODO: ensure index for users collection as well
 	}
 }

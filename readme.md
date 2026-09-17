@@ -49,6 +49,12 @@ Create a database index on user collection for:
 - account.accountID
 - account.accountConfirmedAt + timestamps.createdAt
 
+The `phoneVerificationSends` collection of each instance database holds the per-number budget of
+WhatsApp verification messages, keyed by a hash of the destination number. Its records expire on
+their own through a TTL index on the `updatedAt` field, created at startup. Changing the retention
+is not enough on its own: MongoDB refuses to recreate an existing TTL index with a different
+expiry, so an existing index must be dropped (or amended with `collMod`) by hand first.
+
 ## Tools
 
 Several tools are provided with the services to handle some management tasks:

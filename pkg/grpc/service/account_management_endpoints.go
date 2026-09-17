@@ -613,7 +613,22 @@ func (s *userManagementServer) AddPhoneNumber(ctx context.Context, req *api.Phon
 		} else if isTaken {
 			return nil, status.Error(codes.InvalidArgument, "phone number already taken")
 		}
+	}
 
+	// The account's budget bounds what one account spends, not what one number receives, and
+	// accounts are free to create; the number's own budget, counted across every account, is
+	// reserved here — past every refusal that sends nothing, before anything is written or sent
+	// (see ReservePhoneDestinationSendSlot).
+	destinationFree, err := s.userDBservice.ReservePhoneDestinationSendSlot(req.Token.InstanceId, phone, allowedPhoneDestinationSends, phoneDestinationRateLimitWindow)
+	if err != nil {
+		logger.Error.Printf("AddPhoneNumber: %s", err.Error())
+		return nil, status.Error(codes.Internal, "could not reserve the send budget")
+	}
+	if !destinationFree {
+		return nil, status.Error(codes.ResourceExhausted, "too many phone verification attempts, try again later")
+	}
+
+	if isNewPhone {
 		// The guard lives in the filter: only one concurrent request can add a phone.
 		added, err := s.userDBservice.AddPhoneContactInfoIfAbsent(req.Token.InstanceId, req.Token.Id, models.ContactInfo{
 			ID:    primitive.NewObjectID(),
@@ -750,7 +765,22 @@ func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.Pho
 		} else if isTaken {
 			return nil, status.Error(codes.InvalidArgument, "phone number already taken")
 		}
+	}
 
+	// The account's budget bounds what one account spends, not what one number receives, and
+	// accounts are free to create; the number's own budget, counted across every account, is
+	// reserved here — past every refusal that sends nothing, before anything is written or sent
+	// (see ReservePhoneDestinationSendSlot).
+	destinationFree, err := s.userDBservice.ReservePhoneDestinationSendSlot(req.Token.InstanceId, phone, allowedPhoneDestinationSends, phoneDestinationRateLimitWindow)
+	if err != nil {
+		logger.Error.Printf("EditPhoneNumber: %s", err.Error())
+		return nil, status.Error(codes.Internal, "could not reserve the send budget")
+	}
+	if !destinationFree {
+		return nil, status.Error(codes.ResourceExhausted, "too many phone verification attempts, try again later")
+	}
+
+	if changingNumber {
 		// Overwrite the phone entry in place with a targeted update; no full-document replace.
 		if err := s.userDBservice.ReplacePhoneContactInfo(req.Token.InstanceId, req.Token.Id, models.ContactInfo{
 			ID:    primitive.NewObjectID(),

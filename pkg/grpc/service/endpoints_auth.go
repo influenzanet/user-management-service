@@ -846,6 +846,17 @@ func (s *userManagementServer) ResendContactVerification(ctx context.Context, re
 		if !slotFree {
 			return nil, status.Error(codes.ResourceExhausted, "too many phone verification attempts, try again later")
 		}
+		// And the number's own budget, counted across every account: since F-09 several accounts
+		// can hold the same unverified number at once, so this endpoint is a live route to it
+		// (see ReservePhoneDestinationSendSlot).
+		destinationFree, err := s.userDBservice.ReservePhoneDestinationSendSlot(req.Token.InstanceId, req.Address, allowedPhoneDestinationSends, phoneDestinationRateLimitWindow)
+		if err != nil {
+			logger.Error.Printf("ResendContactVerification: %s", err.Error())
+			return nil, status.Error(codes.Internal, "could not reserve the send budget")
+		}
+		if !destinationFree {
+			return nil, status.Error(codes.ResourceExhausted, "too many phone verification attempts, try again later")
+		}
 		// Generate and store new phone verification code (separate from login 2FA — G-3 fix)
 		vc, err := tokens.GenerateVerificationCode(6)
 		if err != nil {
