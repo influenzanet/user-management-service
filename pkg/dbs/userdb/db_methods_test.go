@@ -639,11 +639,17 @@ func TestDbReservePhoneVerificationSlot(t *testing.T) {
 	})
 }
 
+// The code is bound to the number it will be sent to, so seeding a pending phone contact is
+// part of the precondition of every store.
+const setCodeTestPhone = "+391230000020"
+
 func TestDbSetPhoneVerificationCode(t *testing.T) {
 	t.Run("sets the code without touching recorded attempts", func(t *testing.T) {
 		now := time.Now().Unix()
-		id := addReserveTestUser(t, "set_phone_code@test.com", []int64{now - 1, now - 2}, nil)
-		code := models.VerificationCode{Code: "123456", Attempts: 0, CreatedAt: now, ExpiresAt: now + 60}
+		id := addReserveTestUser(t, "set_phone_code@test.com", []int64{now - 1, now - 2}, []models.ContactInfo{
+			{ID: primitive.NewObjectID(), Type: models.ContactTypePhone, Phone: setCodeTestPhone},
+		})
+		code := models.VerificationCode{Code: "123456", Attempts: 0, CreatedAt: now, ExpiresAt: now + 60, Phone: setCodeTestPhone}
 		if err := testDBService.SetPhoneVerificationCode(testInstanceID, id, code); err != nil {
 			t.Errorf("unexpected error: %v", err)
 			return
@@ -841,11 +847,11 @@ func TestDbFinalizePhoneVerification(t *testing.T) {
 			{ID: primitive.NewObjectID(), Type: models.ContactTypeEmail, Email: "finalize_ok@test.com", ConfirmedAt: now},
 			{ID: primitive.NewObjectID(), Type: models.ContactTypePhone, Phone: "+391230000010"},
 		})
-		if err := testDBService.SetPhoneVerificationCode(testInstanceID, id, models.VerificationCode{Code: "123456"}); err != nil {
+		if err := testDBService.SetPhoneVerificationCode(testInstanceID, id, models.VerificationCode{Code: "123456", Phone: "+391230000010"}); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		updated, err := testDBService.FinalizePhoneVerification(testInstanceID, id)
+		updated, err := testDBService.FinalizePhoneVerification(testInstanceID, id, "+391230000010")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -870,7 +876,7 @@ func TestDbFinalizePhoneVerification(t *testing.T) {
 		id := addReserveTestUser(t, "finalize_no_phone@test.com", []int64{}, []models.ContactInfo{
 			{ID: primitive.NewObjectID(), Type: models.ContactTypeEmail, Email: "finalize_no_phone@test.com"},
 		})
-		if _, err := testDBService.FinalizePhoneVerification(testInstanceID, id); err != mongo.ErrNoDocuments {
+		if _, err := testDBService.FinalizePhoneVerification(testInstanceID, id, "+391230000012"); err != mongo.ErrNoDocuments {
 			t.Errorf("expected mongo.ErrNoDocuments, got %v", err)
 		}
 		user, _ := testDBService.GetUserByID(testInstanceID, id)
@@ -883,10 +889,10 @@ func TestDbFinalizePhoneVerification(t *testing.T) {
 		id := addReserveTestUser(t, "finalize_idempotent@test.com", []int64{}, []models.ContactInfo{
 			{ID: primitive.NewObjectID(), Type: models.ContactTypePhone, Phone: "+391230000011"},
 		})
-		if _, err := testDBService.FinalizePhoneVerification(testInstanceID, id); err != nil {
+		if _, err := testDBService.FinalizePhoneVerification(testInstanceID, id, "+391230000011"); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		updated, err := testDBService.FinalizePhoneVerification(testInstanceID, id)
+		updated, err := testDBService.FinalizePhoneVerification(testInstanceID, id, "+391230000011")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}

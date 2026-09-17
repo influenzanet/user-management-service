@@ -53,7 +53,7 @@ func TestF03StaleUserDoesNotOverwritePhoneState(t *testing.T) {
 					t.Fatal("reservation was not accepted")
 				}
 			case "code":
-				err = testDBService.SetPhoneVerificationCode(testInstanceID, id, models.VerificationCode{Code: "654321", Attempts: 2})
+				err = testDBService.SetPhoneVerificationCode(testInstanceID, id, models.VerificationCode{Code: "654321", Attempts: 2, Phone: "+391234567890"})
 			case "attempts":
 				for i := 0; i < 3; i++ {
 					_, err = testDBService.IncrementVerificationCodeAttempts(testInstanceID, id, 3)
@@ -70,7 +70,7 @@ func TestF03StaleUserDoesNotOverwritePhoneState(t *testing.T) {
 			case "replace":
 				err = testDBService.ReplacePhoneContactInfo(testInstanceID, id, models.ContactInfo{ID: primitive.NewObjectID(), Type: models.ContactTypePhone, Phone: "+391234567892"})
 			case "confirm":
-				_, err = testDBService.FinalizePhoneVerification(testInstanceID, id)
+				_, err = testDBService.FinalizePhoneVerification(testInstanceID, id, "+391234567890")
 			case "delete":
 				_, err = testDBService.DeletePhoneNumber(testInstanceID, id)
 			}
@@ -277,7 +277,7 @@ func TestF03EmptyPreferenceChannelsRemainOmitted(t *testing.T) {
 		if raw.Lookup("contactPreferences", "preferredChannels").Type != 0 {
 			t.Error("empty channel list must be omitted, not stored as null/empty")
 		}
-		if _, err := testDBService.FinalizePhoneVerification(testInstanceID, id); err != nil {
+		if _, err := testDBService.FinalizePhoneVerification(testInstanceID, id, "+391234567890"); err != nil {
 			t.Errorf("verification after empty preferences failed: %v", err)
 		}
 	}

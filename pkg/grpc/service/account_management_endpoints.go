@@ -12,6 +12,7 @@ import (
 	loggingAPI "github.com/influenzanet/logging-service/pkg/api"
 	messageAPI "github.com/influenzanet/messaging-service/pkg/api/messaging_service"
 	"github.com/influenzanet/user-management-service/pkg/api"
+	"github.com/influenzanet/user-management-service/pkg/dbs/userdb"
 	httpClients "github.com/influenzanet/user-management-service/pkg/http/clients"
 	"github.com/influenzanet/user-management-service/pkg/models"
 	"github.com/influenzanet/user-management-service/pkg/pwhash"
@@ -645,9 +646,15 @@ func (s *userManagementServer) AddPhoneNumber(ctx context.Context, req *api.Phon
 		Attempts:  0,
 		CreatedAt: time.Now().Unix(),
 		ExpiresAt: time.Now().Unix() + s.Intervals.VerificationCodeLifetime,
+		Phone:     phone,
 	}
-	// Persist the code before sending, so a delivered code is always verifiable
+	// Persist the code before sending, so a delivered code is always verifiable, and only
+	// while this number is still the one waiting to be verified: a request that read the
+	// account before the number changed is refused here, before anything reaches Meta.
 	if err := s.userDBservice.SetPhoneVerificationCode(req.Token.InstanceId, req.Token.Id, code); err != nil {
+		if errors.Is(err, userdb.ErrPhoneNotPending) {
+			return nil, status.Error(codes.InvalidArgument, "phone number is not pending verification")
+		}
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
@@ -755,9 +762,15 @@ func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.Pho
 		Attempts:  0,
 		CreatedAt: time.Now().Unix(),
 		ExpiresAt: time.Now().Unix() + s.Intervals.VerificationCodeLifetime,
+		Phone:     phone,
 	}
-	// Persist the code before sending, so a delivered code is always verifiable
+	// Persist the code before sending, so a delivered code is always verifiable, and only
+	// while this number is still the one waiting to be verified: a request that read the
+	// account before the number changed is refused here, before anything reaches Meta.
 	if err := s.userDBservice.SetPhoneVerificationCode(req.Token.InstanceId, req.Token.Id, code); err != nil {
+		if errors.Is(err, userdb.ErrPhoneNotPending) {
+			return nil, status.Error(codes.InvalidArgument, "phone number is not pending verification")
+		}
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
@@ -815,6 +828,29 @@ func (s *userManagementServer) VerifyWhatsAppCode(ctx context.Context, req *api.
 	if time.Now().Unix() > pending.Account.PhoneVerificationCode.ExpiresAt {
 		return nil, status.Error(codes.PermissionDenied, "verification code expired")
 	}
+	// A code proves control of the number it was sent to and of no other. When the account no
+	// longer has that number waiting to be verified — it was replaced or deleted while the code
+	// was in flight, or the code was stored before codes carried their destination — there is
+	// nothing this code can confirm. The answer is the one given when no verification is in
+	// progress, which is what this is: it separates neither case from the other, and it spends
+	// no attempt, for the same reason an expired code spends none.
+	sentTo := pending.Account.PhoneVerificationCode.Phone
+	if sentTo == "" {
+		return nil, status.Error(codes.InvalidArgument, "no phone verification in progress")
+	}
+	// Scanned here rather than through FindContactInfoByTypeAndAddr so that this guard states
+	// the same condition as the two database filters do: a phone contact, with this number,
+	// not yet confirmed.
+	stillPending := false
+	for _, ci := range pending.ContactInfos {
+		if ci.Type == models.ContactTypePhone && ci.Phone == sentTo && ci.ConfirmedAt <= 0 {
+			stillPending = true
+			break
+		}
+	}
+	if !stillPending {
+		return nil, status.Error(codes.InvalidArgument, "no phone verification in progress")
+	}
 
 	// Atomically increment attempts via $inc with a filter that caps at max.
 	// This prevents race conditions: concurrent requests each get a distinct counter value.
@@ -846,7 +882,12 @@ func (s *userManagementServer) VerifyWhatsAppCode(ctx context.Context, req *api.
 	// all with targeted updates, in one atomic operation. Adding the channels is left to
 	// $addToSet, so a concurrent change of the notification preferences is not overwritten
 	// by the list this request read.
-	updatedUser, err := s.userDBservice.FinalizePhoneVerification(req.Token.InstanceId, req.Token.Id)
+	updatedUser, err := s.userDBservice.FinalizePhoneVerification(req.Token.InstanceId, req.Token.Id, user.Account.PhoneVerificationCode.Phone)
+	if err == mongo.ErrNoDocuments {
+		// The number moved between the check above and this write. Nothing was confirmed and no
+		// channel was enabled; the answer stays the one given for a code with nothing to verify.
+		return nil, status.Error(codes.InvalidArgument, "no phone verification in progress")
+	}
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}

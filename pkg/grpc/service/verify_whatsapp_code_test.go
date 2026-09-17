@@ -30,6 +30,11 @@ func addVerifyCodeTestUser(t *testing.T, accountID string, phone string, code mo
 			ID: primitive.NewObjectID(), Type: models.ContactTypePhone, Phone: phone,
 		})
 	}
+	// A code is stored together with the number it was sent to. Unless the case under test
+	// says otherwise, that is the number the account carries.
+	if code.Code != "" && code.Phone == "" {
+		code.Phone = phone
+	}
 
 	users, err := addTestUsers([]models.User{
 		{

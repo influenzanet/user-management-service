@@ -850,10 +850,23 @@ func (s *userManagementServer) ResendContactVerification(ctx context.Context, re
 			Attempts:  0,
 			CreatedAt: time.Now().Unix(),
 			ExpiresAt: time.Now().Unix() + s.Intervals.VerificationCodeLifetime,
+			// Stored phone numbers are sanitised (every write path validates them with
+			// CheckPhoneFormat, which rejects separators), so the code is bound in that same
+			// form as AddPhoneNumber and EditPhoneNumber bind theirs. The lookup above keeps
+			// matching the address as the caller spelled it.
+			Phone: utils.SanitizePhone(req.Address),
 		}
 		// Persist the code before sending it with a targeted $set, so a delivered code is
-		// always verifiable and no full-document replace can clobber concurrent writes
+		// always verifiable and no full-document replace can clobber concurrent writes. The
+		// store is refused when this number is no longer the one waiting to be verified, so a
+		// resend that raced a change of number never reaches Meta.
 		if err := s.userDBservice.SetPhoneVerificationCode(req.Token.InstanceId, req.Token.Id, code); err != nil {
+			// Losing the race with a change of number is an expected outcome, not a fault, so
+			// it is answered like the other two endpoints and logged as information.
+			if errors.Is(err, userdb.ErrPhoneNotPending) {
+				logger.Info.Printf("ResendContactVerification: %s", err.Error())
+				return nil, status.Error(codes.InvalidArgument, "phone number is not pending verification")
+			}
 			logger.Error.Printf("ResendContactVerification: %s", err.Error())
 			return nil, status.Error(codes.Internal, err.Error())
 		}

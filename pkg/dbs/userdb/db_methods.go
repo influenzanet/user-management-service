@@ -282,8 +282,19 @@ func (dbService *UserDBService) ReservePhoneVerificationSlot(instanceID string, 
 	return res.MatchedCount > 0, nil
 }
 
+// ErrPhoneNotPending reports that the number a phone verification code was issued for is no
+// longer waiting to be verified on that account: it was replaced, deleted or already confirmed
+// between the moment the request read the user and the moment it tried to store the code. The
+// number is also reported as not pending when the user does not exist at all; every caller has
+// just loaded the user, so the two cases call for the same answer.
+var ErrPhoneNotPending = errors.New("phone number is not pending verification")
+
 // SetPhoneVerificationCode persists the phone verification code with a targeted $set, so
 // concurrently updated fields (like the atomically managed attempts array) are not rewritten.
+// The update only applies while code.Phone is still an unconfirmed phone contact of the user,
+// so a request that read the account before the number changed cannot bind a fresh code to a
+// number the participant has since replaced. It returns ErrPhoneNotPending when that is the
+// case, which is before the caller hands anything to Meta.
 func (dbService *UserDBService) SetPhoneVerificationCode(instanceID string, userID string, code models.VerificationCode) error {
 	ctx, cancel := dbService.getContext()
 	defer cancel()
@@ -292,13 +303,30 @@ func (dbService *UserDBService) SetPhoneVerificationCode(instanceID string, user
 	if err != nil {
 		return err
 	}
-	filter := bson.M{"_id": _id}
+	// A code with no destination cannot be attributed to a number, so it is never stored.
+	if code.Phone == "" {
+		return ErrPhoneNotPending
+	}
+	filter := bson.M{
+		"_id": _id,
+		"contactInfos": bson.M{"$elemMatch": bson.M{
+			"type":        models.ContactTypePhone,
+			"phone":       code.Phone,
+			"confirmedAt": bson.M{"$not": bson.M{"$gt": 0}},
+		}},
+	}
 	update := bson.M{"$set": bson.M{
 		"account.phoneVerificationCode": code,
 		"timestamps.updatedAt":          time.Now().Unix(),
 	}}
-	_, err = dbService.collectionRefUsers(instanceID).UpdateOne(ctx, filter, update)
-	return err
+	res, err := dbService.collectionRefUsers(instanceID).UpdateOne(ctx, filter, update)
+	if err != nil {
+		return err
+	}
+	if res.MatchedCount == 0 {
+		return ErrPhoneNotPending
+	}
+	return nil
 }
 
 // AddPhoneContactInfoIfAbsent appends the phone contact info only when the user has no phone
@@ -397,16 +425,26 @@ func (dbService *UserDBService) SetContactVerificationSentAt(instanceID string, 
 // The attempts ledger is deliberately absent from the update: a verification sends no message,
 // so it has no attempt to account for and must not rewrite what the atomic reservation
 // maintains — a field that is never named cannot be clobbered.
-// The filter requires a phone contact info to still be there, so a number deleted while the code
-// was being verified yields mongo.ErrNoDocuments instead of enabling the whatsapp channel for a
-// user who has no phone left.
-func (dbService *UserDBService) FinalizePhoneVerification(instanceID string, userID string) (models.User, error) {
+// The number to confirm is the one the code was sent to, and it is the only one this write can
+// reach: both the filter and the array filter name it. A number deleted or replaced while the
+// code was being verified therefore yields mongo.ErrNoDocuments instead of confirming whatever
+// number the account happens to carry, which is what let a code sent to one number enable the
+// whatsapp channel for another.
+// Whether that number is still *pending* is the caller's responsibility, not this method's: the
+// write deliberately also re-confirms a number that is already confirmed, so that a repeated
+// finalisation is idempotent rather than an error (see the idempotency test).
+func (dbService *UserDBService) FinalizePhoneVerification(instanceID string, userID string, phone string) (models.User, error) {
 	ctx, cancel := dbService.getContext()
 	defer cancel()
 
 	_id, err := primitive.ObjectIDFromHex(userID)
 	if err != nil {
 		return models.User{}, err
+	}
+	// Without a destination there is nothing to confirm; the caller reads this the same way as
+	// a number that is no longer there.
+	if phone == "" {
+		return models.User{}, mongo.ErrNoDocuments
 	}
 	now := time.Now().Unix()
 	update := bson.M{
@@ -423,13 +461,15 @@ func (dbService *UserDBService) FinalizePhoneVerification(instanceID string, use
 	}
 	opts := options.FindOneAndUpdate().
 		SetArrayFilters(options.ArrayFilters{
-			Filters: []interface{}{bson.M{"ci.type": models.ContactTypePhone}},
+			Filters: []interface{}{contactInfoElementFilter(models.ContactTypePhone, phone)},
 		}).
 		SetReturnDocument(options.After)
 
 	filter := bson.M{
-		"_id":          _id,
-		"contactInfos": bson.M{"$elemMatch": bson.M{"type": models.ContactTypePhone}},
+		"_id": _id,
+		"contactInfos": bson.M{"$elemMatch": bson.M{
+			"type": models.ContactTypePhone, "phone": phone,
+		}},
 	}
 
 	var updated models.User

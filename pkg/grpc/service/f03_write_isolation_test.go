@@ -152,10 +152,11 @@ func f03MutationCases() []f03MutationCase {
 			ConfirmedAt: confirmedAt,
 		}
 	}
-	code := func(value string, attempts int64) models.VerificationCode {
+	// A pending code carries the number it was sent to, so every case names it.
+	code := func(value string, attempts int64, phone string) models.VerificationCode {
 		now := time.Now().Unix()
 		return models.VerificationCode{
-			Code: value, Attempts: attempts, CreatedAt: now, ExpiresAt: now + 300,
+			Code: value, Attempts: attempts, CreatedAt: now, ExpiresAt: now + 300, Phone: phone,
 		}
 	}
 
@@ -164,7 +165,7 @@ func f03MutationCases() []f03MutationCase {
 			name: "reserve_slot_and_replace_code",
 			setup: func(user *models.User) {
 				user.ContactInfos = append(user.ContactInfos, newPhone("+391230010001", 0))
-				user.Account.PhoneVerificationCode = code("old-code", 0)
+				user.Account.PhoneVerificationCode = code("old-code", 0, "+391230010001")
 			},
 			run: func(t *testing.T, userID string) {
 				ok, err := testUserDBService.ReservePhoneVerificationSlot(
@@ -173,7 +174,7 @@ func f03MutationCases() []f03MutationCase {
 				if err != nil || !ok {
 					t.Fatalf("reserve phone verification slot: ok=%v err=%v", ok, err)
 				}
-				if err := testUserDBService.SetPhoneVerificationCode(testInstanceID, userID, code("new-code", 0)); err != nil {
+				if err := testUserDBService.SetPhoneVerificationCode(testInstanceID, userID, code("new-code", 0, "+391230010001")); err != nil {
 					t.Fatalf("replace phone verification code: %v", err)
 				}
 			},
@@ -182,7 +183,7 @@ func f03MutationCases() []f03MutationCase {
 			name: "increment_code_attempts",
 			setup: func(user *models.User) {
 				user.ContactInfos = append(user.ContactInfos, newPhone("+391230010002", 0))
-				user.Account.PhoneVerificationCode = code("attempt-code", 0)
+				user.Account.PhoneVerificationCode = code("attempt-code", 0, "+391230010002")
 			},
 			run: func(t *testing.T, userID string) {
 				if _, err := testUserDBService.IncrementVerificationCodeAttempts(testInstanceID, userID, 3); err != nil {
@@ -220,7 +221,7 @@ func f03MutationCases() []f03MutationCase {
 			name: "delete_phone",
 			setup: func(user *models.User) {
 				user.ContactInfos = append(user.ContactInfos, newPhone("+391230010005", time.Now().Unix()))
-				user.Account.PhoneVerificationCode = code("delete-code", 1)
+				user.Account.PhoneVerificationCode = code("delete-code", 1, "+391230010005")
 				user.ContactPreferences.PreferredChannels = []string{models.ChannelEmail, models.ChannelWhatsApp}
 			},
 			run: func(t *testing.T, userID string) {
@@ -233,11 +234,11 @@ func f03MutationCases() []f03MutationCase {
 			name: "finalize_phone",
 			setup: func(user *models.User) {
 				user.ContactInfos = append(user.ContactInfos, newPhone("+391230010006", 0))
-				user.Account.PhoneVerificationCode = code("finalize-code", 1)
+				user.Account.PhoneVerificationCode = code("finalize-code", 1, "+391230010006")
 				user.ContactPreferences.PreferredChannels = []string{models.ChannelEmail}
 			},
 			run: func(t *testing.T, userID string) {
-				if _, err := testUserDBService.FinalizePhoneVerification(testInstanceID, userID); err != nil {
+				if _, err := testUserDBService.FinalizePhoneVerification(testInstanceID, userID, "+391230010006"); err != nil {
 					t.Fatalf("finalize phone: %v", err)
 				}
 			},

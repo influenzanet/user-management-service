@@ -27,6 +27,10 @@ type VerificationCode struct {
 	Attempts  int64  `bson:"attempts"`
 	CreatedAt int64  `bson:"createdAt"`
 	ExpiresAt int64  `bson:"expiresAt"`
+	// Phone binds a phone verification code to the number it was sent to, so a code can only
+	// ever confirm that number. It is omitted when empty, so the login 2FA code, which has no
+	// destination number, is stored exactly as before.
+	Phone string `bson:"phone,omitempty"`
 }
 
 func AccountFromAPI(a *api.User_Account) Account {
