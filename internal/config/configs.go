@@ -72,13 +72,16 @@ func InitConfig() Config {
 	conf.WhatsApp.ApiVersion = os.Getenv(ENV_WHATSAPP_API_VERSION)
 	conf.WhatsApp.VerificationTemplateLangs = verificationTemplateLangs(os.Getenv(ENV_WHATSAPP_VERIFICATION_TEMPLATE_LANGS), conf.WhatsApp.VerificationTemplateLang)
 
-	if conf.WhatsApp.ApiToken == "" || conf.WhatsApp.PhoneNumberID == "" || conf.WhatsApp.VerificationTemplateName == "" || conf.WhatsApp.VerificationTemplateLang == "" || conf.WhatsApp.VerificationTemplateCategory == "" {
+	whatsAppFlag := os.Getenv(ENV_WHATSAPP_ENABLED)
+	conf.WhatsApp.Enabled = whatsAppEnabled(whatsAppFlag, conf.WhatsApp)
+	if whatsAppFlag != "true" {
+		logger.Info.Printf("WhatsApp disabled by %s (set it to \"true\" to enable)", ENV_WHATSAPP_ENABLED)
+	} else if !conf.WhatsApp.Enabled {
 		logger.Warning.Printf("WhatsApp disabled: incomplete configuration. Missing env vars among: %s, %s, %s, %s, %s",
 			ENV_WHATSAPP_TOKEN, ENV_WHATSAPP_PHONE_NUMBER_ID,
 			ENV_WHATSAPP_VERIFICATION_TEMPLATE_NAME, ENV_WHATSAPP_VERIFICATION_TEMPLATE_LANG,
 			ENV_WHATSAPP_VERIFICATION_TEMPLATE_CATEGORY)
 	} else {
-		conf.WhatsApp.Enabled = true
 		logger.Info.Printf("WhatsApp enabled, verification template languages: %s", strings.Join(conf.WhatsApp.VerificationTemplateLangs, ","))
 		if conf.WhatsApp.WeeklyReminderTemplateName != "" {
 			logger.Info.Printf("WhatsApp weekly reminder template configured: %s (%s)", conf.WhatsApp.WeeklyReminderTemplateName, conf.WhatsApp.WeeklyReminderTemplateLang)
@@ -193,6 +196,17 @@ func getIntervalsConfig() models.Intervals {
 	intervals.ContactVerificationTokenLifetime = parseEnvDuration(ENV_TOKEN_CONTACT_VERIFICATION_LIFETIME, defaultContactVerificationTokenLifetime, "m")
 
 	return intervals
+}
+
+// whatsAppEnabled reports whether WhatsApp is on: the platform switch must be exactly "true"
+// (the same rule messaging-service applies) and the configuration needed to send the
+// verification template must be complete.
+func whatsAppEnabled(flag string, conf WhatsAppConfig) bool {
+	if flag != "true" {
+		return false
+	}
+	return conf.ApiToken != "" && conf.PhoneNumberID != "" && conf.VerificationTemplateName != "" &&
+		conf.VerificationTemplateLang != "" && conf.VerificationTemplateCategory != ""
 }
 
 // verificationTemplateLangs parses the comma-separated list of languages the verification

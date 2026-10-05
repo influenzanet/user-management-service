@@ -1,8 +1,12 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
+	"strings"
 	"testing"
+
+	"github.com/coneno/logger"
 )
 
 func TestWhatsAppConfigEnabled(t *testing.T) {
@@ -113,5 +117,101 @@ func TestVerificationTemplateLangsAlwaysContainTheConfiguredLanguage(t *testing.
 		if fmt.Sprint(got) != fmt.Sprint(tc.want) {
 			t.Errorf("verificationTemplateLangs(%q, %q) = %v, want %v", tc.list, tc.defaultLang, got, tc.want)
 		}
+	}
+}
+
+// initConfigEnv gives InitConfig the minimum it needs to return, plus a complete WhatsApp
+// configuration, so that only WHATSAPP_ENABLED decides the outcome.
+func initConfigEnv(t *testing.T) {
+	t.Helper()
+	for name, value := range map[string]string{
+		"USER_DB_CONNECTION_STR": "localhost:27017", "USER_DB_USERNAME": "u", "USER_DB_PASSWORD": "p",
+		"GLOBAL_DB_CONNECTION_STR": "localhost:27017", "GLOBAL_DB_USERNAME": "u", "GLOBAL_DB_PASSWORD": "p",
+		"DB_TIMEOUT": "30", "DB_IDLE_CONN_TIMEOUT": "45", "DB_MAX_POOL_SIZE": "8",
+		ENV_NEW_USER_RATE_LIMIT: "100", ENV_CLEAN_UP_UNVERIFIED_USERS_AFTER: "1",
+		ENV_SEND_REMINDER_TO_UNVERIFIED_USERS_AFTER: "1",
+		ENV_WEEKDAY_ASSIGNATION_WEIGHTS:             "",
+		ENV_WHATSAPP_TOKEN:                          "secret-wa-token",
+		ENV_WHATSAPP_PHONE_NUMBER_ID:                "123456",
+		ENV_WHATSAPP_VERIFICATION_TEMPLATE_NAME:     "verify_code",
+		ENV_WHATSAPP_VERIFICATION_TEMPLATE_LANG:     "it",
+		ENV_WHATSAPP_VERIFICATION_TEMPLATE_CATEGORY: "utility",
+	} {
+		t.Setenv(name, value)
+	}
+}
+
+// captureInfo collects what InitConfig writes to the info log while fn runs.
+func captureInfo(fn func()) string {
+	var buf bytes.Buffer
+	original := logger.Info.Writer()
+	logger.Info.SetOutput(&buf)
+	defer logger.Info.SetOutput(original)
+	fn()
+	return buf.String()
+}
+
+func TestInitConfigWhatsAppNeedsTheEnabledSwitch(t *testing.T) {
+	for _, tc := range []struct {
+		flag string
+		want bool
+	}{
+		{"", false},
+		{"false", false},
+		{"TRUE", false},
+		{"1", false},
+		{"true", true},
+	} {
+		t.Run("WHATSAPP_ENABLED="+tc.flag, func(t *testing.T) {
+			initConfigEnv(t)
+			t.Setenv(ENV_WHATSAPP_ENABLED, tc.flag)
+			var conf Config
+			out := captureInfo(func() { conf = InitConfig() })
+			if conf.WhatsApp.Enabled != tc.want {
+				t.Fatalf("WhatsApp.Enabled = %v with %s=%q and a complete configuration, want %v", conf.WhatsApp.Enabled, ENV_WHATSAPP_ENABLED, tc.flag, tc.want)
+			}
+			if !tc.want && !strings.Contains(out, ENV_WHATSAPP_ENABLED) {
+				t.Errorf("the info log does not say WhatsApp is disabled by %s: %q", ENV_WHATSAPP_ENABLED, out)
+			}
+			if strings.Contains(out, "secret-wa-token") {
+				t.Errorf("the info log leaks the WhatsApp token: %q", out)
+			}
+		})
+	}
+}
+
+func TestWhatsAppEnabledDecision(t *testing.T) {
+	complete := WhatsAppConfig{
+		ApiToken:                     "test-token",
+		PhoneNumberID:                "123456",
+		VerificationTemplateName:     "verify_code",
+		VerificationTemplateLang:     "it",
+		VerificationTemplateCategory: "utility",
+	}
+	withoutToken := complete
+	withoutToken.ApiToken = ""
+	withoutCategory := complete
+	withoutCategory.VerificationTemplateCategory = ""
+
+	for _, tc := range []struct {
+		name string
+		flag string
+		conf WhatsAppConfig
+		want bool
+	}{
+		{"switch on, complete configuration", "true", complete, true},
+		{"switch unset, complete configuration", "", complete, false},
+		{"switch false, complete configuration", "false", complete, false},
+		{"switch with other casing", "True", complete, false},
+		{"switch with spaces", " true", complete, false},
+		{"switch on, token missing", "true", withoutToken, false},
+		{"switch on, category missing", "true", withoutCategory, false},
+		{"switch on, empty configuration", "true", WhatsAppConfig{}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := whatsAppEnabled(tc.flag, tc.conf); got != tc.want {
+				t.Errorf("whatsAppEnabled(%q, ...) = %v, want %v", tc.flag, got, tc.want)
+			}
+		})
 	}
 }
