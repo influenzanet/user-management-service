@@ -544,7 +544,11 @@ func (s *userManagementServer) SignupWithEmail(ctx context.Context, req *api.Sig
 	newUser.AddNewEmail(req.Email, false)
 
 	// Add phone number if provided during signup
-	if req.Phone != "" {
+	if req.Phone != "" && !s.whatsAppConfig.Enabled {
+		// Without WhatsApp a number can be neither verified nor messaged, so it is not stored
+		// and does not decide the outcome. The number itself stays out of the log.
+		logger.Info.Printf("Signup: phone number ignored because WhatsApp is disabled")
+	} else if req.Phone != "" {
 		phone := utils.SanitizePhone(req.Phone)
 		if utils.CheckPhoneFormat(phone) {
 			// Check if phone number is already taken

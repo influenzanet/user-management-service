@@ -10,6 +10,7 @@ import (
 
 	"github.com/coneno/logger"
 	"github.com/golang/mock/gomock"
+	"github.com/influenzanet/user-management-service/internal/config"
 	loggingMock "github.com/influenzanet/user-management-service/test/mocks/logging_service"
 	messageMock "github.com/influenzanet/user-management-service/test/mocks/messaging_service"
 
@@ -103,6 +104,8 @@ func newSignupTestServer(t *testing.T) userManagementServer {
 			LoggingService:   mockLoggingClient,
 		},
 		newUserCountLimit: 100,
+		// A number given at signup is only stored while WhatsApp is enabled.
+		whatsAppConfig: config.WhatsAppConfig{Enabled: true},
 	}
 }
 
