@@ -722,36 +722,6 @@ func (s *userManagementServer) VerifyContact(ctx context.Context, req *api.TempT
 
 		// NOTE: WhatsApp verification is NOT sent automatically after email verification
 		// User must manually click "Resend code" button in their profile settings
-		// This was changed to give users control over when they receive the WhatsApp message
-
-		/*
-			// After email verification, start phone verification if unverified phone exists
-			for _, ci := range user.ContactInfos {
-				if ci.Type == "phone" && ci.ConfirmedAt == 0 {
-					// Start WhatsApp verification process
-					vc := utils.GenerateVerificationCode()
-					user.Account.PhoneVerificationCode = models.VerificationCode{
-						Code:      vc,
-						Attempts:  0,
-						CreatedAt: time.Now().Unix(),
-						ExpiresAt: time.Now().Unix() + s.Intervals.VerificationCodeLifetime,
-					}
-					// Mark cooldown timestamp for this phone
-					user.SetContactInfoVerificationSent("phone", ci.Phone)
-
-					// Send WhatsApp verification code asynchronously.
-					// Use Background context because the gRPC handler ctx may be cancelled before the goroutine runs.
-					go func(phone string, code string, lang string) {
-						if err := s.whatsAppClient.SendVerificationCode(context.Background(), phone, code, lang); err != nil {
-							logger.Error.Printf("VerifyContact - Failed to send WhatsApp code to %s: %s", utils.MaskPhone(phone), err.Error())
-						} else {
-							logger.Info.Printf("WhatsApp verification code sent to %s after email verification", utils.MaskPhone(phone))
-						}
-					}(ci.Phone, vc, user.Account.PreferredLanguage)
-					break // Only verify the first unverified phone
-				}
-			}
-		*/
 	}
 	ci, _ := user.FindContactInfoByTypeAndAddr(cType, email)
 	user, err = s.userDBservice.ConfirmContactInfo(tokenInfos.InstanceID, user, ci)
