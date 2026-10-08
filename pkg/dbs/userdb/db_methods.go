@@ -356,7 +356,8 @@ func (dbService *UserDBService) AddPhoneContactInfoIfAbsent(instanceID string, u
 }
 
 // ReplacePhoneContactInfo overwrites the user's phone contact info entry in place with a
-// targeted positional $set, leaving every other field of the document untouched.
+// targeted update, leaving every other field of the document untouched except the channel
+// list, which loses whatsapp (see channelsWithoutWhatsAppExpr).
 func (dbService *UserDBService) ReplacePhoneContactInfo(instanceID string, userID string, ci models.ContactInfo) error {
 	ctx, cancel := dbService.getContext()
 	defer cancel()
@@ -366,24 +367,48 @@ func (dbService *UserDBService) ReplacePhoneContactInfo(instanceID string, userI
 		return err
 	}
 	filter := bson.M{"_id": _id}
-	update := bson.M{
-		"$set": bson.M{
-			"contactInfos.$[ci]":   ci,
-			"timestamps.updatedAt": time.Now().Unix(),
-		},
-		// The replacement is unverified, so the whatsapp channel loses the destination it
-		// stood for and goes with it, in this same operation: leaving it on would describe a
-		// delivery the platform cannot make until the new number is verified. Deleting a
-		// number already revokes it the same way.
-		"$pull": bson.M{
-			"contactPreferences.preferredChannels": models.ChannelWhatsApp,
-		},
+	// A single aggregation-pipeline update: the phone entry is replaced and the channel list
+	// is rewritten in one atomic write on the document, so no reader or concurrent
+	// UpdateContactPreferences can observe or produce a state where whatsapp was dropped and
+	// the e-mail fallback not yet stored. Positional arrayFilters are not available in
+	// pipeline updates, hence the $map over contactInfos.
+	update := mongo.Pipeline{
+		{{Key: "$set", Value: bson.M{
+			"contactInfos": bson.M{"$map": bson.M{
+				"input": bson.M{"$ifNull": bson.A{"$contactInfos", bson.A{}}},
+				"in": bson.M{"$cond": bson.A{
+					bson.M{"$eq": bson.A{"$$this.type", models.ContactTypePhone}},
+					bson.M{"$literal": ci},
+					"$$this",
+				}},
+			}},
+			"contactPreferences.preferredChannels": channelsWithoutWhatsAppExpr(),
+			"timestamps.updatedAt":                 time.Now().Unix(),
+		}}},
 	}
-	opts := options.Update().SetArrayFilters(options.ArrayFilters{
-		Filters: []interface{}{bson.M{"ci.type": models.ContactTypePhone}},
-	})
-	_, err = dbService.collectionRefUsers(instanceID).UpdateOne(ctx, filter, update, opts)
+	_, err = dbService.collectionRefUsers(instanceID).UpdateOne(ctx, filter, update)
 	return err
+}
+
+// channelsWithoutWhatsAppExpr is the aggregation expression for the stored channel list once
+// the whatsapp channel is gone. The replacement is unverified, so the whatsapp channel loses the
+// destination it stood for and goes with it, in the same operation as the phone change: leaving
+// it on would describe a delivery the platform cannot make until the new number is verified.
+// A user must always keep at least one channel, so if nothing else would remain the list falls
+// back to e-mail. Doing it inside the expression (rather than a $pull followed by an $addToSet)
+// is what keeps the list from ever being stored empty.
+func channelsWithoutWhatsAppExpr() bson.M {
+	return bson.M{"$let": bson.M{
+		"vars": bson.M{"rest": bson.M{"$filter": bson.M{
+			"input": bson.M{"$ifNull": bson.A{"$contactPreferences.preferredChannels", bson.A{}}},
+			"cond":  bson.M{"$ne": bson.A{"$$this", models.ChannelWhatsApp}},
+		}}},
+		"in": bson.M{"$cond": bson.A{
+			bson.M{"$eq": bson.A{bson.M{"$size": "$$rest"}, 0}},
+			bson.M{"$literal": bson.A{models.ChannelEmail}},
+			"$$rest",
+		}},
+	}}
 }
 
 // contactInfoElementFilter builds the array filter that selects one contact info by type and
@@ -1075,18 +1100,21 @@ func (dbService *UserDBService) DeletePhoneNumber(instanceID, userID string) (mo
 	}
 
 	filter := bson.M{"_id": userObjID}
-	update := bson.M{
-		"$pull": bson.M{
-			"contactInfos":                         bson.M{"type": models.ContactTypePhone},
-			"contactPreferences.preferredChannels": models.ChannelWhatsApp,
-		},
-		"$set": bson.M{
-			"timestamps.updatedAt":          time.Now().Unix(),
-			"account.phoneVerificationCode": bson.M{},
-		},
-		"$unset": bson.M{
-			"contactPreferences.whatsappNumber": "",
-		},
+	// One aggregation-pipeline update: the phone, the whatsapp channel and the e-mail fallback
+	// change together in a single atomic write on the document. A $pull followed by a separate
+	// $addToSet would leave a window with an empty channel list, and a read-modify-write
+	// (UpdateUser) would silently revert a concurrent UpdateContactPreferences.
+	update := mongo.Pipeline{
+		{{Key: "$set", Value: bson.M{
+			"contactInfos": bson.M{"$filter": bson.M{
+				"input": bson.M{"$ifNull": bson.A{"$contactInfos", bson.A{}}},
+				"cond":  bson.M{"$ne": bson.A{"$$this.type", models.ContactTypePhone}},
+			}},
+			"contactPreferences.preferredChannels": channelsWithoutWhatsAppExpr(),
+			"timestamps.updatedAt":                 time.Now().Unix(),
+			"account.phoneVerificationCode":        bson.M{"$literal": bson.M{}},
+		}}},
+		{{Key: "$unset", Value: "contactPreferences.whatsappNumber"}},
 	}
 
 	var updatedUser models.User
@@ -1099,21 +1127,6 @@ func (dbService *UserDBService) DeletePhoneNumber(instanceID, userID string) (mo
 
 	if err != nil {
 		return models.User{}, err
-	}
-
-	// Ensure at least email channel after removing whatsapp
-	hasEmail := false
-	for _, ch := range updatedUser.ContactPreferences.PreferredChannels {
-		if ch == models.ChannelEmail {
-			hasEmail = true
-			break
-		}
-	}
-	if !hasEmail {
-		updatedUser.ContactPreferences.PreferredChannels = append(updatedUser.ContactPreferences.PreferredChannels, models.ChannelEmail)
-		emailFilter := bson.M{"_id": userObjID}
-		emailUpdate := bson.M{"$addToSet": bson.M{"contactPreferences.preferredChannels": models.ChannelEmail}}
-		dbService.collectionRefUsers(instanceID).UpdateOne(ctx, emailFilter, emailUpdate)
 	}
 
 	return updatedUser, nil

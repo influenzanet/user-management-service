@@ -396,13 +396,14 @@ func (s *userManagementServer) UpdateContactPreferences(ctx context.Context, req
 }
 
 // resolvePreferredChannels checks the requested notification channels against what the user can
-// actually be reached on, and returns the list to persist.
+// actually be reached on, and returns the list to persist: exactly the channels the user chose,
+// deduplicated and in the order requested.
 //
 // The channels say how a message is delivered, not whether the user wants it: whether is what the
-// newsletter and weekly subscription flags express. An empty list is therefore not a preference
-// but a message with no transport, and it is also indistinguishable from "never set" once stored.
-// The bulk sender reads both as e-mail only; e-mail is kept as the baseline here so that what is
-// stored says the same thing as what is sent.
+// newsletter and weekly subscription flags express. A user may therefore keep a single channel,
+// e-mail or whatsapp, but never none: an empty list is not a preference but a message with no
+// transport, and it is also indistinguishable from "never set" once stored. It is refused rather
+// than silently completed, so that what is stored is what the user picked.
 //
 // The verified-phone requirement is enforced here and not only in the interface: the interface can
 // only stop the honest client, while this is the boundary where the data enters the system.
@@ -415,19 +416,25 @@ func resolvePreferredChannels(requested []string, user models.User) ([]string, e
 		}
 	}
 
-	channels := []string{models.ChannelEmail}
+	channels := make([]string, 0, len(requested))
+	seen := map[string]bool{}
 	for _, channel := range requested {
 		switch channel {
 		case models.ChannelEmail:
-			// already the baseline
 		case models.ChannelWhatsApp:
 			if !hasVerifiedPhone {
 				return nil, status.Error(codes.InvalidArgument, "whatsapp channel requires a verified phone number")
 			}
-			channels = append(channels, channel)
 		default:
 			return nil, status.Errorf(codes.InvalidArgument, "unknown notification channel: %s", channel)
 		}
+		if !seen[channel] {
+			seen[channel] = true
+			channels = append(channels, channel)
+		}
+	}
+	if len(channels) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "at least one notification channel is required")
 	}
 	return channels, nil
 }

@@ -999,6 +999,7 @@ func TestUpdateContactPreferencesEndpoint(t *testing.T) {
 			ContactPreferences: &api.ContactPreferences{
 				SubscribedToNewsletter: false,
 				SendNewsletterTo:       []string{"only_here_id"},
+				PreferredChannels:      []string{models.ChannelEmail},
 			},
 		}
 		resp, err := s.UpdateContactPreferences(context.Background(), req)
@@ -1081,15 +1082,15 @@ func TestUpdateContactPreferencesChannelRules(t *testing.T) {
 		}
 	})
 
-	t.Run("an empty list keeps email rather than meaning no channel at all", func(t *testing.T) {
+	t.Run("an empty list is refused and the stored channels are left alone", func(t *testing.T) {
 		token := newPrefsUser(t, "prefs_empty_list@test.com", time.Now().Unix())
-		resp, err := update(token, []string{})
-		if err != nil {
-			t.Fatalf("unexpected error: %s", err.Error())
+		_, err := update(token, []string{})
+		if status.Code(err) != codes.InvalidArgument {
+			t.Errorf("expected InvalidArgument, got %v", err)
 		}
-		got := resp.ContactPreferences.PreferredChannels
-		if len(got) != 1 || got[0] != models.ChannelEmail {
-			t.Errorf("expected the email channel to survive, got %v", got)
+		user, _ := testUserDBService.GetUserByID(testInstanceID, token.Id)
+		if len(user.ContactPreferences.PreferredChannels) != 0 {
+			t.Errorf("a refused request must not be persisted: %v", user.ContactPreferences.PreferredChannels)
 		}
 	})
 
