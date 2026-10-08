@@ -20,12 +20,9 @@ type WhatsAppConfig struct {
 	VerificationTemplateLang string
 	// Languages the verification template is approved in on Meta's side; always contains
 	// VerificationTemplateLang. A user's language outside this list falls back to it.
-	VerificationTemplateLangs      []string
-	VerificationTemplateCategory   string
-	WeeklyReminderTemplateName     string
-	WeeklyReminderTemplateLang     string
-	WeeklyReminderTemplateCategory string
-	ApiVersion                     string
+	VerificationTemplateLangs    []string
+	VerificationTemplateCategory string
+	ApiVersion                   string
 }
 type Config struct {
 	LogLevel    logger.LogLevel
@@ -66,9 +63,6 @@ func InitConfig() Config {
 	conf.WhatsApp.VerificationTemplateName = os.Getenv(ENV_WHATSAPP_VERIFICATION_TEMPLATE_NAME)
 	conf.WhatsApp.VerificationTemplateLang = os.Getenv(ENV_WHATSAPP_VERIFICATION_TEMPLATE_LANG)
 	conf.WhatsApp.VerificationTemplateCategory = os.Getenv(ENV_WHATSAPP_VERIFICATION_TEMPLATE_CATEGORY)
-	conf.WhatsApp.WeeklyReminderTemplateName = os.Getenv(ENV_WHATSAPP_WEEKLY_REMINDER_TEMPLATE_NAME)
-	conf.WhatsApp.WeeklyReminderTemplateLang = os.Getenv(ENV_WHATSAPP_WEEKLY_REMINDER_TEMPLATE_LANG)
-	conf.WhatsApp.WeeklyReminderTemplateCategory = os.Getenv(ENV_WHATSAPP_WEEKLY_REMINDER_TEMPLATE_CATEGORY)
 	conf.WhatsApp.ApiVersion = os.Getenv(ENV_WHATSAPP_API_VERSION)
 	conf.WhatsApp.VerificationTemplateLangs = verificationTemplateLangs(os.Getenv(ENV_WHATSAPP_VERIFICATION_TEMPLATE_LANGS), conf.WhatsApp.VerificationTemplateLang)
 
@@ -83,9 +77,6 @@ func InitConfig() Config {
 			ENV_WHATSAPP_VERIFICATION_TEMPLATE_CATEGORY)
 	} else {
 		logger.Info.Printf("WhatsApp enabled, verification template languages: %s", strings.Join(conf.WhatsApp.VerificationTemplateLangs, ","))
-		if conf.WhatsApp.WeeklyReminderTemplateName != "" {
-			logger.Info.Printf("WhatsApp weekly reminder template configured: %s (%s)", conf.WhatsApp.WeeklyReminderTemplateName, conf.WhatsApp.WeeklyReminderTemplateLang)
-		}
 	}
 
 	conf.LogLevel = getLogLevel()

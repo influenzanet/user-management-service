@@ -63,10 +63,6 @@ func (c *recordingWhatsAppClient) SendVerificationCode(ctx context.Context, toPh
 	return nil
 }
 
-func (c *recordingWhatsAppClient) SendTemplateMessage(ctx context.Context, toPhoneNumber, templateName, lang string, params map[string]string) error {
-	return nil
-}
-
 func (c *recordingWhatsAppClient) recorded() []string {
 	c.mu.Lock()
 	defer c.mu.Unlock()

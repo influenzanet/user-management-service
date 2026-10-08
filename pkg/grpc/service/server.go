@@ -25,7 +25,6 @@ const (
 // WhatsAppClient abstracts the WhatsApp HTTP client so it can be replaced in tests
 type WhatsAppClient interface {
 	SendVerificationCode(ctx context.Context, toPhoneNumber, code, lang string) error
-	SendTemplateMessage(ctx context.Context, toPhoneNumber, templateName, lang string, params map[string]string) error
 }
 
 type userManagementServer struct {

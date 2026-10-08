@@ -42,10 +42,6 @@ func (r *deliveryRecorder) SendVerificationCode(ctx context.Context, toPhoneNumb
 	return nil
 }
 
-func (r *deliveryRecorder) SendTemplateMessage(ctx context.Context, toPhoneNumber, templateName, lang string, params map[string]string) error {
-	return nil
-}
-
 // last returns the most recent delivery, for a reader running while the race is still on.
 func (r *deliveryRecorder) last() (delivery, bool) {
 	r.mu.Lock()

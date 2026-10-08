@@ -37,7 +37,7 @@ func TestMetaErrorFieldsKeepOnlyTheNumericFieldsAndTheTrace(t *testing.T) {
 	}
 }
 
-func TestFailedSendsLogNoMetaFreeText(t *testing.T) {
+func TestFailedSendLogsNoMetaFreeText(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		_, _ = w.Write([]byte(metaErrorBody))
@@ -53,14 +53,12 @@ func TestFailedSendsLogNoMetaFreeText(t *testing.T) {
 	c.apiBaseURL = server.URL
 	ctx := context.Background()
 	_ = c.SendVerificationCode(ctx, "+391234567890", "123456", "it")
-	_ = c.SendTextMessage(ctx, "+391234567890", "hello")
-	_ = c.SendTemplateMessage(ctx, "+391234567890", "weekly", "it", map[string]string{})
 
 	logged := buf.String()
-	if strings.Count(logged, "status=400") != 3 {
-		t.Fatalf("expected three failure lines with the HTTP status, got:\n%s", logged)
+	if strings.Count(logged, "status=400") != 1 {
+		t.Fatalf("expected one failure line with the HTTP status, got:\n%s", logged)
 	}
-	if strings.Count(logged, "code=131030") != 3 || strings.Count(logged, "fbtrace_id=AbCdEf123") != 3 {
+	if strings.Count(logged, "code=131030") != 1 || strings.Count(logged, "fbtrace_id=AbCdEf123") != 1 {
 		t.Errorf("every failure line must carry Meta's code and trace id, got:\n%s", logged)
 	}
 	for _, forbidden := range []string{"Recipient phone number", "Numero di telefono", "map["} {

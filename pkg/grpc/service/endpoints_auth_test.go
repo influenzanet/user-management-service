@@ -967,10 +967,6 @@ func (m *mockWhatsAppClient) SendVerificationCode(ctx context.Context, toPhoneNu
 	return m.err
 }
 
-func (m *mockWhatsAppClient) SendTemplateMessage(ctx context.Context, toPhoneNumber, templateName, lang string, params map[string]string) error {
-	return m.err
-}
-
 func TestResendContactVerificationEndpoint(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()

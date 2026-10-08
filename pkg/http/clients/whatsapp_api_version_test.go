@@ -70,9 +70,9 @@ func TestNewWhatsAppClientBuildsBaseURLFromAPIVersion(t *testing.T) {
 	}
 }
 
-// The three send methods must build their URL from the client's base URL, not from a
+// The send method must build its URL from the client's base URL, not from a
 // package constant, otherwise the configured version is silently ignored.
-func TestSendMethodsUseTheClientBaseURL(t *testing.T) {
+func TestSendUsesTheClientBaseURL(t *testing.T) {
 	var paths []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		paths = append(paths, r.URL.Path)
@@ -87,14 +87,8 @@ func TestSendMethodsUseTheClientBaseURL(t *testing.T) {
 	if err := c.SendVerificationCode(ctx, "+391234567890", "123456", "it"); err != nil {
 		t.Fatalf("SendVerificationCode: %v", err)
 	}
-	if err := c.SendTextMessage(ctx, "+391234567890", "hello"); err != nil {
-		t.Fatalf("SendTextMessage: %v", err)
-	}
-	if err := c.SendTemplateMessage(ctx, "+391234567890", "weekly", "it", map[string]string{}); err != nil {
-		t.Fatalf("SendTemplateMessage: %v", err)
-	}
-	if len(paths) != 3 {
-		t.Fatalf("expected 3 requests against the test server, got %d", len(paths))
+	if len(paths) != 1 {
+		t.Fatalf("expected 1 request against the test server, got %d", len(paths))
 	}
 	for _, p := range paths {
 		if p != "/phone-id/messages" {
