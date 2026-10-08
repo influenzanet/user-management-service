@@ -5,10 +5,10 @@ const (
 	loginVerificationCodeCooldown      = 20 // Minimum delay between 2 verification code sending for a new login, in seconds
 
 	// Window time period to count event and limit rate
-	signupRateLimitWindow              = 5 * 60  // to count the new signup, seconds
-	loginFailedAttemptWindow           = 5 * 50  // to count the login failure, seconds
-	phoneVerificationRateLimitWindow    = 5 * 60 // to count phone verification sends, seconds
-	allowedPhoneVerificationAttempts    = 3       // sends allowed in the window, the next one (i.e. the 4th) is blocked
+	signupRateLimitWindow            = 5 * 60 // to count the new signup, seconds
+	loginFailedAttemptWindow         = 5 * 50 // to count the login failure, seconds
+	phoneVerificationRateLimitWindow = 5 * 60 // to count phone verification sends, seconds
+	allowedPhoneVerificationAttempts = 3      // sends allowed in the window, the next one (i.e. the 4th) is blocked
 	// The budget above is per account, so it bounds what one account spends and nothing of what
 	// one number receives: accounts are free to create. The two below are the same limit counted
 	// per destination number, across every account, over a longer window because the abuse it

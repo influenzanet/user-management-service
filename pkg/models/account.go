@@ -6,11 +6,11 @@ import (
 
 // Account holds information about user authentication methods
 type Account struct {
-	Type               string           `bson:"type"`
-	AccountID          string           `bson:"accountID"`
-	AccountConfirmedAt int64            `bson:"accountConfirmedAt"`
-	Password           string           `bson:"password"`
-	AuthType           string           `bson:"authType"`
+	Type                  string           `bson:"type"`
+	AccountID             string           `bson:"accountID"`
+	AccountConfirmedAt    int64            `bson:"accountConfirmedAt"`
+	Password              string           `bson:"password"`
+	AuthType              string           `bson:"authType"`
 	VerificationCode      VerificationCode `bson:"verificationCode"`      // Used by login 2FA and AutoValidateTempToken
 	PhoneVerificationCode VerificationCode `bson:"phoneVerificationCode"` // Used by phone/WhatsApp verification only
 	PreferredLanguage     string           `bson:"preferredLanguage"`
