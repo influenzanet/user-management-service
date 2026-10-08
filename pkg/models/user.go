@@ -250,7 +250,3 @@ func (o Timestamps) ToAPI() *api.User_Timestamps {
 		LastPasswordChange: o.LastPasswordChange,
 	}
 }
-
-// RemovePhone removes the phone contact info from the user
-
-// MarkPhoneAsVerified marks the user's phone number as verified
