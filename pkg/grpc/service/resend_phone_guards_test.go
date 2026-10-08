@@ -24,7 +24,7 @@ import (
 // the service covers every door, including ones added later. The email branch must stay open to
 // an unconfirmed account — resending that verification is how an account gets confirmed.
 
-const guardTestPhone = "+391230000601"
+const guardTestPhone = "+393230000601"
 
 func addResendGuardUser(t *testing.T, accountID string, accountConfirmedAt int64, phoneConfirmedAt int64) *api_types.TokenInfos {
 	t.Helper()

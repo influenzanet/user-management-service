@@ -45,10 +45,10 @@ func TestEditPhoneNumberRevokesTheWhatsAppChannel(t *testing.T) {
 	t.Run("moving to a new number switches the channel off", func(t *testing.T) {
 		mock := &countingWhatsAppClient{}
 		s := newRateLimitTestServer(mock)
-		token := newEditChannelUser(t, "edit_revokes_channel@test.com", "+391230000801",
+		token := newEditChannelUser(t, "edit_revokes_channel@test.com", "+393230000801",
 			[]string{models.ChannelEmail, models.ChannelWhatsApp})
 
-		if _, err := s.EditPhoneNumber(context.Background(), &api.PhoneMsg{Token: token, NewPhone: "+391230000802"}); err != nil {
+		if _, err := s.EditPhoneNumber(context.Background(), &api.PhoneMsg{Token: token, NewPhone: "+393230000802"}); err != nil {
 			t.Fatalf("unexpected error: %s", err.Error())
 		}
 
@@ -56,7 +56,7 @@ func TestEditPhoneNumberRevokesTheWhatsAppChannel(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %s", err.Error())
 		}
-		phone, found := user.FindContactInfoByTypeAndAddr(models.ContactTypePhone, "+391230000802")
+		phone, found := user.FindContactInfoByTypeAndAddr(models.ContactTypePhone, "+393230000802")
 		if !found || phone.ConfirmedAt != 0 {
 			t.Fatalf("the new number should be there and unverified: %+v", phone)
 		}
@@ -80,11 +80,11 @@ func TestEditPhoneNumberRevokesTheWhatsAppChannel(t *testing.T) {
 	t.Run("resending on the same unverified number leaves the channels alone", func(t *testing.T) {
 		mock := &countingWhatsAppClient{}
 		s := newRateLimitTestServer(mock)
-		token := newEditChannelUser(t, "edit_same_number@test.com", "+391230000803", []string{models.ChannelEmail})
+		token := newEditChannelUser(t, "edit_same_number@test.com", "+393230000803", []string{models.ChannelEmail})
 
 		// The number is verified in the fixture, so ask for the same one: the endpoint treats
 		// it as already verified and refuses, without disturbing the preferences.
-		_, err := s.EditPhoneNumber(context.Background(), &api.PhoneMsg{Token: token, NewPhone: "+391230000803"})
+		_, err := s.EditPhoneNumber(context.Background(), &api.PhoneMsg{Token: token, NewPhone: "+393230000803"})
 		if status.Code(err) != codes.InvalidArgument {
 			t.Fatalf("expected InvalidArgument for an already verified number, got %v", err)
 		}

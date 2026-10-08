@@ -1031,7 +1031,7 @@ func TestUpdateContactPreferencesChannelRules(t *testing.T) {
 				Account: models.Account{Type: "email", AccountID: accountID},
 				ContactInfos: []models.ContactInfo{
 					{ID: primitive.NewObjectID(), Type: models.ContactTypeEmail, Email: accountID, ConfirmedAt: time.Now().Unix()},
-					{ID: primitive.NewObjectID(), Type: models.ContactTypePhone, Phone: "+391230000501", ConfirmedAt: phoneConfirmedAt},
+					{ID: primitive.NewObjectID(), Type: models.ContactTypePhone, Phone: "+393230000501", ConfirmedAt: phoneConfirmedAt},
 				},
 			},
 		})
@@ -1495,7 +1495,7 @@ func TestPhoneVerificationRateLimit(t *testing.T) {
 				Id:         testUser.ID.Hex(),
 				InstanceId: testInstanceID,
 			},
-			NewPhone: "+391234567890",
+			NewPhone: "+393234567890",
 		}
 		_, err := s.AddPhoneNumber(context.Background(), req)
 		if status.Code(err) != codes.ResourceExhausted {
@@ -1557,7 +1557,7 @@ func TestAddPhoneNumberEndpoint(t *testing.T) {
 
 		req := &api.PhoneMsg{
 			Token:    &token,
-			NewPhone: "+391234567002",
+			NewPhone: "+393234567002",
 		}
 		_, err := s.AddPhoneNumber(context.Background(), req)
 		ok, msg := shouldHaveGrpcErrorStatus(err, "failed to send verification code")
@@ -1571,7 +1571,7 @@ func TestAddPhoneNumberEndpoint(t *testing.T) {
 			t.Errorf("unexpected error: %s", err.Error())
 			return
 		}
-		ci, found := user.FindContactInfoByTypeAndAddr(models.ContactTypePhone, "+391234567002")
+		ci, found := user.FindContactInfoByTypeAndAddr(models.ContactTypePhone, "+393234567002")
 		if !found {
 			t.Error("phone contact info not found")
 			return
@@ -1592,7 +1592,7 @@ func TestAddPhoneNumberEndpoint(t *testing.T) {
 
 		req := &api.PhoneMsg{
 			Token:    &token,
-			NewPhone: "+391234567002",
+			NewPhone: "+393234567002",
 		}
 		resp, err := s.AddPhoneNumber(context.Background(), req)
 		if err != nil {
@@ -1609,7 +1609,7 @@ func TestAddPhoneNumberEndpoint(t *testing.T) {
 			t.Errorf("unexpected error: %s", err.Error())
 			return
 		}
-		ci, found := user.FindContactInfoByTypeAndAddr(models.ContactTypePhone, "+391234567002")
+		ci, found := user.FindContactInfoByTypeAndAddr(models.ContactTypePhone, "+393234567002")
 		if !found {
 			t.Error("phone contact info not found")
 			return
@@ -1627,7 +1627,7 @@ func TestAddPhoneNumberEndpoint(t *testing.T) {
 
 		req := &api.PhoneMsg{
 			Token:    &token,
-			NewPhone: "+391234567002",
+			NewPhone: "+393234567002",
 		}
 		_, err := s.AddPhoneNumber(context.Background(), req)
 		if status.Code(err) != codes.FailedPrecondition {
@@ -1674,7 +1674,7 @@ func TestEditPhoneNumberEndpoint(t *testing.T) {
 				{
 					ID:    primitive.NewObjectID(),
 					Type:  "phone",
-					Phone: "+391234567003",
+					Phone: "+393234567003",
 				},
 			},
 		},
@@ -1694,7 +1694,7 @@ func TestEditPhoneNumberEndpoint(t *testing.T) {
 
 		req := &api.PhoneMsg{
 			Token:    &token,
-			NewPhone: "+391234567004",
+			NewPhone: "+393234567004",
 		}
 		_, err := s.EditPhoneNumber(context.Background(), req)
 		ok, msg := shouldHaveGrpcErrorStatus(err, "failed to send verification code")
@@ -1708,7 +1708,7 @@ func TestEditPhoneNumberEndpoint(t *testing.T) {
 			t.Errorf("unexpected error: %s", err.Error())
 			return
 		}
-		ci, found := user.FindContactInfoByTypeAndAddr(models.ContactTypePhone, "+391234567004")
+		ci, found := user.FindContactInfoByTypeAndAddr(models.ContactTypePhone, "+393234567004")
 		if !found {
 			t.Error("phone contact info not found")
 			return
@@ -1729,7 +1729,7 @@ func TestEditPhoneNumberEndpoint(t *testing.T) {
 
 		req := &api.PhoneMsg{
 			Token:    &token,
-			NewPhone: "+391234567004",
+			NewPhone: "+393234567004",
 		}
 		resp, err := s.EditPhoneNumber(context.Background(), req)
 		if err != nil {
@@ -1746,7 +1746,7 @@ func TestEditPhoneNumberEndpoint(t *testing.T) {
 			t.Errorf("unexpected error: %s", err.Error())
 			return
 		}
-		ci, found := user.FindContactInfoByTypeAndAddr(models.ContactTypePhone, "+391234567004")
+		ci, found := user.FindContactInfoByTypeAndAddr(models.ContactTypePhone, "+393234567004")
 		if !found {
 			t.Error("phone contact info not found")
 			return
@@ -1764,7 +1764,7 @@ func TestEditPhoneNumberEndpoint(t *testing.T) {
 
 		req := &api.PhoneMsg{
 			Token:    &token,
-			NewPhone: "+391234567004",
+			NewPhone: "+393234567004",
 		}
 		_, err := s.EditPhoneNumber(context.Background(), req)
 		if status.Code(err) != codes.FailedPrecondition {

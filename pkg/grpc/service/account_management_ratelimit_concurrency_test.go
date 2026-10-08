@@ -203,7 +203,7 @@ func TestAddPhoneNumberRateLimitUnderConcurrency(t *testing.T) {
 			<-start
 			req := &api.PhoneMsg{
 				Token:    &token,
-				NewPhone: "+391234567900",
+				NewPhone: "+393234567900",
 			}
 			// Errors are expected for the requests that lose the race, only the
 			// number of messages actually handed to Meta matters here.
@@ -255,7 +255,7 @@ func TestAddPhoneNumberHonoursRemainingBudgetWhenRequestsOverlap(t *testing.T) {
 
 	// Both requests nominate the same number, so B takes the "existing unverified phone,
 	// allow re-sending the code" path rather than being rejected for having another phone.
-	const phone = "+391234567812"
+	const phone = "+393234567812"
 
 	firstEnteredSend := make(chan struct{})
 	releaseFirstSend := make(chan struct{})
@@ -312,8 +312,8 @@ func TestAddPhoneNumberHonoursRemainingBudgetWhenRequestsOverlap(t *testing.T) {
 func TestAddPhoneNumberBurstReachesDistinctNumbers(t *testing.T) {
 	// Each request nominates a different destination, as an attacker would.
 	targets := []string{
-		"+391234567801", "+391234567802", "+391234567803", "+391234567804", "+391234567805",
-		"+391234567806", "+391234567807", "+391234567808", "+391234567809", "+391234567810",
+		"+393234567801", "+393234567802", "+393234567803", "+393234567804", "+393234567805",
+		"+393234567806", "+393234567807", "+393234567808", "+393234567809", "+393234567810",
 	}
 
 	mockWhatsApp := &countingWhatsAppClient{}
@@ -364,7 +364,7 @@ func TestAddPhoneNumberRateLimitWithRealisticSendLatency(t *testing.T) {
 		metaLatency     = 400 * time.Millisecond
 		requestSpacing  = 50 * time.Millisecond
 		requestsToFire  = 6
-		phoneUnderBurst = "+391234567811"
+		phoneUnderBurst = "+393234567811"
 	)
 
 	mockWhatsApp := &countingWhatsAppClient{delay: metaLatency}

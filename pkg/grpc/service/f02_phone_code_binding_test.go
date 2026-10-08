@@ -22,8 +22,8 @@ import (
 // now carries the second number, unverified, while the pending code belongs to the first.
 
 const (
-	codeSentTo      = "+391230000801"
-	codeNowOnPhone  = "+391230000802"
+	codeSentTo      = "+393230000801"
+	codeNowOnPhone  = "+393230000802"
 	foreignCodeText = "123456"
 )
 
@@ -137,8 +137,8 @@ func TestVerifyWhatsAppCodeRejectsCodeSentToAnotherNumber(t *testing.T) {
 func TestEverySentCodeIsStoredWithItsDestinationNumber(t *testing.T) {
 	// Numbers of their own: the account they are added to must not collide with the seeded
 	// users of the cases above.
-	const firstNumber = "+391230000811"
-	const secondNumber = "+391230000812"
+	const firstNumber = "+393230000811"
+	const secondNumber = "+393230000812"
 
 	accountID := "binding_send_sites@test.com"
 	mock := &countingWhatsAppClient{}

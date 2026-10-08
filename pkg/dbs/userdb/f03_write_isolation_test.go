@@ -2,6 +2,7 @@ package userdb
 
 import (
 	"errors"
+	"fmt"
 	"reflect"
 	"testing"
 	"time"
@@ -257,9 +258,11 @@ func TestF03RemoveLegacyContactWithoutID(t *testing.T) {
 }
 
 func TestF03EmptyPreferenceChannelsRemainOmitted(t *testing.T) {
-	for _, channels := range [][]string{nil, {}} {
+	for i, channels := range [][]string{nil, {}} {
+		// A number of its own per round: only one account can hold a verified number.
+		phone := fmt.Sprintf("+39123456700%d", i)
 		user := models.User{Account: models.Account{AccountID: primitive.NewObjectID().Hex()}}
-		user.AddNewPhone("+391234567890", false)
+		user.AddNewPhone(phone, false)
 		id, err := testDBService.AddUser(testInstanceID, user)
 		if err != nil {
 			t.Fatal(err)
@@ -277,7 +280,7 @@ func TestF03EmptyPreferenceChannelsRemainOmitted(t *testing.T) {
 		if raw.Lookup("contactPreferences", "preferredChannels").Type != 0 {
 			t.Error("empty channel list must be omitted, not stored as null/empty")
 		}
-		if _, err := testDBService.FinalizePhoneVerification(testInstanceID, id, "+391234567890"); err != nil {
+		if _, err := testDBService.FinalizePhoneVerification(testInstanceID, id, phone); err != nil {
 			t.Errorf("verification after empty preferences failed: %v", err)
 		}
 	}

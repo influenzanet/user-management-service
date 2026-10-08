@@ -18,10 +18,10 @@ import (
 
 func TestResolvePreferredChannels(t *testing.T) {
 	withPhone := models.User{ContactInfos: []models.ContactInfo{
-		{Type: models.ContactTypePhone, Phone: "+391230000601", ConfirmedAt: time.Now().Unix()},
+		{Type: models.ContactTypePhone, Phone: "+393230000601", ConfirmedAt: time.Now().Unix()},
 	}}
 	unverifiedPhone := models.User{ContactInfos: []models.ContactInfo{
-		{Type: models.ContactTypePhone, Phone: "+391230000602"},
+		{Type: models.ContactTypePhone, Phone: "+393230000602"},
 	}}
 	noPhone := models.User{}
 
@@ -86,7 +86,7 @@ func TestUpdateContactPreferencesStoresExactlyTheChosenChannels(t *testing.T) {
 			Account: models.Account{Type: "email", AccountID: accountID},
 			ContactInfos: []models.ContactInfo{
 				{ID: primitive.NewObjectID(), Type: models.ContactTypeEmail, Email: accountID, ConfirmedAt: time.Now().Unix()},
-				{ID: primitive.NewObjectID(), Type: models.ContactTypePhone, Phone: "+391230000611", ConfirmedAt: time.Now().Unix()},
+				{ID: primitive.NewObjectID(), Type: models.ContactTypePhone, Phone: "+393230000611", ConfirmedAt: time.Now().Unix()},
 			},
 			ContactPreferences: models.ContactPreferences{PreferredChannels: channels},
 		}})
@@ -185,7 +185,7 @@ func TestUpdateContactPreferencesUnderConcurrentPhoneRemoval(t *testing.T) {
 		t.Run(removal, func(t *testing.T) {
 			for i := 0; i < 15; i++ {
 				accountID := fmt.Sprintf("endpoint_conc_%s_%d@test.com", removal, i)
-				phone := fmt.Sprintf("+3912300062%02d", i)
+				phone := fmt.Sprintf("+3932300062%02d", i)
 				users, err := addTestUsers([]models.User{{
 					Account: models.Account{Type: "email", AccountID: accountID},
 					ContactInfos: []models.ContactInfo{

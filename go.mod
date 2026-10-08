@@ -12,6 +12,7 @@ require (
 	github.com/influenzanet/go-utils v0.2.14
 	github.com/influenzanet/logging-service v0.2.0
 	github.com/influenzanet/messaging-service v1.5.0
+	github.com/nyaruka/phonenumbers v1.4.4
 	go.mongodb.org/mongo-driver v1.13.1
 	golang.org/x/crypto v0.18.0
 	golang.org/x/term v0.16.0
@@ -33,5 +34,5 @@ require (
 	golang.org/x/net v0.20.0 // indirect
 	golang.org/x/sync v0.6.0 // indirect
 	golang.org/x/sys v0.16.0 // indirect
-	golang.org/x/text v0.14.0 // indirect
+	golang.org/x/text v0.15.0 // indirect
 )

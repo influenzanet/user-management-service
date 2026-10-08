@@ -100,7 +100,7 @@ func TestVerifyWhatsAppCode(t *testing.T) {
 	s.Intervals.MaxVerificationAttempts = 3
 
 	t.Run("rejects a request without a code", func(t *testing.T) {
-		token := addVerifyCodeTestUser(t, "verify_no_code@test.com", "+391230000401", validCode("123456"), nil, nil)
+		token := addVerifyCodeTestUser(t, "verify_no_code@test.com", "+393230000401", validCode("123456"), nil, nil)
 		_, err := s.VerifyWhatsAppCode(context.Background(), &api.VerifyWhatsAppCodeReq{Token: &token})
 		if status.Code(err) != codes.InvalidArgument {
 			t.Errorf("expected InvalidArgument, got %v", err)
@@ -108,7 +108,7 @@ func TestVerifyWhatsAppCode(t *testing.T) {
 	})
 
 	t.Run("rejects a wrong code and counts the attempt", func(t *testing.T) {
-		token := addVerifyCodeTestUser(t, "verify_wrong@test.com", "+391230000402", validCode("123456"), nil, nil)
+		token := addVerifyCodeTestUser(t, "verify_wrong@test.com", "+393230000402", validCode("123456"), nil, nil)
 
 		_, err := s.VerifyWhatsAppCode(context.Background(), &api.VerifyWhatsAppCodeReq{Token: &token, Code: "000000"})
 		if status.Code(err) != codes.PermissionDenied {
@@ -130,7 +130,7 @@ func TestVerifyWhatsAppCode(t *testing.T) {
 	t.Run("rejects an expired code", func(t *testing.T) {
 		expired := validCode("123456")
 		expired.ExpiresAt = time.Now().Unix() - 1
-		token := addVerifyCodeTestUser(t, "verify_expired@test.com", "+391230000403", expired, nil, nil)
+		token := addVerifyCodeTestUser(t, "verify_expired@test.com", "+393230000403", expired, nil, nil)
 
 		_, err := s.VerifyWhatsAppCode(context.Background(), &api.VerifyWhatsAppCodeReq{Token: &token, Code: "123456"})
 		if status.Code(err) != codes.PermissionDenied {
@@ -143,7 +143,7 @@ func TestVerifyWhatsAppCode(t *testing.T) {
 
 	t.Run("a correct code verifies the phone and enables whatsapp next to email", func(t *testing.T) {
 		ledger := []int64{time.Now().Unix() - 30}
-		token := addVerifyCodeTestUser(t, "verify_ok@test.com", "+391230000404", validCode("123456"), nil, ledger)
+		token := addVerifyCodeTestUser(t, "verify_ok@test.com", "+393230000404", validCode("123456"), nil, ledger)
 
 		resp, err := s.VerifyWhatsAppCode(context.Background(), &api.VerifyWhatsAppCodeReq{Token: &token, Code: "123456"})
 		if err != nil {
@@ -171,7 +171,7 @@ func TestVerifyWhatsAppCode(t *testing.T) {
 	})
 
 	t.Run("a correct code keeps the channels the user already had", func(t *testing.T) {
-		token := addVerifyCodeTestUser(t, "verify_keep_channels@test.com", "+391230000405", validCode("123456"), []string{models.ChannelEmail}, nil)
+		token := addVerifyCodeTestUser(t, "verify_keep_channels@test.com", "+393230000405", validCode("123456"), []string{models.ChannelEmail}, nil)
 
 		if _, err := s.VerifyWhatsAppCode(context.Background(), &api.VerifyWhatsAppCodeReq{Token: &token, Code: "123456"}); err != nil {
 			t.Fatalf("unexpected error: %s", err.Error())
@@ -190,7 +190,7 @@ func TestVerifyWhatsAppCode(t *testing.T) {
 	t.Run("an expired code is refused without spending an attempt", func(t *testing.T) {
 		expired := validCode("123456")
 		expired.ExpiresAt = time.Now().Unix() - 1
-		token := addVerifyCodeTestUser(t, "verify_expired_budget@test.com", "+391230000407", expired, nil, nil)
+		token := addVerifyCodeTestUser(t, "verify_expired_budget@test.com", "+393230000407", expired, nil, nil)
 
 		for i := 0; i < s.Intervals.MaxVerificationAttempts+1; i++ {
 			_, err := s.VerifyWhatsAppCode(context.Background(), &api.VerifyWhatsAppCodeReq{Token: &token, Code: "123456"})
@@ -209,7 +209,7 @@ func TestVerifyWhatsAppCode(t *testing.T) {
 	})
 
 	t.Run("says that no verification is in progress instead of removing the phone", func(t *testing.T) {
-		token := addVerifyCodeTestUser(t, "verify_no_code_pending@test.com", "+391230000408", models.VerificationCode{}, nil, nil)
+		token := addVerifyCodeTestUser(t, "verify_no_code_pending@test.com", "+393230000408", models.VerificationCode{}, nil, nil)
 
 		_, err := s.VerifyWhatsAppCode(context.Background(), &api.VerifyWhatsAppCodeReq{Token: &token, Code: "123456"})
 		if status.Code(err) != codes.InvalidArgument {
@@ -223,7 +223,7 @@ func TestVerifyWhatsAppCode(t *testing.T) {
 	t.Run("too many attempts removes the phone together with its channel", func(t *testing.T) {
 		exhausted := validCode("123456")
 		exhausted.Attempts = 3 // at the cap: the next attempt takes the punitive branch
-		token := addVerifyCodeTestUser(t, "verify_exhausted@test.com", "+391230000406", exhausted,
+		token := addVerifyCodeTestUser(t, "verify_exhausted@test.com", "+393230000406", exhausted,
 			[]string{models.ChannelEmail, models.ChannelWhatsApp}, nil)
 
 		_, err := s.VerifyWhatsAppCode(context.Background(), &api.VerifyWhatsAppCodeReq{Token: &token, Code: "123456"})

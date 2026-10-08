@@ -42,10 +42,10 @@ import (
 // TestConcurrentAddPhoneNumberOnOneNumber. Making both accounts land inside the window is what
 // makes the residual below reproduce every time, and that is this test's real job.
 //
-// Does not hold, and this is the residual: BOTH accounts can end up confirmed on the number.
-// The test accepts either outcome on purpose. Asserting "exactly one wins" would write today's
-// bug into the suite as a requirement; asserting "both win" would do the same the day an index
-// makes it one. The day that changes, the invariants below still have to pass.
+// Used to be the residual: BOTH accounts could end up confirmed on the number. Confirming now
+// takes a claim keyed by the number first (see userdb.VerifiedPhoneCollection), so one account
+// wins, and TestSameNumberInDifferentFormsBurstEndsOnOneAccount asserts it. This test keeps
+// accepting either outcome, since it is about the invariants below holding in every order.
 
 const concurrentClaimRounds = 6
 
@@ -63,7 +63,7 @@ func TestVerifyWhatsAppCodeConcurrentClaimsOnOneNumber(t *testing.T) {
 
 	for round := 0; round < concurrentClaimRounds; round++ {
 		// A number of its own per round, so one round cannot decide the next.
-		phone := fmt.Sprintf("+39123000130%d", round)
+		phone := fmt.Sprintf("+39323000130%d", round)
 		codeA := "500001"
 		codeB := "500002"
 
@@ -170,7 +170,7 @@ func TestVerifyWhatsAppCodeConcurrentClaimsOnOneNumber(t *testing.T) {
 // TestReleaseNeverStripsAVerifiedContactUnderLoad drives the release itself concurrently against
 // one account that has already proved the number. Whatever else happens, a proven contact stays.
 func TestReleaseNeverStripsAVerifiedContactUnderLoad(t *testing.T) {
-	const phone = "+391230001320"
+	const phone = "+393230001320"
 	const parallelReleases = 8
 
 	owner := addVerifyCodeTestUser(t, "f09_release_load_owner@test.com", phone, models.VerificationCode{}, nil, nil)
@@ -211,7 +211,7 @@ func TestReleaseNeverStripsAVerifiedContactUnderLoad(t *testing.T) {
 // is on the record as known behaviour rather than discovered later in production. The first to
 // verify then takes it, and the other is released.
 func TestConcurrentAddPhoneNumberOnOneNumber(t *testing.T) {
-	const phone = "+391230001330"
+	const phone = "+393230001330"
 	s := newRateLimitTestServer(&countingWhatsAppClient{})
 	s.Intervals.MaxVerificationAttempts = 3
 

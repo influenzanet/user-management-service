@@ -557,8 +557,9 @@ func (s *userManagementServer) AddPhoneNumber(ctx context.Context, req *api.Phon
 		return nil, status.Error(codes.Unavailable, "WhatsApp is not configured")
 	}
 
-	phone := utils.SanitizePhone(req.NewPhone)
-	if !utils.CheckPhoneFormat(phone) {
+	// Numbers are stored and compared in E.164 form, whatever the way they were typed.
+	phone, err := utils.NormalizePhone(req.NewPhone)
+	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, "phone not valid")
 	}
 
@@ -572,8 +573,11 @@ func (s *userManagementServer) AddPhoneNumber(ctx context.Context, req *api.Phon
 	// Check if user already has this phone number
 	var existingPhoneInfo *models.ContactInfo
 	for i, ci := range user.ContactInfos {
-		if ci.Type == models.ContactTypePhone && ci.Phone == phone {
+		if ci.Type == models.ContactTypePhone && utils.SamePhone(ci.Phone, phone) {
 			existingPhoneInfo = &user.ContactInfos[i]
+			// Continue with the number as stored, which differs from the normalised one only
+			// for data written before numbers were normalised.
+			phone = ci.Phone
 			break
 		}
 	}
@@ -587,7 +591,7 @@ func (s *userManagementServer) AddPhoneNumber(ctx context.Context, req *api.Phon
 	if isNewPhone {
 		// Check if user already has a different phone number
 		for _, ci := range user.ContactInfos {
-			if ci.Type == models.ContactTypePhone && ci.Phone != "" && ci.Phone != phone {
+			if ci.Type == models.ContactTypePhone && ci.Phone != "" && !utils.SamePhone(ci.Phone, phone) {
 				return nil, status.Error(codes.InvalidArgument, "user already has a phone number")
 			}
 		}
@@ -713,8 +717,9 @@ func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.Pho
 		return nil, status.Error(codes.Unavailable, "WhatsApp is not configured")
 	}
 
-	phone := utils.SanitizePhone(req.NewPhone)
-	if !utils.CheckPhoneFormat(phone) {
+	// Numbers are stored and compared in E.164 form, whatever the way they were typed.
+	phone, err := utils.NormalizePhone(req.NewPhone)
+	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, "phone not valid")
 	}
 
@@ -741,9 +746,10 @@ func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.Pho
 
 	changingNumber := false
 	// If trying to set the same phone number that's already unverified, allow re-sending code
-	if contactInfo.Phone == phone && contactInfo.ConfirmedAt == 0 {
+	if utils.SamePhone(contactInfo.Phone, phone) && contactInfo.ConfirmedAt == 0 {
 		// Same phone, not verified — keep ContactInfo, just regenerate code (G-8 fix)
-	} else if contactInfo.Phone == phone && contactInfo.ConfirmedAt > 0 {
+		phone = contactInfo.Phone
+	} else if utils.SamePhone(contactInfo.Phone, phone) && contactInfo.ConfirmedAt > 0 {
 		return nil, status.Error(codes.InvalidArgument, "phone number already verified")
 	} else {
 		changingNumber = true
@@ -933,6 +939,10 @@ func (s *userManagementServer) VerifyWhatsAppCode(ctx context.Context, req *api.
 		// The number moved between the check above and this write. Nothing was confirmed and no
 		// channel was enabled; the answer stays the one given for a code with nothing to verify.
 		return nil, status.Error(codes.InvalidArgument, "no phone verification in progress")
+	}
+	if errors.Is(err, userdb.ErrPhoneVerifiedElsewhere) {
+		// Another account proved the same number first and holds it; this one stays unverified.
+		return nil, status.Error(codes.InvalidArgument, "phone number already taken")
 	}
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())

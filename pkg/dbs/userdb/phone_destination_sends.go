@@ -57,12 +57,23 @@ func (dbService *UserDBService) collectionRefPhoneVerificationSends(instanceID s
 // not from an attacker with database access. Giving the service a dedicated pepper would close
 // that gap and is the natural follow-up.
 //
-// The number is canonicalised first so that no spelling of it buys a second budget: the
-// separators every write path already strips, then the leading "+" and any zero padding of the
-// international prefix, since a country code never starts with a zero and "+0039...", "0039..."
-// and "+39..." are the same telephone.
+// The number is canonicalised first so that no spelling of it buys a second budget: it is
+// normalised to E.164 (see utils.NormalizePhone) and the leading "+" is dropped, so "+0039...",
+// "0039..." and "+39..." are the same telephone. A value that cannot be normalised is reduced to
+// its digits without zero padding.
 func phoneVerificationSendKey(phone string) string {
-	canonical := strings.TrimLeft(strings.TrimPrefix(utils.SanitizePhone(phone), "+"), "0")
+	canonical, err := utils.NormalizePhone(phone)
+	if err == nil {
+		canonical = canonical[1:]
+	} else {
+		// Not a number that can be normalised: keep the digits, without zero padding.
+		canonical = strings.TrimLeft(strings.Map(func(r rune) rune {
+			if r >= '0' && r <= '9' {
+				return r
+			}
+			return -1
+		}, phone), "0")
+	}
 	digest := sha256.Sum256([]byte(canonical))
 	return hex.EncodeToString(digest[:])
 }

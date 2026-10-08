@@ -97,7 +97,7 @@ func TestResendEmailVerificationDoesNotClobberPhoneLedger(t *testing.T) {
 	}
 
 	accountID := "resend_email_ledger@test.com"
-	token := addContactWriteTestUser(t, accountID, "+391230000101", models.VerificationCode{})
+	token := addContactWriteTestUser(t, accountID, "+393230000101", models.VerificationCode{})
 
 	var reserved bool
 	var reserveErr error
@@ -153,7 +153,7 @@ func TestVerifyWhatsAppCodeDoesNotClobberPhoneLedger(t *testing.T) {
 			CreatedAt: time.Now().Unix(),
 			ExpiresAt: time.Now().Unix() + 60,
 		}
-		token := addContactWriteTestUser(t, fmt.Sprintf("verify_ledger_%02d@test.com", i), fmt.Sprintf("+39123000%03d", 200+i), code)
+		token := addContactWriteTestUser(t, fmt.Sprintf("verify_ledger_%02d@test.com", i), fmt.Sprintf("+39323000%03d", 200+i), code)
 
 		var reserved bool
 		var wg sync.WaitGroup
@@ -211,7 +211,7 @@ func TestVerifyWhatsAppCodeAtMaxAttemptsDoesNotClobberPhoneLedger(t *testing.T) 
 			CreatedAt: time.Now().Unix(),
 			ExpiresAt: time.Now().Unix() + 60,
 		}
-		token := addContactWriteTestUser(t, fmt.Sprintf("verify_max_ledger_%02d@test.com", i), fmt.Sprintf("+39123000%03d", 300+i), code)
+		token := addContactWriteTestUser(t, fmt.Sprintf("verify_max_ledger_%02d@test.com", i), fmt.Sprintf("+39323000%03d", 300+i), code)
 
 		var reserved bool
 		var wg sync.WaitGroup

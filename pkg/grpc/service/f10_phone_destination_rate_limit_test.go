@@ -111,7 +111,7 @@ func assertResourceExhausted(t *testing.T, err error) {
 // TestAddPhoneNumberCapsSendsPerDestinationAcrossAccounts is the finding itself: the attacker
 // rotates accounts, and the victim's number still receives only what its own window allows.
 func TestAddPhoneNumberCapsSendsPerDestinationAcrossAccounts(t *testing.T) {
-	const victim = "+391230030001"
+	const victim = "+393230030001"
 
 	mockWhatsApp := &countingWhatsAppClient{}
 	s := newRateLimitTestServer(mockWhatsApp)
@@ -147,8 +147,8 @@ func TestAddPhoneNumberCapsSendsPerDestinationAcrossAccounts(t *testing.T) {
 // for a message: changing an existing number to the victim's.
 func TestEditPhoneNumberCapsSendsPerDestinationAcrossAccounts(t *testing.T) {
 	const (
-		victim = "+391230030002"
-		owned  = "+391230030102"
+		victim = "+393230030002"
+		owned  = "+393230030102"
 	)
 
 	mockWhatsApp := &countingWhatsAppClient{}
@@ -169,7 +169,7 @@ func TestEditPhoneNumberCapsSendsPerDestinationAcrossAccounts(t *testing.T) {
 // the resend on a number the account already holds unverified. Since F-09 several accounts can
 // hold the same unverified number at once, so this is a live route to the victim.
 func TestResendContactVerificationCapsSendsPerDestinationAcrossAccounts(t *testing.T) {
-	const victim = "+391230030003"
+	const victim = "+393230030003"
 
 	mockWhatsApp := &countingWhatsAppClient{}
 	s := newRateLimitTestServer(mockWhatsApp)
@@ -211,9 +211,9 @@ func TestPhoneDestinationRecordsOutliveTheirWindow(t *testing.T) {
 // actually about to be sent.
 func TestPhoneProbeDoesNotSpendTheDestinationBudget(t *testing.T) {
 	const (
-		addTarget  = "+391230030005"
-		editTarget = "+391230030006"
-		proberOwn  = "+391230030106"
+		addTarget  = "+393230030005"
+		editTarget = "+393230030006"
+		proberOwn  = "+393230030106"
 	)
 
 	mockWhatsApp := &countingWhatsAppClient{}

@@ -549,8 +549,8 @@ func (s *userManagementServer) SignupWithEmail(ctx context.Context, req *api.Sig
 		// and does not decide the outcome. The number itself stays out of the log.
 		logger.Info.Printf("Signup: phone number ignored because WhatsApp is disabled")
 	} else if req.Phone != "" {
-		phone := utils.SanitizePhone(req.Phone)
-		if utils.CheckPhoneFormat(phone) {
+		phone, phoneErr := utils.NormalizePhone(req.Phone)
+		if phoneErr == nil {
 			// Check if phone number is already taken
 			phoneSlice := []string{phone}
 			isTaken, err := s.userDBservice.IsPhoneNumberTaken(ctx, req.InstanceId, phoneSlice)
@@ -572,7 +572,7 @@ func (s *userManagementServer) SignupWithEmail(ctx context.Context, req *api.Sig
 				logger.Debug.Printf("Added unverified phone %s for new user", utils.MaskPhone(phone))
 			}
 		} else {
-			logger.Warning.Printf("Invalid phone format during signup: %s", utils.MaskPhone(phone))
+			logger.Warning.Printf("Invalid phone format during signup: %s", utils.MaskPhone(req.Phone))
 			return nil, status.Error(codes.InvalidArgument, "phone not valid")
 		}
 	}
@@ -827,10 +827,20 @@ func (s *userManagementServer) ResendContactVerification(ctx context.Context, re
 		if user.Account.AccountConfirmedAt <= 0 {
 			return nil, status.Error(codes.InvalidArgument, "account not confirmed yet")
 		}
-		ci, found := user.FindContactInfoByTypeAndAddr(models.ContactTypePhone, req.Address)
+		// The address is matched as the same telephone however it is spelled, and everything
+		// below works on the number as stored.
+		var ci models.ContactInfo
+		found := false
+		for _, c := range user.ContactInfos {
+			if c.Type == models.ContactTypePhone && utils.SamePhone(c.Phone, req.Address) {
+				ci, found = c, true
+				break
+			}
+		}
 		if !found {
 			return nil, status.Error(codes.InvalidArgument, "address not found")
 		}
+		phone := ci.Phone
 		// A verified number has nothing left to verify: without this, an account could keep
 		// asking for codes it does not need, three paid messages per window, indefinitely.
 		if ci.ConfirmedAt > 0 {
@@ -853,7 +863,7 @@ func (s *userManagementServer) ResendContactVerification(ctx context.Context, re
 		// And the number's own budget, counted across every account: since F-09 several accounts
 		// can hold the same unverified number at once, so this endpoint is a live route to it
 		// (see ReservePhoneDestinationSendSlot).
-		destinationFree, err := s.userDBservice.ReservePhoneDestinationSendSlot(req.Token.InstanceId, req.Address, allowedPhoneDestinationSends, phoneDestinationRateLimitWindow)
+		destinationFree, err := s.userDBservice.ReservePhoneDestinationSendSlot(req.Token.InstanceId, phone, allowedPhoneDestinationSends, phoneDestinationRateLimitWindow)
 		if err != nil {
 			logger.Error.Printf("ResendContactVerification: %s", err.Error())
 			return nil, status.Error(codes.Internal, "could not reserve the send budget")
@@ -872,11 +882,9 @@ func (s *userManagementServer) ResendContactVerification(ctx context.Context, re
 			Attempts:  0,
 			CreatedAt: time.Now().Unix(),
 			ExpiresAt: time.Now().Unix() + s.Intervals.VerificationCodeLifetime,
-			// Stored phone numbers are sanitised (every write path validates them with
-			// CheckPhoneFormat, which rejects separators), so the code is bound in that same
-			// form as AddPhoneNumber and EditPhoneNumber bind theirs. The lookup above keeps
-			// matching the address as the caller spelled it.
-			Phone: utils.SanitizePhone(req.Address),
+			// Bound to the number as stored, like AddPhoneNumber and EditPhoneNumber bind
+			// theirs, whatever the way the caller spelled the address.
+			Phone: phone,
 		}
 		// Persist the code before sending it with a targeted $set, so a delivered code is
 		// always verifiable and no full-document replace can clobber concurrent writes. The
@@ -893,7 +901,7 @@ func (s *userManagementServer) ResendContactVerification(ctx context.Context, re
 			return nil, status.Error(codes.Internal, err.Error())
 		}
 		// Same language rule as AddPhoneNumber and EditPhoneNumber
-		if err := s.whatsAppClient.SendVerificationCode(ctx, req.Address, vc, verificationTemplateLang(s.whatsAppConfig, user)); err != nil {
+		if err := s.whatsAppClient.SendVerificationCode(ctx, phone, vc, verificationTemplateLang(s.whatsAppConfig, user)); err != nil {
 			logger.Error.Printf("ResendContactVerification (phone): %s", err.Error())
 			if errors.Is(err, httpClients.ErrRecipientNotAllowed) {
 				return nil, status.Error(codes.FailedPrecondition, "phone number not enabled to receive WhatsApp messages")
@@ -901,7 +909,7 @@ func (s *userManagementServer) ResendContactVerification(ctx context.Context, re
 			return nil, status.Error(codes.Internal, "failed to send verification code")
 		}
 		// Mark the cooldown only after the message was accepted, like the email branch
-		if err := s.userDBservice.SetContactVerificationSentAt(req.Token.InstanceId, req.Token.Id, models.ContactTypePhone, req.Address, time.Now().Unix()); err != nil {
+		if err := s.userDBservice.SetContactVerificationSentAt(req.Token.InstanceId, req.Token.Id, models.ContactTypePhone, phone, time.Now().Unix()); err != nil {
 			logger.Error.Printf("ResendContactVerification: %s", err.Error())
 		}
 	default:

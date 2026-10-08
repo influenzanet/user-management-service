@@ -34,7 +34,7 @@ func TestSignupWithEmail_PhoneIgnoredWhenWhatsAppDisabled(t *testing.T) {
 		email string
 		phone string
 	}{
-		{"valid number", "wa_off_valid@test.com", "+391230002001"},
+		{"valid number", "wa_off_valid@test.com", "+393230002001"},
 		{"malformed number", "wa_off_malformed@test.com", "not-a-number"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

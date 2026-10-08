@@ -36,9 +36,9 @@ import (
 const (
 	// The number another participant already holds. It is seeded verified on purpose: an
 	// unverified claim is a separate question (F-09) and must not decide these tests.
-	oracleTakenPhone = "+391230000901"
-	oracleFreePhone  = "+391230000902"
-	oracleOwnPhone   = "+391230000903"
+	oracleTakenPhone = "+393230000901"
+	oracleFreePhone  = "+393230000902"
+	oracleOwnPhone   = "+393230000903"
 )
 
 // seedPhoneOwner registers the number to another account, verified, so that every uniqueness

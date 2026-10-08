@@ -497,9 +497,54 @@ func (dbService *UserDBService) FinalizePhoneVerification(instanceID string, use
 		}},
 	}
 
+	// An account that does not carry the number has nothing to confirm and claims nothing. The
+	// channels it has now are kept to tell, if the confirmation has to be undone, whether the
+	// whatsapp channel was enabled by it.
+	var before models.User
+	err = dbService.collectionRefUsers(instanceID).FindOne(ctx, filter,
+		options.FindOne().SetProjection(bson.M{"contactPreferences.preferredChannels": 1})).Decode(&before)
+	if err != nil {
+		return models.User{}, err
+	}
+	whatsAppWasEnabled := false
+	for _, channel := range before.ContactPreferences.PreferredChannels {
+		if channel == models.ChannelWhatsApp {
+			whatsAppWasEnabled = true
+		}
+	}
+
+	// Only one account can hold a verified number: the claim is taken before the contact is
+	// confirmed, so accounts proving the same number at the same time cannot both succeed
+	// (see VerifiedPhoneCollection).
+	acquired, err := dbService.claimVerifiedPhone(instanceID, _id, phone)
+	if err != nil {
+		return models.User{}, err
+	}
+	if afterPhoneClaimHook != nil {
+		afterPhoneClaimHook(_id)
+	}
+
 	var updated models.User
 	err = dbService.collectionRefUsers(instanceID).FindOneAndUpdate(ctx, filter, update, opts).Decode(&updated)
-	return updated, err
+	if err != nil {
+		// Only a claim this call put in place is this call's to drop: an account that was
+		// already the holder (a repeated verification) keeps it.
+		if acquired {
+			dbService.releaseVerifiedPhoneClaim(instanceID, _id, phone)
+		}
+		return updated, err
+	}
+
+	// The claim and the confirmation are two writes. When the claim found was a stale one of this
+	// very account, another account may have taken it over in between; confirming the claim now
+	// tells which of the two wins, and the other one gives its confirmation back.
+	if err := dbService.confirmPhoneClaim(instanceID, _id, phone); err != nil {
+		if revertErr := dbService.revertPhoneConfirmation(instanceID, _id, phone, now, whatsAppWasEnabled); revertErr != nil {
+			return models.User{}, revertErr
+		}
+		return models.User{}, err
+	}
+	return updated, nil
 }
 
 func (dbService *UserDBService) UpdateAccountPreferredLang(instanceID string, userID string, lang string) (models.User, error) {
@@ -956,11 +1001,18 @@ func (dbService *UserDBService) IsPhoneNumberTaken(ctx context.Context, instance
 // and EditPhoneNumber enforce; holding the number against everybody else is reserved to proof.
 // See ReleaseUnverifiedPhoneClaims for what happens to those claims once somebody proves it.
 func (dbService *UserDBService) IsPhoneNumberTakenExcludingUser(ctx context.Context, instanceID string, phoneNumbers []string, excludeUserID string) (bool, error) {
+	// Numbers are stored in E.164 form, so the question is asked in that form whatever the
+	// caller's spelling; the spelling given stays in the list for data written before numbers
+	// were normalised.
+	var forms []string
+	for _, phone := range phoneNumbers {
+		forms = append(forms, verifiedPhoneForms(phone)...)
+	}
 	filter := bson.M{
 		"contactInfos": bson.M{
 			"$elemMatch": bson.M{
 				"type":        models.ContactTypePhone,
-				"phone":       bson.M{"$in": phoneNumbers},
+				"phone":       bson.M{"$in": forms},
 				"confirmedAt": bson.M{"$gt": 0},
 			},
 		},

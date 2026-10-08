@@ -1030,7 +1030,7 @@ func TestResendContactVerificationEndpoint(t *testing.T) {
 				{
 					ID:    primitive.NewObjectID(),
 					Type:  "phone",
-					Phone: "+391234567001",
+					Phone: "+393234567001",
 				},
 			},
 		},
@@ -1051,7 +1051,7 @@ func TestResendContactVerificationEndpoint(t *testing.T) {
 				{
 					ID:    primitive.NewObjectID(),
 					Type:  "phone",
-					Phone: "+391234567005",
+					Phone: "+393234567005",
 				},
 			},
 		},
@@ -1072,7 +1072,7 @@ func TestResendContactVerificationEndpoint(t *testing.T) {
 				{
 					ID:    primitive.NewObjectID(),
 					Type:  "phone",
-					Phone: "+391234567006",
+					Phone: "+393234567006",
 				},
 			},
 		},
@@ -1144,7 +1144,7 @@ func TestResendContactVerificationEndpoint(t *testing.T) {
 				Id:         testUsers[1].ID.Hex(),
 				InstanceId: testInstanceID,
 			},
-			Address: "+391234567001",
+			Address: "+393234567001",
 			Type:    "phone",
 		}
 		_, err := s.ResendContactVerification(context.Background(), req)
@@ -1159,7 +1159,7 @@ func TestResendContactVerificationEndpoint(t *testing.T) {
 			t.Errorf("unexpected error: %s", err.Error())
 			return
 		}
-		ci, found := user.FindContactInfoByTypeAndAddr(models.ContactTypePhone, "+391234567001")
+		ci, found := user.FindContactInfoByTypeAndAddr(models.ContactTypePhone, "+393234567001")
 		if !found {
 			t.Error("phone contact info not found")
 			return
@@ -1180,7 +1180,7 @@ func TestResendContactVerificationEndpoint(t *testing.T) {
 				Id:         testUsers[1].ID.Hex(),
 				InstanceId: testInstanceID,
 			},
-			Address: "+391234567001",
+			Address: "+393234567001",
 			Type:    "phone",
 		}
 		_, err := s.ResendContactVerification(context.Background(), req)
@@ -1194,7 +1194,7 @@ func TestResendContactVerificationEndpoint(t *testing.T) {
 			t.Errorf("unexpected error: %s", err.Error())
 			return
 		}
-		ci, found := user.FindContactInfoByTypeAndAddr(models.ContactTypePhone, "+391234567001")
+		ci, found := user.FindContactInfoByTypeAndAddr(models.ContactTypePhone, "+393234567001")
 		if !found {
 			t.Error("phone contact info not found")
 			return
@@ -1218,7 +1218,7 @@ func TestResendContactVerificationEndpoint(t *testing.T) {
 				Id:         testUsers[2].ID.Hex(),
 				InstanceId: testInstanceID,
 			},
-			Address: "+391234567005",
+			Address: "+393234567005",
 			Type:    "phone",
 		}
 		for i := 0; i < allowedPhoneVerificationAttempts; i++ {
@@ -1244,7 +1244,7 @@ func TestResendContactVerificationEndpoint(t *testing.T) {
 				Id:         testUsers[3].ID.Hex(),
 				InstanceId: testInstanceID,
 			},
-			Address: "+391234567006",
+			Address: "+393234567006",
 			Type:    "phone",
 		}
 		_, err := s.ResendContactVerification(context.Background(), req)

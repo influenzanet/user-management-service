@@ -18,6 +18,7 @@ import (
 const (
 	bindingPhoneSent    = "+391230000701" // the number a code was sent to
 	bindingPhoneCurrent = "+391230000702" // the number the account carries afterwards
+	bindingPhoneOther   = "+391230000703" // a number of its own: only one account can hold a verified number
 )
 
 func bindingCode(code string, phone string) models.VerificationCode {
@@ -141,14 +142,14 @@ func TestDbFinalizePhoneVerificationConfirmsOnlyTheMatchingNumber(t *testing.T) 
 		id := addReserveTestUser(t, accountID, []int64{}, []models.ContactInfo{
 			{ID: primitive.NewObjectID(), Type: models.ContactTypeEmail, Email: accountID, ConfirmedAt: time.Now().Unix()},
 			{ID: primitive.NewObjectID(), Type: models.ContactTypePhone, Phone: bindingPhoneCurrent},
-			{ID: primitive.NewObjectID(), Type: models.ContactTypePhone, Phone: bindingPhoneSent},
+			{ID: primitive.NewObjectID(), Type: models.ContactTypePhone, Phone: bindingPhoneOther},
 		})
 
-		updated, err := testDBService.FinalizePhoneVerification(testInstanceID, id, bindingPhoneSent)
+		updated, err := testDBService.FinalizePhoneVerification(testInstanceID, id, bindingPhoneOther)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		sent, _ := updated.FindContactInfoByTypeAndAddr(models.ContactTypePhone, bindingPhoneSent)
+		sent, _ := updated.FindContactInfoByTypeAndAddr(models.ContactTypePhone, bindingPhoneOther)
 		if sent.ConfirmedAt == 0 {
 			t.Errorf("the number the code was sent to was not confirmed: %+v", sent)
 		}

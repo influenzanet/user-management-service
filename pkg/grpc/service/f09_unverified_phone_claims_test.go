@@ -18,7 +18,7 @@ import (
 // unverified claim to it left on other accounts.
 
 const (
-	contestedPhone = "+391230001101"
+	contestedPhone = "+393230001101"
 	claimantCode   = "111111"
 )
 
@@ -99,8 +99,8 @@ func TestVerifyWhatsAppCodeKeepsOtherContacts(t *testing.T) {
 	s := newRateLimitTestServer(&countingWhatsAppClient{})
 	s.Intervals.MaxVerificationAttempts = 3
 
-	const ownPhone = "+391230001102"
-	const bystanderPhone = "+391230001103"
+	const ownPhone = "+393230001102"
+	const bystanderPhone = "+393230001103"
 
 	bystander := addVerifyCodeTestUser(t, "f09_bystander@test.com", bystanderPhone, validCode("222222"), nil, nil)
 	token := addVerifyCodeTestUser(t, "f09_verifier@test.com", ownPhone, validCode("333333"), nil, nil)
@@ -134,8 +134,8 @@ func TestVerifyWhatsAppCodeKeepsOtherContacts(t *testing.T) {
 // GAP1: the signup path. The rule change reaches it through IsPhoneNumberTaken, which delegates
 // to the helper F-09 narrowed, but nothing above drives SignupWithEmail itself.
 func TestSignupWithPhoneHeldUnverifiedByAnotherUser(t *testing.T) {
-	const claimedAtSignup = "+391230001201"
-	const verifiedAtSignup = "+391230001202"
+	const claimedAtSignup = "+393230001201"
+	const verifiedAtSignup = "+393230001202"
 	s := newSignupTestServer(t)
 
 	t.Run("a number only claimed by somebody else no longer blocks registration", func(t *testing.T) {
@@ -172,8 +172,8 @@ func TestSignupWithPhoneHeldUnverifiedByAnotherUser(t *testing.T) {
 
 // GAP2: the change-phone path reaches the same rule and the same release.
 func TestEditPhoneNumberOverUnverifiedClaim(t *testing.T) {
-	const contested = "+391230001211"
-	const ownNumber = "+391230001212"
+	const contested = "+393230001211"
+	const ownNumber = "+393230001212"
 	s := newRateLimitTestServer(&countingWhatsAppClient{})
 	s.Intervals.MaxVerificationAttempts = 3
 
@@ -201,12 +201,12 @@ func TestEditPhoneNumberOverUnverifiedClaim(t *testing.T) {
 
 	// The other half of the rule: a number somebody has actually proved is still closed, and
 	// "phone number already taken" now means exactly that.
-	const verifiedElsewhere = "+391230001213"
+	const verifiedElsewhere = "+393230001213"
 	owner := addVerifyCodeTestUser(t, "f09_edit_verified_owner@test.com", verifiedElsewhere, models.VerificationCode{}, nil, nil)
 	if _, err := testUserDBService.FinalizePhoneVerification(testInstanceID, owner.Id, verifiedElsewhere); err != nil {
 		t.Fatalf("failed to seed the verified owner: %s", err.Error())
 	}
-	blocked := addVerifyCodeTestUser(t, "f09_edit_blocked@test.com", "+391230001214", models.VerificationCode{}, nil, nil)
+	blocked := addVerifyCodeTestUser(t, "f09_edit_blocked@test.com", "+393230001214", models.VerificationCode{}, nil, nil)
 
 	_, err := s.EditPhoneNumber(context.Background(), &api.PhoneMsg{Token: &blocked, NewPhone: verifiedElsewhere})
 	if ok, msg := shouldHaveGrpcErrorStatus(err, "phone number already taken"); !ok {
