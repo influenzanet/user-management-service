@@ -1166,7 +1166,6 @@ func (dbService *UserDBService) DeletePhoneNumber(instanceID, userID string) (mo
 			"timestamps.updatedAt":                 time.Now().Unix(),
 			"account.phoneVerificationCode":        bson.M{"$literal": bson.M{}},
 		}}},
-		{{Key: "$unset", Value: "contactPreferences.whatsappNumber"}},
 	}
 
 	var updatedUser models.User
