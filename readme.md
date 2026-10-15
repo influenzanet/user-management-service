@@ -90,3 +90,7 @@ The action is a manually triggered workflow dispatch that requires the following
 Once this is configured, navigate to the Actions tab on Github > Docker Image CI > Run Workflow
 
 By default the version to be tagged is picked from the latest release version, but it can also be overridden by a user specified tag name.
+
+## Enabling WhatsApp
+
+Whether WhatsApp is on for an instance is decided in one place, `config.WhatsAppSettings` (`internal/config/whatsapp_settings.go`), from the `WHATSAPP_*` environment variables. How to enable or disable it, every variable with its default and the start-up log lines are documented in `docs/whatsapp-activation.md` of the orbyta-cluster-management repository.
