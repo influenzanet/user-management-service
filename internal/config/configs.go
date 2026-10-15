@@ -70,13 +70,11 @@ func InitConfig() Config {
 	conf.WhatsApp.Enabled = whatsAppEnabled(whatsAppFlag, conf.WhatsApp)
 	if whatsAppFlag != "true" {
 		logger.Info.Printf("WhatsApp disabled by %s (set it to \"true\" to enable)", ENV_WHATSAPP_ENABLED)
-	} else if !conf.WhatsApp.Enabled {
-		logger.Warning.Printf("WhatsApp disabled: incomplete configuration. Missing env vars among: %s, %s, %s, %s, %s",
-			ENV_WHATSAPP_TOKEN, ENV_WHATSAPP_PHONE_NUMBER_ID,
-			ENV_WHATSAPP_VERIFICATION_TEMPLATE_NAME, ENV_WHATSAPP_VERIFICATION_TEMPLATE_LANG,
-			ENV_WHATSAPP_VERIFICATION_TEMPLATE_CATEGORY)
-	} else {
+	} else if conf.WhatsApp.Enabled {
 		logger.Info.Printf("WhatsApp enabled, verification template languages: %s", strings.Join(conf.WhatsApp.VerificationTemplateLangs, ","))
+	}
+	for _, problem := range whatsAppProblems(whatsAppFlag, conf.WhatsApp) {
+		logger.Warning.Print(problem)
 	}
 
 	conf.LogLevel = getLogLevel()

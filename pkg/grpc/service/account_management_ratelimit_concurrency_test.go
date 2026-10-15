@@ -127,10 +127,10 @@ func newRateLimitTestServer(client WhatsAppClient) userManagementServer {
 			VerificationCodeLifetime: 60,
 		},
 		whatsAppClient: client,
-		whatsAppConfig: config.WhatsAppConfig{
+		whatsApp: config.NewWhatsAppSettings(config.WhatsAppConfig{
 			Enabled:                  true,
 			VerificationTemplateLang: "en",
-		},
+		}),
 	}
 }
 

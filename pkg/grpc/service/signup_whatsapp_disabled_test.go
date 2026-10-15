@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/coneno/logger"
+	"github.com/influenzanet/user-management-service/internal/config"
 	"github.com/influenzanet/user-management-service/pkg/models"
 )
 
@@ -27,7 +28,7 @@ func captureInfo(t *testing.T, fn func()) string {
 
 func TestSignupWithEmail_PhoneIgnoredWhenWhatsAppDisabled(t *testing.T) {
 	s := newSignupTestServer(t)
-	s.whatsAppConfig.Enabled = false
+	s.whatsApp = config.NewWhatsAppSettings(config.WhatsAppConfig{Enabled: false})
 
 	for _, tc := range []struct {
 		name  string

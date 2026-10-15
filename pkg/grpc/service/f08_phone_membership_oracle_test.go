@@ -105,7 +105,7 @@ func newSignupTestServer(t *testing.T) userManagementServer {
 		},
 		newUserCountLimit: 100,
 		// A number given at signup is only stored while WhatsApp is enabled.
-		whatsAppConfig: config.WhatsAppConfig{Enabled: true},
+		whatsApp: config.NewWhatsAppSettings(config.WhatsAppConfig{Enabled: true}),
 	}
 }
 

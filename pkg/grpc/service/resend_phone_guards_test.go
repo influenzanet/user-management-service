@@ -80,7 +80,7 @@ func TestResendPhoneVerificationGuards(t *testing.T) {
 	t.Run("refuses when WhatsApp is not configured", func(t *testing.T) {
 		mock := &countingWhatsAppClient{}
 		s := newRateLimitTestServer(mock)
-		s.whatsAppConfig = config.WhatsAppConfig{Enabled: false}
+		s.whatsApp = config.NewWhatsAppSettings(config.WhatsAppConfig{Enabled: false})
 		token := addResendGuardUser(t, "resend_guard_disabled@test.com", confirmed, 0)
 
 		if err := resendPhone(s, token); status.Code(err) != codes.Unavailable {

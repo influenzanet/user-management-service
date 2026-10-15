@@ -1427,10 +1427,10 @@ func TestPhoneVerificationRateLimit(t *testing.T) {
 			LoggingService:   mockLoggingClient,
 		},
 		newUserCountLimit: 100,
-		whatsAppConfig: config.WhatsAppConfig{
+		whatsApp: config.NewWhatsAppSettings(config.WhatsAppConfig{
 			Enabled:                  true,
 			VerificationTemplateLang: "en",
-		},
+		}),
 	}
 
 	signupReq := &api.SignupWithEmailMsg{
@@ -1520,10 +1520,10 @@ func TestAddPhoneNumberEndpoint(t *testing.T) {
 			VerificationCodeLifetime: 60,
 		},
 		whatsAppClient: mockWhatsApp,
-		whatsAppConfig: config.WhatsAppConfig{
+		whatsApp: config.NewWhatsAppSettings(config.WhatsAppConfig{
 			Enabled:                  true,
 			VerificationTemplateLang: "en",
-		},
+		}),
 	}
 
 	testUsers, err := addTestUsers([]models.User{
@@ -1652,10 +1652,10 @@ func TestEditPhoneNumberEndpoint(t *testing.T) {
 			VerificationCodeLifetime: 60,
 		},
 		whatsAppClient: mockWhatsApp,
-		whatsAppConfig: config.WhatsAppConfig{
+		whatsApp: config.NewWhatsAppSettings(config.WhatsAppConfig{
 			Enabled:                  true,
 			VerificationTemplateLang: "en",
-		},
+		}),
 	}
 
 	testUsers, err := addTestUsers([]models.User{

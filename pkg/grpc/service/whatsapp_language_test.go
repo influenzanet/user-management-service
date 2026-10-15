@@ -92,7 +92,7 @@ func languageRuleServer(t *testing.T, client WhatsAppClient, cfg config.WhatsApp
 		clients:           &models.APIClients{LoggingService: mockLoggingClient, MessagingService: mockMessagingClient},
 		newUserCountLimit: 10000,
 		whatsAppClient:    client,
-		whatsAppConfig:    cfg,
+		whatsApp:          config.NewWhatsAppSettings(cfg),
 	}
 }
 

@@ -984,10 +984,10 @@ func TestResendContactVerificationEndpoint(t *testing.T) {
 			MessagingService: mockMessagingClient,
 		},
 		whatsAppClient: mockWhatsApp,
-		whatsAppConfig: config.WhatsAppConfig{
+		whatsApp: config.NewWhatsAppSettings(config.WhatsAppConfig{
 			Enabled:                  true,
 			VerificationTemplateLang: "en",
-		},
+		}),
 	}
 
 	testUsers, err := addTestUsers([]models.User{

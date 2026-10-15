@@ -544,7 +544,7 @@ func (s *userManagementServer) SignupWithEmail(ctx context.Context, req *api.Sig
 	newUser.AddNewEmail(req.Email, false)
 
 	// Add phone number if provided during signup
-	if req.Phone != "" && !s.whatsAppConfig.Enabled {
+	if req.Phone != "" && !s.whatsApp.Enabled(req.InstanceId) {
 		// Without WhatsApp a number can be neither verified nor messaged, so it is not stored
 		// and does not decide the outcome. The number itself stays out of the log.
 		logger.Info.Printf("Signup: phone number ignored because WhatsApp is disabled")
@@ -791,7 +791,7 @@ func (s *userManagementServer) ResendContactVerification(ctx context.Context, re
 		// rather than relying on a route, because the RPC is also reachable from
 		// /resend-verification-message, which carries no middleware. The email branch stays
 		// open to an unconfirmed account: resending that verification is how one confirms it.
-		if !s.whatsAppConfig.Enabled {
+		if !s.whatsApp.Enabled(req.Token.InstanceId) {
 			return nil, status.Error(codes.Unavailable, "WhatsApp is not configured")
 		}
 		if user.Account.AccountConfirmedAt <= 0 {
@@ -871,7 +871,7 @@ func (s *userManagementServer) ResendContactVerification(ctx context.Context, re
 			return nil, status.Error(codes.Internal, err.Error())
 		}
 		// Same language rule as AddPhoneNumber and EditPhoneNumber
-		if err := s.whatsAppClient.SendVerificationCode(ctx, phone, vc, verificationTemplateLang(s.whatsAppConfig, user)); err != nil {
+		if err := s.whatsAppClient.SendVerificationCode(ctx, phone, vc, verificationTemplateLang(s.whatsApp.ForInstance(req.Token.InstanceId), user)); err != nil {
 			logger.Error.Printf("ResendContactVerification (phone): %s", err.Error())
 			if errors.Is(err, httpClients.ErrRecipientNotAllowed) {
 				return nil, status.Error(codes.FailedPrecondition, "phone number not enabled to receive WhatsApp messages")

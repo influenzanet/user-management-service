@@ -553,7 +553,7 @@ func (s *userManagementServer) AddPhoneNumber(ctx context.Context, req *api.Phon
 	if req == nil || utils.IsTokenEmpty(req.Token) || req.NewPhone == "" {
 		return nil, status.Error(codes.InvalidArgument, "missing argument")
 	}
-	if !s.whatsAppConfig.Enabled {
+	if !s.whatsApp.Enabled(req.Token.InstanceId) {
 		return nil, status.Error(codes.Unavailable, "WhatsApp is not configured")
 	}
 
@@ -690,7 +690,7 @@ func (s *userManagementServer) AddPhoneNumber(ctx context.Context, req *api.Phon
 	}
 
 	// Send WhatsApp verification code
-	if err := s.whatsAppClient.SendVerificationCode(ctx, phone, vc, verificationTemplateLang(s.whatsAppConfig, user)); err != nil {
+	if err := s.whatsAppClient.SendVerificationCode(ctx, phone, vc, verificationTemplateLang(s.whatsApp.ForInstance(req.Token.InstanceId), user)); err != nil {
 		logger.Error.Printf("AddPhoneNumber: %s", err.Error())
 		if errors.Is(err, httpClients.ErrRecipientNotAllowed) {
 			return nil, status.Error(codes.FailedPrecondition, "phone number not enabled to receive WhatsApp messages")
@@ -713,7 +713,7 @@ func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.Pho
 	if req == nil || utils.IsTokenEmpty(req.Token) || req.NewPhone == "" {
 		return nil, status.Error(codes.InvalidArgument, "missing argument")
 	}
-	if !s.whatsAppConfig.Enabled {
+	if !s.whatsApp.Enabled(req.Token.InstanceId) {
 		return nil, status.Error(codes.Unavailable, "WhatsApp is not configured")
 	}
 
@@ -827,7 +827,7 @@ func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.Pho
 	}
 
 	// Send WhatsApp verification code
-	if err := s.whatsAppClient.SendVerificationCode(ctx, phone, vc, verificationTemplateLang(s.whatsAppConfig, user)); err != nil {
+	if err := s.whatsAppClient.SendVerificationCode(ctx, phone, vc, verificationTemplateLang(s.whatsApp.ForInstance(req.Token.InstanceId), user)); err != nil {
 		logger.Error.Printf("EditPhoneNumber: %s", err.Error())
 		if errors.Is(err, httpClients.ErrRecipientNotAllowed) {
 			return nil, status.Error(codes.FailedPrecondition, "phone number not enabled to receive WhatsApp messages")

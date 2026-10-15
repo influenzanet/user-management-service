@@ -37,7 +37,7 @@ type userManagementServer struct {
 	weekdayStrategy   utils.WeekDayStrategy
 	instanceIDs       []string
 	whatsAppClient    WhatsAppClient
-	whatsAppConfig    config.WhatsAppConfig
+	whatsApp          config.WhatsAppSettings
 }
 
 // NewUserManagementServer creates a new service instance
@@ -50,7 +50,7 @@ func NewUserManagementServer(
 	weekdayStrategy utils.WeekDayStrategy,
 	instanceIDs []string,
 	whatsAppClient WhatsAppClient,
-	whatsAppConfig config.WhatsAppConfig,
+	whatsApp config.WhatsAppSettings,
 ) api.UserManagementApiServer {
 	return &userManagementServer{
 		clients:           clients,
@@ -61,7 +61,7 @@ func NewUserManagementServer(
 		weekdayStrategy:   weekdayStrategy,
 		instanceIDs:       instanceIDs,
 		whatsAppClient:    whatsAppClient,
-		whatsAppConfig:    whatsAppConfig,
+		whatsApp:          whatsApp,
 	}
 }
 
@@ -75,7 +75,7 @@ func RunServer(ctx context.Context, port string,
 	weekdayStrategy utils.WeekDayStrategy,
 	instanceIDs []string,
 	whatsAppClient WhatsAppClient,
-	whatsAppConfig config.WhatsAppConfig,
+	whatsApp config.WhatsAppSettings,
 ) error {
 	lis, err := net.Listen("tcp", ":"+port)
 	if err != nil {
@@ -93,7 +93,7 @@ func RunServer(ctx context.Context, port string,
 		weekdayStrategy,
 		instanceIDs,
 		whatsAppClient,
-		whatsAppConfig,
+		whatsApp,
 	))
 
 	// graceful shutdown
