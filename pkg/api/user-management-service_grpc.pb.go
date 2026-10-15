@@ -62,6 +62,7 @@ const (
 	UserManagementApi_RemoveRoleForUser_FullMethodName         = "/influenzanet.user_management_api.UserManagementApi/RemoveRoleForUser"
 	UserManagementApi_FindNonParticipantUsers_FullMethodName   = "/influenzanet.user_management_api.UserManagementApi/FindNonParticipantUsers"
 	UserManagementApi_StreamUsers_FullMethodName               = "/influenzanet.user_management_api.UserManagementApi/StreamUsers"
+	UserManagementApi_GetPlatformConfig_FullMethodName         = "/influenzanet.user_management_api.UserManagementApi/GetPlatformConfig"
 )
 
 // UserManagementApiClient is the client API for UserManagementApi service.
@@ -119,6 +120,9 @@ type UserManagementApiClient interface {
 	RemoveRoleForUser(ctx context.Context, in *RoleMsg, opts ...grpc.CallOption) (*User, error)
 	FindNonParticipantUsers(ctx context.Context, in *FindNonParticipantUsersMsg, opts ...grpc.CallOption) (*UserListMsg, error)
 	StreamUsers(ctx context.Context, in *StreamUsersMsg, opts ...grpc.CallOption) (UserManagementApi_StreamUsersClient, error)
+	// Public: which optional features are on for an instance, so the participant
+	// site follows the backend configuration. Carries no user data.
+	GetPlatformConfig(ctx context.Context, in *PlatformConfigReq, opts ...grpc.CallOption) (*PlatformConfig, error)
 }
 
 type userManagementApiClient struct {
@@ -522,6 +526,15 @@ func (x *userManagementApiStreamUsersClient) Recv() (*User, error) {
 	return m, nil
 }
 
+func (c *userManagementApiClient) GetPlatformConfig(ctx context.Context, in *PlatformConfigReq, opts ...grpc.CallOption) (*PlatformConfig, error) {
+	out := new(PlatformConfig)
+	err := c.cc.Invoke(ctx, UserManagementApi_GetPlatformConfig_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // UserManagementApiServer is the server API for UserManagementApi service.
 // All implementations must embed UnimplementedUserManagementApiServer
 // for forward compatibility
@@ -577,6 +590,9 @@ type UserManagementApiServer interface {
 	RemoveRoleForUser(context.Context, *RoleMsg) (*User, error)
 	FindNonParticipantUsers(context.Context, *FindNonParticipantUsersMsg) (*UserListMsg, error)
 	StreamUsers(*StreamUsersMsg, UserManagementApi_StreamUsersServer) error
+	// Public: which optional features are on for an instance, so the participant
+	// site follows the backend configuration. Carries no user data.
+	GetPlatformConfig(context.Context, *PlatformConfigReq) (*PlatformConfig, error)
 	mustEmbedUnimplementedUserManagementApiServer()
 }
 
@@ -706,6 +722,9 @@ func (UnimplementedUserManagementApiServer) FindNonParticipantUsers(context.Cont
 }
 func (UnimplementedUserManagementApiServer) StreamUsers(*StreamUsersMsg, UserManagementApi_StreamUsersServer) error {
 	return status.Errorf(codes.Unimplemented, "method StreamUsers not implemented")
+}
+func (UnimplementedUserManagementApiServer) GetPlatformConfig(context.Context, *PlatformConfigReq) (*PlatformConfig, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetPlatformConfig not implemented")
 }
 func (UnimplementedUserManagementApiServer) mustEmbedUnimplementedUserManagementApiServer() {}
 
@@ -1461,6 +1480,24 @@ func (x *userManagementApiStreamUsersServer) Send(m *User) error {
 	return x.ServerStream.SendMsg(m)
 }
 
+func _UserManagementApi_GetPlatformConfig_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PlatformConfigReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(UserManagementApiServer).GetPlatformConfig(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: UserManagementApi_GetPlatformConfig_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(UserManagementApiServer).GetPlatformConfig(ctx, req.(*PlatformConfigReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // UserManagementApi_ServiceDesc is the grpc.ServiceDesc for UserManagementApi service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1627,6 +1664,10 @@ var UserManagementApi_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "FindNonParticipantUsers",
 			Handler:    _UserManagementApi_FindNonParticipantUsers_Handler,
+		},
+		{
+			MethodName: "GetPlatformConfig",
+			Handler:    _UserManagementApi_GetPlatformConfig_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
