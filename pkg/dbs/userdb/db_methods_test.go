@@ -539,7 +539,7 @@ func addReserveTestUser(t *testing.T, accountID string, attempts []int64, contac
 	}
 	id, err := testDBService.AddUser(testInstanceID, testUser)
 	if err != nil {
-		t.Fatalf(err.Error())
+		t.Fatal(err)
 	}
 	return id
 }
@@ -560,7 +560,7 @@ func TestDbReservePhoneVerificationSlot(t *testing.T) {
 		}
 		user, err := testDBService.GetUserByID(testInstanceID, id)
 		if err != nil {
-			t.Errorf(err.Error())
+			t.Error(err)
 			return
 		}
 		if len(user.Account.PhoneVerificationAttempts) != 1 {
@@ -591,7 +591,7 @@ func TestDbReservePhoneVerificationSlot(t *testing.T) {
 		}
 		user, err := testDBService.GetUserByID(testInstanceID, id)
 		if err != nil {
-			t.Errorf(err.Error())
+			t.Error(err)
 			return
 		}
 		if len(user.Account.PhoneVerificationAttempts) != maxAttempts {
@@ -614,7 +614,7 @@ func TestDbReservePhoneVerificationSlot(t *testing.T) {
 		// pipeline update, so the array cannot grow beyond the window's worth of entries.
 		user, err := testDBService.GetUserByID(testInstanceID, id)
 		if err != nil {
-			t.Errorf(err.Error())
+			t.Error(err)
 			return
 		}
 		if len(user.Account.PhoneVerificationAttempts) != 1 {
@@ -656,7 +656,7 @@ func TestDbSetPhoneVerificationCode(t *testing.T) {
 		}
 		user, err := testDBService.GetUserByID(testInstanceID, id)
 		if err != nil {
-			t.Errorf(err.Error())
+			t.Error(err)
 			return
 		}
 		if user.Account.PhoneVerificationCode.Code != "123456" {
