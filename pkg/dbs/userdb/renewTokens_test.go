@@ -19,7 +19,7 @@ func TestRenewTokenDBMethods(t *testing.T) {
 	t.Run("Testing create token", func(t *testing.T) {
 		err := testDBService.CreateRenewToken(testInstanceID, testToken.UserID, testToken.RenewToken, testToken.ExpiresAt)
 		if err != nil {
-			t.Errorf(err.Error())
+			t.Error(err.Error())
 			return
 		}
 	})
@@ -29,7 +29,7 @@ func TestRenewTokenDBMethods(t *testing.T) {
 	t.Run("Testing conditional update with empty nextToken", func(t *testing.T) {
 		rt, err := testDBService.FindAndUpdateRenewToken(testInstanceID, testToken.UserID, testToken.RenewToken, firstNextToken)
 		if err != nil {
-			t.Errorf(err.Error())
+			t.Error(err.Error())
 			return
 		}
 		logger.Debug.Println(rt)
@@ -46,7 +46,7 @@ func TestRenewTokenDBMethods(t *testing.T) {
 	t.Run("Testing conditional update with non empty nextToken", func(t *testing.T) {
 		rt, err := testDBService.FindAndUpdateRenewToken(testInstanceID, testToken.UserID, testToken.RenewToken, secondNextToken)
 		if err != nil {
-			t.Errorf(err.Error())
+			t.Error(err.Error())
 			return
 		}
 		logger.Debug.Println(rt)
@@ -68,7 +68,7 @@ func TestRenewTokenDBMethods(t *testing.T) {
 		tokenValue := "TEST_RENEW_TOKEN_EXPIRED"
 		err := testDBService.CreateRenewToken(testInstanceID, testToken.UserID, tokenValue, time.Now().Unix()-1000)
 		if err != nil {
-			t.Errorf(err.Error())
+			t.Error(err.Error())
 			return
 		}
 

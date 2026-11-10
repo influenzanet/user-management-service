@@ -8,7 +8,7 @@ func TestDbInterfaceMethods(t *testing.T) {
 	t.Run("Check fetching instances", func(t *testing.T) {
 		instances, err := testDBService.GetAllInstances()
 		if err != nil {
-			t.Errorf(err.Error())
+			t.Error(err.Error())
 			return
 		}
 		if len(instances) != 0 {
