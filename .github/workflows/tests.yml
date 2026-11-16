@@ -20,13 +20,15 @@ jobs:
           - 27017:27017
 
     steps:
+      # The api submodule holds the proto contracts that pkg/api is generated from.
       - uses: actions/checkout@v4
+        with:
+          submodules: true
 
-      # go.mod asks for the language version 1.22 but pins the toolchain to
-      # go1.24.3: install 1.24 so the build does not download a toolchain.
+      # The Go version go.mod requires, so the build does not download a toolchain.
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version-file: go.mod
 
       - name: Build
         run: go build ./...
@@ -34,12 +36,19 @@ jobs:
       - name: Vet
         run: go vet ./...
 
-      # Reported for information only: a few inherited files are not
-      # gofmt-clean, so formatting is not enforced yet and nothing is
-      # reformatted here.
-      - name: Gofmt (report only)
-        continue-on-error: true
-        run: gofmt -l .
+      - name: Gofmt
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt-clean; run gofmt -w on them:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      # Regenerates pkg/api with the toolchain pinned in proto-toolchain.mk from
+      # the contracts pinned by the api gitlink, and fails on any difference.
+      - name: Generated API drift check
+        run: make api-check
 
       # No -race here: TestSignupWithEmail trips a data race that comes from
       # upstream code, so the detector would fail every run.
@@ -62,4 +71,15 @@ jobs:
           ARGON2_MEMORY: 65536
           ARGON2_ITERATIONS: 3
           ARGON2_PARALLELISM: 1
-        run: go test ./...
+        # -v so that the next step can see skipped tests; bash for pipefail.
+        shell: bash
+        run: go test -v ./... 2>&1 | tee "$RUNNER_TEMP/go-test.log"
+
+      # A skipped test is a test CI did not run. The database tests fail
+      # rather than skip under CI, and this catches any other skip.
+      - name: No skipped tests
+        run: |
+          if grep -E -- '--- SKIP' "$RUNNER_TEMP/go-test.log"; then
+            echo "Tests were skipped; CI must run every test."
+            exit 1
+          fi
