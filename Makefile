@@ -1,6 +1,14 @@
-.PHONY: build test install-dev mock docker api user-management-service-app create-user key-generator weekday-assign
+.PHONY: build test install-dev mock docker api api-check user-management-service-app create-user key-generator weekday-assign
 
 PROTO_BUILD_DIR = intermediate
+
+# Where the api repository holding the proto contracts is checked out: by default the api
+# submodule, whose gitlink pins the contract version (git submodule update --init). Override
+# it to build against another checkout, e.g. make api API_PATH=../api.
+API_PATH ?= ./api
+
+include proto-toolchain.mk
+
 DOCKER_OPTS ?= --rm
 
 # Where binary are put
@@ -18,17 +26,25 @@ help:
 	@echo "  test  : run test suites"
 	@echo "  docker: build docker image"
 	@echo "  install-dev: install dev dependencies"
-	@echo "  api: compile protobuf files for go"
+	@echo "  api: compile protobuf files for go with the pinned toolchain (proto-toolchain.mk)"
+	@echo "  api-check: regenerate pkg/api and fail if it differs from the committed code"
 	@echo "Env:"
 	@echo "  DOCKER_OPTS : default docker build options (default : $(DOCKER_OPTS))"
 	@echo "  TEST_ARGS : Arguments to pass to go test call"
 
-api:
+api: $(PROTO_TOOLS)
 	if [ ! -d $(PROTO_BUILD_DIR) ]; then mkdir -p $(PROTO_BUILD_DIR); else  find $(PROTO_BUILD_DIR) -type f -delete &&  mkdir -p $(PROTO_BUILD_DIR); fi
-	find ../api/user_management/*.proto -maxdepth 1 -type f -exec protoc {} --proto_path=../api --go_out=$(PROTO_BUILD_DIR) --go-grpc_out=$(PROTO_BUILD_DIR) \;
+	find $(API_PATH)/user_management/*.proto -maxdepth 1 -type f -exec $(PROTOC_CMD) {} --proto_path=$(API_PATH) --go_out=$(PROTO_BUILD_DIR) --go-grpc_out=$(PROTO_BUILD_DIR) \;
 	find "./pkg/api" -delete
 	mv $(PROTO_BUILD_DIR)/github.com/influenzanet/user-management-service/pkg/api pkg/api
 	find $(PROTO_BUILD_DIR) -delete
+
+# Drift check: fails when pkg/api is not what the pinned toolchain generates from the pinned
+# contracts (a hand edit, a proto change not regenerated, another toolchain, a stale file).
+api-check: api
+	git diff --exit-code -- pkg/api
+	@untracked="$$(git ls-files --others --exclude-standard -- pkg/api)"; \
+	test -z "$$untracked" || { echo "generated but not committed:"; echo "$$untracked"; exit 1; }
 
 key-generator:
 	go build -o $(TARGET_DIR) ./tools/key-generator

@@ -22,3 +22,7 @@ tools/create-admin-user/create-admin-user
 tools/weekday-assign/weekday-assign
 __debug_bin*
 /build/user-management-service
+
+# Pinned protobuf toolchain and scratch directory of the api target (proto-toolchain.mk)
+/.proto-tools/
+/intermediate/
