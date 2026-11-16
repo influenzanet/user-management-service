@@ -6,13 +6,14 @@ It provides operations to manage User accounts and profiles for an InfluenzaNet 
 
 
 ## Generated API
-The Go code under `pkg/api` is generated from the proto contracts of the `api` repository:
+The Go code under `pkg/api` is generated from the proto contracts in the `api` submodule:
 ```
+git submodule update --init
 make api
 ```
-The target expects that repository as a sibling of this one, at `../api`. Generate with protoc
-v4.25.3, protoc-gen-go v1.34.1 and protoc-gen-go-grpc v1.3.0, the versions recorded in the header
-of every file under `pkg/api`, so that the diff carries the contract change and nothing else.
+The protoc and plugin versions are pinned in `proto-toolchain.mk`; `make api` downloads them to
+`.proto-tools/` the first time. `make api-check` fails if the committed code differs from what
+`make api` generates; CI runs it.
 
 ## Test
 Before running the test first you have to generate the client mock services:
@@ -58,11 +59,10 @@ Create a database index on user collection for:
 - account.accountID
 - account.accountConfirmedAt + timestamps.createdAt
 
-The `phoneVerificationSends` collection of each instance database holds the per-number budget of
-WhatsApp verification messages, keyed by a hash of the destination number. Its records expire on
-their own through a TTL index on the `updatedAt` field, created at startup. Changing the retention
-is not enough on its own: MongoDB refuses to recreate an existing TTL index with a different
-expiry, so an existing index must be dropped (or amended with `collMod`) by hand first.
+The `phoneVerificationSends` collection limits how many WhatsApp verification codes are sent to
+one number. A TTL index on `updatedAt`, created at startup, expires its records. To change the
+retention, drop that index (or change it with `collMod`) first: MongoDB does not recreate an
+existing TTL index with a different expiry.
 
 ## Tools
 
@@ -91,6 +91,8 @@ Once this is configured, navigate to the Actions tab on Github > Docker Image CI
 
 By default the version to be tagged is picked from the latest release version, but it can also be overridden by a user specified tag name.
 
-## Enabling WhatsApp
-
-Whether WhatsApp is on for an instance is decided in one place, `config.WhatsAppSettings` (`internal/config/whatsapp_settings.go`), from the `WHATSAPP_*` environment variables. How to enable or disable it, every variable with its default and the start-up log lines are documented in `docs/whatsapp-activation.md` of the orbyta-cluster-management repository.
+## WhatsApp
+Participants can verify a phone number and receive messages over WhatsApp. It is off unless
+enabled through the `WHATSAPP_*` environment variables, read in
+`internal/config/whatsapp_settings.go`; the messaging-service asks this service whether it is on
+for an instance.
