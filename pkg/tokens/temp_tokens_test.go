@@ -78,5 +78,3 @@ func TestReachedExpirationTime(t *testing.T) {
 		}
 	})
 }
-
-

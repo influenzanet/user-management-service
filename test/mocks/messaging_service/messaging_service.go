@@ -103,6 +103,7 @@ func (m *MockMessagingServiceApiClient) SendInstantEmail(ctx context.Context, in
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
+
 // QueueEmailTemplateForSending mocks base method
 func (m *MockMessagingServiceApiClient) QueueEmailTemplateForSending(ctx context.Context, in *messaging_service.SendEmailReq, opts ...grpc.CallOption) (*messaging_service.ServiceStatus, error) {
 	m.ctrl.T.Helper()
@@ -122,7 +123,6 @@ func (mr *MockMessagingServiceApiClientMockRecorder) SendInstantEmail(ctx, in in
 	varargs := append([]interface{}{ctx, in}, opts...)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SendInstantEmail", reflect.TypeOf((*MockMessagingServiceApiClient)(nil).SendInstantEmail), varargs...)
 }
-
 
 func (mr *MockMessagingServiceApiClientMockRecorder) QueueEmailTemplateForSending(ctx, in interface{}, opts ...interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()

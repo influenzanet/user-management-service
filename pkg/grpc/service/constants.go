@@ -2,7 +2,7 @@ package service
 
 const (
 	contactVerificationMessageCooldown = 1 * 60 // Minimum delay between 2 verification code sending for a new contact, seconds
-	loginVerificationCodeCooldown      = 20 // Minimum delay between 2 verification code sending for a new login, in seconds
+	loginVerificationCodeCooldown      = 20     // Minimum delay between 2 verification code sending for a new login, in seconds
 
 	// Window time period to count event and limit rate
 	signupRateLimitWindow            = 5 * 60 // to count the new signup, seconds
