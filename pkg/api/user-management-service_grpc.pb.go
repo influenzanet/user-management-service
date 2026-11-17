@@ -51,12 +51,12 @@ const (
 	UserManagementApi_RemoveProfile_FullMethodName             = "/influenzanet.user_management_api.UserManagementApi/RemoveProfile"
 	UserManagementApi_UseUnsubscribeToken_FullMethodName       = "/influenzanet.user_management_api.UserManagementApi/UseUnsubscribeToken"
 	UserManagementApi_UpdateContactPreferences_FullMethodName  = "/influenzanet.user_management_api.UserManagementApi/UpdateContactPreferences"
-	UserManagementApi_GetUserContactPreferences_FullMethodName = "/influenzanet.user_management_api.UserManagementApi/GetUserContactPreferences"
 	UserManagementApi_AddEmail_FullMethodName                  = "/influenzanet.user_management_api.UserManagementApi/AddEmail"
 	UserManagementApi_RemoveEmail_FullMethodName               = "/influenzanet.user_management_api.UserManagementApi/RemoveEmail"
 	UserManagementApi_AddPhoneNumber_FullMethodName            = "/influenzanet.user_management_api.UserManagementApi/AddPhoneNumber"
 	UserManagementApi_EditPhoneNumber_FullMethodName           = "/influenzanet.user_management_api.UserManagementApi/EditPhoneNumber"
 	UserManagementApi_VerifyWhatsAppCode_FullMethodName        = "/influenzanet.user_management_api.UserManagementApi/VerifyWhatsAppCode"
+	UserManagementApi_RemoveWhatsAppChannel_FullMethodName     = "/influenzanet.user_management_api.UserManagementApi/RemoveWhatsAppChannel"
 	UserManagementApi_CreateUser_FullMethodName                = "/influenzanet.user_management_api.UserManagementApi/CreateUser"
 	UserManagementApi_AddRoleForUser_FullMethodName            = "/influenzanet.user_management_api.UserManagementApi/AddRoleForUser"
 	UserManagementApi_RemoveRoleForUser_FullMethodName         = "/influenzanet.user_management_api.UserManagementApi/RemoveRoleForUser"
@@ -106,14 +106,14 @@ type UserManagementApiClient interface {
 	// Contacts:
 	UseUnsubscribeToken(ctx context.Context, in *TempToken, opts ...grpc.CallOption) (*ServiceStatus, error)
 	UpdateContactPreferences(ctx context.Context, in *ContactPreferencesMsg, opts ...grpc.CallOption) (*User, error)
-	// Deprecated: Do not use.
-	// Deprecated: no callers. Use StreamUsers or GetUser and read ContactInfos + NotificationChannels.
-	GetUserContactPreferences(ctx context.Context, in *UserReference, opts ...grpc.CallOption) (*ContactPreferencesResponse, error)
 	AddEmail(ctx context.Context, in *ContactInfoMsg, opts ...grpc.CallOption) (*User, error)
 	RemoveEmail(ctx context.Context, in *ContactInfoMsg, opts ...grpc.CallOption) (*User, error)
 	AddPhoneNumber(ctx context.Context, in *PhoneMsg, opts ...grpc.CallOption) (*User, error)
 	EditPhoneNumber(ctx context.Context, in *PhoneMsg, opts ...grpc.CallOption) (*User, error)
 	VerifyWhatsAppCode(ctx context.Context, in *VerifyWhatsAppCodeReq, opts ...grpc.CallOption) (*User, error)
+	// Service to service: removes WhatsApp from the participant's notification channels after
+	// an opt-out that arrived through WhatsApp itself. It never adds e-mail.
+	RemoveWhatsAppChannel(ctx context.Context, in *RemoveWhatsAppChannelReq, opts ...grpc.CallOption) (*RemoveWhatsAppChannelResp, error)
 	// Management Methods:
 	CreateUser(ctx context.Context, in *CreateUserReq, opts ...grpc.CallOption) (*User, error)
 	AddRoleForUser(ctx context.Context, in *RoleMsg, opts ...grpc.CallOption) (*User, error)
@@ -403,16 +403,6 @@ func (c *userManagementApiClient) UpdateContactPreferences(ctx context.Context, 
 	return out, nil
 }
 
-// Deprecated: Do not use.
-func (c *userManagementApiClient) GetUserContactPreferences(ctx context.Context, in *UserReference, opts ...grpc.CallOption) (*ContactPreferencesResponse, error) {
-	out := new(ContactPreferencesResponse)
-	err := c.cc.Invoke(ctx, UserManagementApi_GetUserContactPreferences_FullMethodName, in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *userManagementApiClient) AddEmail(ctx context.Context, in *ContactInfoMsg, opts ...grpc.CallOption) (*User, error) {
 	out := new(User)
 	err := c.cc.Invoke(ctx, UserManagementApi_AddEmail_FullMethodName, in, out, opts...)
@@ -452,6 +442,15 @@ func (c *userManagementApiClient) EditPhoneNumber(ctx context.Context, in *Phone
 func (c *userManagementApiClient) VerifyWhatsAppCode(ctx context.Context, in *VerifyWhatsAppCodeReq, opts ...grpc.CallOption) (*User, error) {
 	out := new(User)
 	err := c.cc.Invoke(ctx, UserManagementApi_VerifyWhatsAppCode_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *userManagementApiClient) RemoveWhatsAppChannel(ctx context.Context, in *RemoveWhatsAppChannelReq, opts ...grpc.CallOption) (*RemoveWhatsAppChannelResp, error) {
+	out := new(RemoveWhatsAppChannelResp)
+	err := c.cc.Invoke(ctx, UserManagementApi_RemoveWhatsAppChannel_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -576,14 +575,14 @@ type UserManagementApiServer interface {
 	// Contacts:
 	UseUnsubscribeToken(context.Context, *TempToken) (*ServiceStatus, error)
 	UpdateContactPreferences(context.Context, *ContactPreferencesMsg) (*User, error)
-	// Deprecated: Do not use.
-	// Deprecated: no callers. Use StreamUsers or GetUser and read ContactInfos + NotificationChannels.
-	GetUserContactPreferences(context.Context, *UserReference) (*ContactPreferencesResponse, error)
 	AddEmail(context.Context, *ContactInfoMsg) (*User, error)
 	RemoveEmail(context.Context, *ContactInfoMsg) (*User, error)
 	AddPhoneNumber(context.Context, *PhoneMsg) (*User, error)
 	EditPhoneNumber(context.Context, *PhoneMsg) (*User, error)
 	VerifyWhatsAppCode(context.Context, *VerifyWhatsAppCodeReq) (*User, error)
+	// Service to service: removes WhatsApp from the participant's notification channels after
+	// an opt-out that arrived through WhatsApp itself. It never adds e-mail.
+	RemoveWhatsAppChannel(context.Context, *RemoveWhatsAppChannelReq) (*RemoveWhatsAppChannelResp, error)
 	// Management Methods:
 	CreateUser(context.Context, *CreateUserReq) (*User, error)
 	AddRoleForUser(context.Context, *RoleMsg) (*User, error)
@@ -690,9 +689,6 @@ func (UnimplementedUserManagementApiServer) UseUnsubscribeToken(context.Context,
 func (UnimplementedUserManagementApiServer) UpdateContactPreferences(context.Context, *ContactPreferencesMsg) (*User, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateContactPreferences not implemented")
 }
-func (UnimplementedUserManagementApiServer) GetUserContactPreferences(context.Context, *UserReference) (*ContactPreferencesResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetUserContactPreferences not implemented")
-}
 func (UnimplementedUserManagementApiServer) AddEmail(context.Context, *ContactInfoMsg) (*User, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AddEmail not implemented")
 }
@@ -707,6 +703,9 @@ func (UnimplementedUserManagementApiServer) EditPhoneNumber(context.Context, *Ph
 }
 func (UnimplementedUserManagementApiServer) VerifyWhatsAppCode(context.Context, *VerifyWhatsAppCodeReq) (*User, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method VerifyWhatsAppCode not implemented")
+}
+func (UnimplementedUserManagementApiServer) RemoveWhatsAppChannel(context.Context, *RemoveWhatsAppChannelReq) (*RemoveWhatsAppChannelResp, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RemoveWhatsAppChannel not implemented")
 }
 func (UnimplementedUserManagementApiServer) CreateUser(context.Context, *CreateUserReq) (*User, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateUser not implemented")
@@ -1279,24 +1278,6 @@ func _UserManagementApi_UpdateContactPreferences_Handler(srv interface{}, ctx co
 	return interceptor(ctx, in, info, handler)
 }
 
-func _UserManagementApi_GetUserContactPreferences_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(UserReference)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(UserManagementApiServer).GetUserContactPreferences(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: UserManagementApi_GetUserContactPreferences_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(UserManagementApiServer).GetUserContactPreferences(ctx, req.(*UserReference))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _UserManagementApi_AddEmail_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ContactInfoMsg)
 	if err := dec(in); err != nil {
@@ -1383,6 +1364,24 @@ func _UserManagementApi_VerifyWhatsAppCode_Handler(srv interface{}, ctx context.
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(UserManagementApiServer).VerifyWhatsAppCode(ctx, req.(*VerifyWhatsAppCodeReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _UserManagementApi_RemoveWhatsAppChannel_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RemoveWhatsAppChannelReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(UserManagementApiServer).RemoveWhatsAppChannel(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: UserManagementApi_RemoveWhatsAppChannel_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(UserManagementApiServer).RemoveWhatsAppChannel(ctx, req.(*RemoveWhatsAppChannelReq))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1626,10 +1625,6 @@ var UserManagementApi_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _UserManagementApi_UpdateContactPreferences_Handler,
 		},
 		{
-			MethodName: "GetUserContactPreferences",
-			Handler:    _UserManagementApi_GetUserContactPreferences_Handler,
-		},
-		{
 			MethodName: "AddEmail",
 			Handler:    _UserManagementApi_AddEmail_Handler,
 		},
@@ -1648,6 +1643,10 @@ var UserManagementApi_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "VerifyWhatsAppCode",
 			Handler:    _UserManagementApi_VerifyWhatsAppCode_Handler,
+		},
+		{
+			MethodName: "RemoveWhatsAppChannel",
+			Handler:    _UserManagementApi_RemoveWhatsAppChannel_Handler,
 		},
 		{
 			MethodName: "CreateUser",

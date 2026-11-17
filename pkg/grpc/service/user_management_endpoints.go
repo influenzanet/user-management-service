@@ -245,33 +245,3 @@ func (s *userManagementServer) StreamUsers(req *api.StreamUsersMsg, stream api.U
 	}
 	return nil
 }
-
-func (s *userManagementServer) GetUserContactPreferences(ctx context.Context, req *api.UserReference) (*api.ContactPreferencesResponse, error) {
-	if req == nil || utils.IsTokenEmpty(req.Token) {
-		return nil, status.Error(codes.InvalidArgument, "missing argument")
-	}
-
-	// 1. Find user by token ID
-	user, err := s.userDBservice.GetUserByID(req.Token.InstanceId, req.Token.Id)
-	if err != nil {
-		return nil, status.Error(codes.Internal, "user not found")
-	}
-
-	// 2. Extract contact information (email and phone)
-	var email, phone string
-	for _, ci := range user.ContactInfos {
-		if ci.Type == "email" {
-			email = ci.Email
-		} else if ci.Type == "phone" {
-			phone = ci.Phone
-		}
-	}
-
-	// 3. Build and return response
-	return &api.ContactPreferencesResponse{
-		UserId:            user.ID.Hex(),
-		Email:             email,
-		PhoneNumber:       phone,
-		PreferredChannels: user.ContactPreferences.PreferredChannels,
-	}, nil
-}
