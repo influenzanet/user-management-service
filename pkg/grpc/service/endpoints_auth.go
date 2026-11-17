@@ -67,7 +67,7 @@ func (s *userManagementServer) SendVerificationCode(ctx context.Context, req *ap
 	match, err := pwhash.ComparePasswordWithHash(user.Account.Password, req.Password)
 	if err != nil || !match {
 		logger.Warning.Printf("SECURITY WARNING: login step 1 attempt with wrong password for %s", user.ID.Hex())
-		if err2 := s.userDBservice.SaveFailedLoginAttempt(req.InstanceId, user.ID.Hex()); err != nil {
+		if err2 := s.userDBservice.SaveFailedLoginAttempt(req.InstanceId, user.ID.Hex()); err2 != nil {
 			logger.Error.Printf("DB ERROR: unexpected error when updating user: %s ", err2.Error())
 		}
 		s.SaveLogEvent(req.InstanceId, user.ID.Hex(), loggingAPI.LogEventType_SECURITY, constants.LOG_EVENT_AUTH_WRONG_PASSWORD, "send verification code endpoint")
@@ -307,12 +307,12 @@ func (s *userManagementServer) LoginWithEmail(ctx context.Context, req *api.Logi
 	user.Timestamps.LastLogin = time.Now().Unix()
 	user.Timestamps.MarkedForDeletion = 0
 	user.Account.VerificationCode = models.VerificationCode{}
-	user.Account.FailedLoginAttempts = utils.RemoveAttemptsOlderThan(user.Account.FailedLoginAttempts, 3600)
-	user.Account.PasswordResetTriggers = utils.RemoveAttemptsOlderThan(user.Account.PasswordResetTriggers, 7200)
 
+	// The rate-limit counters are left alone: writing back the copy read at the start would
+	// erase the failed attempts other requests recorded in the meantime. Each new attempt
+	// prunes the old ones.
 	user, err = s.userDBservice.UpdateUser(req.InstanceId, user,
-		"timestamps.lastLogin", "timestamps.markedForDeletion", "account.verificationCode",
-		"account.failedLoginAttempts", "account.passwordResetTriggers")
+		"timestamps.lastLogin", "timestamps.markedForDeletion", "account.verificationCode")
 	if err != nil {
 		logger.Error.Printf("LoginWithEmail: unexpected error when saving user -> %v", err)
 		return nil, status.Error(codes.Internal, "user couldn't be updated")
@@ -448,12 +448,10 @@ func (s *userManagementServer) LoginWithExternalIDP(ctx context.Context, req *ap
 	user.Timestamps.LastLogin = time.Now().Unix()
 	user.Timestamps.MarkedForDeletion = 0
 	user.Account.VerificationCode = models.VerificationCode{}
-	user.Account.FailedLoginAttempts = utils.RemoveAttemptsOlderThan(user.Account.FailedLoginAttempts, 3600)
-	user.Account.PasswordResetTriggers = utils.RemoveAttemptsOlderThan(user.Account.PasswordResetTriggers, 7200)
 
+	// The rate-limit counters are left alone, as in LoginWithEmail.
 	user, err = s.userDBservice.UpdateUser(req.InstanceId, user,
-		"timestamps.lastLogin", "timestamps.markedForDeletion", "account.verificationCode",
-		"account.failedLoginAttempts", "account.passwordResetTriggers", "roles")
+		"timestamps.lastLogin", "timestamps.markedForDeletion", "account.verificationCode", "roles")
 	if err != nil {
 		logger.Error.Printf("[ERROR] LoginWithExternalIDP: unexpected error when saving user -> %v", err)
 		return nil, status.Error(codes.Internal, "user couldn't be updated")

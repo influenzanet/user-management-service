@@ -15,9 +15,29 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
+// Retention of the login and password-reset rate-limit counters, in seconds. Each write to a
+// counter drops the timestamps older than its retention, so it must be at least the window the
+// endpoints count over.
+const (
+	FailedLoginAttemptRetention   int64 = 60 * 60
+	PasswordResetTriggerRetention int64 = 2 * 60 * 60
+)
+
 func (dbService *UserDBService) AddUser(instanceID string, user models.User) (id string, err error) {
 	ctx, cancel := dbService.getContext()
 	defer cancel()
+
+	// A nil slice is stored as null. Every account starts with empty rate-limit counters,
+	// whichever path creates it, so that queries on them never meet a null.
+	if user.Account.FailedLoginAttempts == nil {
+		user.Account.FailedLoginAttempts = []int64{}
+	}
+	if user.Account.PasswordResetTriggers == nil {
+		user.Account.PasswordResetTriggers = []int64{}
+	}
+	if user.Account.PhoneVerificationAttempts == nil {
+		user.Account.PhoneVerificationAttempts = []int64{}
+	}
 
 	filter := bson.M{"account.accountID": user.Account.AccountID}
 	upsert := true
@@ -51,15 +71,14 @@ func (dbService *UserDBService) updateUser(instanceID string, filter bson.M, upd
 }
 
 // UpdateUser saves only explicitly owned fields, never a complete stale user snapshot.
-// Phone state and channel preferences belong to their dedicated atomic writers.
+// Phone state, channel preferences and the rate-limit counters belong to their dedicated
+// atomic writers.
 // The contactInfos mask is email-only: current phone entries are retained in place.
 func (dbService *UserDBService) UpdateUser(instanceID string, user models.User, field string, otherFields ...string) (models.User, error) {
 	allowed := bson.M{
 		"account.accountID":                                user.Account.AccountID,
 		"account.accountConfirmedAt":                       user.Account.AccountConfirmedAt,
 		"account.verificationCode":                         user.Account.VerificationCode,
-		"account.failedLoginAttempts":                      user.Account.FailedLoginAttempts,
-		"account.passwordResetTriggers":                    user.Account.PasswordResetTriggers,
 		"timestamps.lastLogin":                             user.Timestamps.LastLogin,
 		"timestamps.lastTokenRefresh":                      user.Timestamps.LastTokenRefresh,
 		"timestamps.markedForDeletion":                     user.Timestamps.MarkedForDeletion,
@@ -211,32 +230,43 @@ func (dbService *UserDBService) UpdateUserPassword(instanceID string, userID str
 	return nil
 }
 
+// SaveFailedLoginAttempt records a failed login on the stored counter. See appendRateLimitEvent.
 func (dbService *UserDBService) SaveFailedLoginAttempt(instanceID string, userID string) error {
-	ctx, cancel := dbService.getContext()
-	defer cancel()
-
-	_id, _ := primitive.ObjectIDFromHex(userID)
-	filter := bson.M{"_id": _id}
-	update := bson.M{"$push": bson.M{"account.failedLoginAttempts": time.Now().Unix()}}
-	_, err := dbService.collectionRefUsers(instanceID).UpdateOne(ctx, filter, update)
-	if err != nil {
-		return err
-	}
-	return nil
+	return dbService.appendRateLimitEvent(instanceID, userID, "account.failedLoginAttempts", FailedLoginAttemptRetention)
 }
 
+// SavePasswordResetTrigger records a password-reset request on the stored counter. See
+// appendRateLimitEvent.
 func (dbService *UserDBService) SavePasswordResetTrigger(instanceID string, userID string) error {
+	return dbService.appendRateLimitEvent(instanceID, userID, "account.passwordResetTriggers", PasswordResetTriggerRetention)
+}
+
+// appendRateLimitEvent appends the current time to a counter array and drops the entries older
+// than the retention, in one update on the stored document: attempts recorded by concurrent
+// requests are all kept, and the array holds at most the retention's worth. A null or missing
+// array (accounts created before the counters were initialised) is treated as empty, so the
+// limiter never fails open on it.
+func (dbService *UserDBService) appendRateLimitEvent(instanceID, userID, field string, retentionSeconds int64) error {
 	ctx, cancel := dbService.getContext()
 	defer cancel()
 
-	_id, _ := primitive.ObjectIDFromHex(userID)
-	filter := bson.M{"_id": _id}
-	update := bson.M{"$push": bson.M{"account.passwordResetTriggers": time.Now().Unix()}}
-	_, err := dbService.collectionRefUsers(instanceID).UpdateOne(ctx, filter, update)
+	_id, err := primitive.ObjectIDFromHex(userID)
 	if err != nil {
 		return err
 	}
-	return nil
+	now := time.Now().Unix()
+	update := mongo.Pipeline{bson.D{{Key: "$set", Value: bson.M{
+		field: bson.M{"$concatArrays": bson.A{
+			bson.M{"$filter": bson.M{
+				"input": bson.M{"$ifNull": bson.A{"$" + field, bson.A{}}},
+				"as":    "ts",
+				"cond":  bson.M{"$gte": bson.A{"$$ts", now - retentionSeconds}},
+			}},
+			bson.A{now},
+		}},
+	}}}}
+	_, err = dbService.collectionRefUsers(instanceID).UpdateOne(ctx, bson.M{"_id": _id}, update)
+	return err
 }
 
 // ReservePhoneVerificationSlot atomically consumes one send slot of the phone verification

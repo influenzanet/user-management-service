@@ -12,14 +12,3 @@ func HasMoreAttemptsRecently(attempts []int64, moreThan int, intervalSeconds int
 	}
 	return counter > moreThan
 }
-
-func RemoveAttemptsOlderThan(attempts []int64, olderThanSeconds int64) []int64 {
-	updated := []int64{}
-	threshold := time.Now().Unix() - olderThanSeconds
-	for _, v := range attempts {
-		if v >= threshold {
-			updated = append(updated, v)
-		}
-	}
-	return updated
-}

@@ -579,7 +579,7 @@ func TestLogin(t *testing.T) {
 		}
 	})
 
-	_, err = testUserDBService.UpdateUser(testInstanceID, testUser2, "account.verificationCode", "account.failedLoginAttempts")
+	_, err = testUserDBService.UpdateUser(testInstanceID, testUser2, "account.verificationCode")
 	if err != nil {
 		t.Errorf("error updating user 2 for testing login")
 		return

@@ -16,7 +16,7 @@ import (
 
 var staleSnapshotUserFields = []string{
 	"profiles", "roles", "account.accountID", "account.accountConfirmedAt", "account.verificationCode",
-	"account.failedLoginAttempts", "account.passwordResetTriggers", "timestamps.lastLogin",
+	"timestamps.lastLogin",
 	"timestamps.lastTokenRefresh", "timestamps.markedForDeletion", "contactInfos",
 	"contactPreferences.sendNewsletterTo", "contactPreferences.subscribedToNewsletter",
 	"contactPreferences.subscribedToWeekly", "contactPreferences.receiveWeeklyMessageDayOfWeek",
