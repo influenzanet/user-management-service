@@ -50,8 +50,6 @@ jobs:
       - name: Generated API drift check
         run: make api-check
 
-      # No -race here: TestSignupWithEmail trips a data race that comes from
-      # upstream code, so the detector would fail every run.
       - name: Test
         env:
           USER_DB_CONNECTION_STR: localhost:27017
@@ -73,7 +71,7 @@ jobs:
           ARGON2_PARALLELISM: 1
         # -v so that the next step can see skipped tests; bash for pipefail.
         shell: bash
-        run: go test -v ./... 2>&1 | tee "$RUNNER_TEMP/go-test.log"
+        run: go test -race -v ./... 2>&1 | tee "$RUNNER_TEMP/go-test.log"
 
       # A skipped test is a test CI did not run. The database tests fail
       # rather than skip under CI, and this catches any other skip.

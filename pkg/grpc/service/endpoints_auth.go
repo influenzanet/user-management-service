@@ -614,8 +614,9 @@ func (s *userManagementServer) SignupWithEmail(ctx context.Context, req *api.Sig
 	}
 
 	// ---> Trigger message sending
+	// The goroutine keeps its own error: the request goes on writing err while it runs.
 	go func(instanceID string, accountID string, tempToken string, preferredLang string) {
-		_, err = s.clients.MessagingService.SendInstantEmail(context.TODO(), &messageAPI.SendEmailReq{
+		_, err := s.clients.MessagingService.SendInstantEmail(context.TODO(), &messageAPI.SendEmailReq{
 			InstanceId:  instanceID,
 			To:          []string{accountID},
 			MessageType: constants.EMAIL_TYPE_REGISTRATION,
