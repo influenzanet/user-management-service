@@ -17,6 +17,9 @@ const (
 	testDestinationWindow   = int64(3600)
 )
 
+// testDestinationLimits is a single hourly limit; the tests of the daily cap combine two.
+var testDestinationLimits = []SendLimit{{MaxSends: testDestinationMaxSends, WindowSeconds: testDestinationWindow}}
+
 // storedSendRecord reads the raw document a destination's budget is kept in, so a test can assert
 // on what is actually on disk rather than on what the reservation returned.
 func storedSendRecord(t *testing.T, phone string) bson.M {
@@ -58,7 +61,7 @@ func TestDbReservePhoneDestinationSendSlot(t *testing.T) {
 
 		for i := 0; i < testDestinationMaxSends; i++ {
 			reserved, err := testDBService.ReservePhoneDestinationSendSlot(
-				testInstanceID, phone, testDestinationMaxSends, testDestinationWindow)
+				testInstanceID, phone, testDestinationLimits)
 			if err != nil {
 				t.Fatalf("unexpected error: %s", err.Error())
 			}
@@ -68,7 +71,7 @@ func TestDbReservePhoneDestinationSendSlot(t *testing.T) {
 		}
 
 		reserved, err := testDBService.ReservePhoneDestinationSendSlot(
-			testInstanceID, phone, testDestinationMaxSends, testDestinationWindow)
+			testInstanceID, phone, testDestinationLimits)
 		if err != nil {
 			t.Fatalf("unexpected error: %s", err.Error())
 		}
@@ -90,7 +93,7 @@ func TestDbReservePhoneDestinationSendSlot(t *testing.T) {
 		seedSendRecord(t, phone, seeded)
 
 		reserved, err := testDBService.ReservePhoneDestinationSendSlot(
-			testInstanceID, phone, testDestinationMaxSends, testDestinationWindow)
+			testInstanceID, phone, testDestinationLimits)
 		if err != nil {
 			t.Fatalf("unexpected error: %s", err.Error())
 		}
@@ -121,7 +124,7 @@ func TestDbReservePhoneDestinationSendSlot(t *testing.T) {
 		const phone = "+391230020003"
 
 		if _, err := testDBService.ReservePhoneDestinationSendSlot(
-			testInstanceID, phone, testDestinationMaxSends, testDestinationWindow); err != nil {
+			testInstanceID, phone, testDestinationLimits); err != nil {
 			t.Fatalf("unexpected error: %s", err.Error())
 		}
 
@@ -155,7 +158,7 @@ func TestDbReservePhoneDestinationSendSlot(t *testing.T) {
 
 		for i := 0; i < testDestinationMaxSends; i++ {
 			reserved, err := testDBService.ReservePhoneDestinationSendSlot(
-				testInstanceID, plain, testDestinationMaxSends, testDestinationWindow)
+				testInstanceID, plain, testDestinationLimits)
 			if err != nil {
 				t.Fatalf("unexpected error: %s", err.Error())
 			}
@@ -165,7 +168,7 @@ func TestDbReservePhoneDestinationSendSlot(t *testing.T) {
 		}
 
 		reserved, err := testDBService.ReservePhoneDestinationSendSlot(
-			testInstanceID, spelled, testDestinationMaxSends, testDestinationWindow)
+			testInstanceID, spelled, testDestinationLimits)
 		if err != nil {
 			t.Fatalf("unexpected error: %s", err.Error())
 		}
@@ -182,7 +185,7 @@ func TestDbReservePhoneDestinationSendSlot(t *testing.T) {
 
 		for i := 0; i < testDestinationMaxSends; i++ {
 			reserved, err := testDBService.ReservePhoneDestinationSendSlot(
-				testInstanceID, plain, testDestinationMaxSends, testDestinationWindow)
+				testInstanceID, plain, testDestinationLimits)
 			if err != nil {
 				t.Fatalf("unexpected error: %s", err.Error())
 			}
@@ -192,7 +195,7 @@ func TestDbReservePhoneDestinationSendSlot(t *testing.T) {
 		}
 
 		reserved, err := testDBService.ReservePhoneDestinationSendSlot(
-			testInstanceID, padded, testDestinationMaxSends, testDestinationWindow)
+			testInstanceID, padded, testDestinationLimits)
 		if err != nil {
 			t.Fatalf("unexpected error: %s", err.Error())
 		}
@@ -209,13 +212,13 @@ func TestDbReservePhoneDestinationSendSlot(t *testing.T) {
 
 		for i := 0; i < testDestinationMaxSends; i++ {
 			if _, err := testDBService.ReservePhoneDestinationSendSlot(
-				testInstanceID, exhausted, testDestinationMaxSends, testDestinationWindow); err != nil {
+				testInstanceID, exhausted, testDestinationLimits); err != nil {
 				t.Fatalf("unexpected error: %s", err.Error())
 			}
 		}
 
 		reserved, err := testDBService.ReservePhoneDestinationSendSlot(
-			testInstanceID, other, testDestinationMaxSends, testDestinationWindow)
+			testInstanceID, other, testDestinationLimits)
 		if err != nil {
 			t.Fatalf("unexpected error: %s", err.Error())
 		}
@@ -254,8 +257,8 @@ func TestDbPhoneVerificationSendsTTLIndex(t *testing.T) {
 		if !found {
 			t.Fatalf("the index on updatedAt is not a TTL index: %v", spec)
 		}
-		if got, want := expire, int32(PhoneVerificationSendRetention); got != want {
-			t.Errorf("TTL is %v, expected %v seconds so a record outlives the rate limit window and no longer", got, want)
+		if got, want := expire, int32(86400); got != want {
+			t.Errorf("TTL is %v, expected %v seconds so a record outlives the daily limit and no longer", got, want)
 		}
 		return
 	}

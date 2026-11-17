@@ -34,7 +34,7 @@ func TestDbReservePhoneDestinationSendSlotUnderConcurrency(t *testing.T) {
 			defer wg.Done()
 			<-start
 			results[slot], errs[slot] = testDBService.ReservePhoneDestinationSendSlot(
-				testInstanceID, phone, testDestinationMaxSends, testDestinationWindow)
+				testInstanceID, phone, testDestinationLimits)
 		}(i)
 	}
 	close(start)

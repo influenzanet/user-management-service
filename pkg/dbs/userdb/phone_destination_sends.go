@@ -1,6 +1,7 @@
 package userdb
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -21,11 +22,22 @@ import (
 const PhoneVerificationSendCollection = "phoneVerificationSends"
 
 // PhoneVerificationSendRetention is how long a destination's record is kept, in seconds, and is
-// the TTL of the index below. A record stops meaning anything once every timestamp in it has left
-// the rate limit window, and the window is never longer than this, so nothing that still counts is
-// ever swept away. Keeping it exactly this long also keeps the collection bounded by the numbers
-// contacted in the last hour rather than by every number ever contacted.
-const PhoneVerificationSendRetention = 60 * 60
+// the TTL of the index below. It is also the longest window a reservation may count over:
+// ReservePhoneDestinationSendSlot refuses a longer one, so a record is never swept away while it
+// still holds a send that counts. A day covers the daily cap, the longest of the limits.
+const PhoneVerificationSendRetention = 24 * 60 * 60
+
+// SendLimit is one ceiling on the verification messages a destination number may receive: at most
+// MaxSends in the last WindowSeconds.
+type SendLimit struct {
+	MaxSends      int
+	WindowSeconds int64
+}
+
+// ErrInvalidSendLimits reports a reservation asked with no limit, a non-positive window, or a
+// window longer than the records are kept. The send must be refused: a budget that cannot be
+// counted over its whole window has not been checked.
+var ErrInvalidSendLimits = errors.New("invalid send limits for the destination number")
 
 // reservationRetries bounds the duplicate key retry below. One retry is enough in principle: the
 // second attempt runs against a document that certainly exists. The second is there so a single
@@ -79,43 +91,68 @@ func phoneVerificationSendKey(phone string) string {
 }
 
 // ReservePhoneDestinationSendSlot atomically consumes one send slot of the budget a phone number
-// has as a destination, and reports whether there was one.
+// has as a destination, and reports whether there was one. The slot is granted only when every
+// limit has room: with an hourly and a daily limit, a number that took 10 codes this hour or 20
+// today gets no more.
 //
 // It is shaped like ReservePhoneVerificationSlot, and for the same reason: the check and the
 // increment are a single find-and-modify, so concurrent requests, including ones on other
-// replicas, cannot both pass the check on the same free slot. The pipeline appends the new send
-// to the in-window subset of the recorded ones, which prunes the expired entries on every
-// reservation and bounds the array by a window's worth of sends. Whether the slot was granted is
-// read from the document as it was before the update: the same window start is used on both sides,
-// so the count the pipeline decided on and the count read here are the same count.
+// replicas, cannot both pass the check on the same free slot. All limits are checked in that one
+// update, against one array: a separate reservation per limit would not work, because each would
+// prune the array to its own window and erase what the longer one counts. The array keeps the
+// sends of the longest window, which prunes the older entries on every reservation and bounds the
+// array by that window's limit. Whether the slot was granted is read from the document as it was
+// before the update: the same window starts are used on both sides, so the counts the pipeline
+// decided on and the counts read here are the same counts.
 //
 // The budget is keyed by destination rather than by account because accounts are free to create.
 // Without this, rotating accounts buys an unbounded number of messages to one victim's number, at
 // the platform's expense. Callers reserve here only once a message is really about to be sent:
-// charging a refusal that delivers nothing, such as the uniqueness probe, would let anyone spend
-// a stranger's window and lock them out of their own verification.
+// charging a refusal that delivers nothing would let anyone spend a stranger's window and lock
+// them out of their own verification.
 //
 // A refusal is reported to the caller with the same text as the per-account one, so that the
 // answer does not say whether the number belongs to somebody else.
 //
 // An error means the budget could not be established, and every caller must refuse the send on
 // it: this check is only worth having if it fails closed.
-func (dbService *UserDBService) ReservePhoneDestinationSendSlot(instanceID string, phone string, maxSends int, windowSeconds int64) (bool, error) {
-	now := time.Now().Unix()
-	windowStart := now - windowSeconds
+func (dbService *UserDBService) ReservePhoneDestinationSendSlot(instanceID string, phone string, limits []SendLimit) (bool, error) {
+	if len(limits) == 0 {
+		return false, ErrInvalidSendLimits
+	}
+	longestWindow := int64(0)
+	for _, limit := range limits {
+		if limit.WindowSeconds <= 0 || limit.WindowSeconds > PhoneVerificationSendRetention {
+			return false, ErrInvalidSendLimits
+		}
+		if limit.WindowSeconds > longestWindow {
+			longestWindow = limit.WindowSeconds
+		}
+	}
 
-	sendsInWindow := bson.M{"$filter": bson.M{
-		"input": bson.M{"$ifNull": bson.A{"$sends", bson.A{}}},
-		"as":    "send",
-		"cond":  bson.M{"$gt": bson.A{"$$send", windowStart}},
-	}}
+	now := time.Now().Unix()
+
+	sendsSince := func(windowStart int64) bson.M {
+		return bson.M{"$filter": bson.M{
+			"input": bson.M{"$ifNull": bson.A{"$sends", bson.A{}}},
+			"as":    "send",
+			"cond":  bson.M{"$gt": bson.A{"$$send", windowStart}},
+		}}
+	}
+	kept := sendsSince(now - longestWindow)
+	roomInEveryLimit := bson.A{}
+	for _, limit := range limits {
+		roomInEveryLimit = append(roomInEveryLimit,
+			bson.M{"$lt": bson.A{bson.M{"$size": sendsSince(now - limit.WindowSeconds)}, limit.MaxSends}})
+	}
+
 	// Every expression in a $set stage reads the document as it was before the stage, so the
 	// condition and the array it guards see the same pre-update sends.
 	pipeline := mongo.Pipeline{bson.D{{Key: "$set", Value: bson.M{
 		"sends": bson.M{"$cond": bson.M{
-			"if":   bson.M{"$lt": bson.A{bson.M{"$size": sendsInWindow}, maxSends}},
-			"then": bson.M{"$concatArrays": bson.A{sendsInWindow, bson.A{now}}},
-			"else": sendsInWindow,
+			"if":   bson.M{"$and": roomInEveryLimit},
+			"then": bson.M{"$concatArrays": bson.A{kept, bson.A{now}}},
+			"else": kept,
 		}},
 		// Stamped on every attempt, granted or refused, which is what the TTL expires on. A
 		// refused attempt only happens while the record is full, and every send it holds is
@@ -126,7 +163,7 @@ func (dbService *UserDBService) ReservePhoneDestinationSendSlot(instanceID strin
 	opts := options.FindOneAndUpdate().SetUpsert(true).SetReturnDocument(options.Before)
 
 	for attempt := 0; attempt < reservationRetries; attempt++ {
-		granted, err := dbService.reservePhoneDestinationSendSlotOnce(instanceID, filter, pipeline, opts, maxSends, windowStart)
+		granted, err := dbService.reservePhoneDestinationSendSlotOnce(instanceID, filter, pipeline, opts, limits, now)
 		if err == nil {
 			return granted, nil
 		}
@@ -148,8 +185,8 @@ func (dbService *UserDBService) reservePhoneDestinationSendSlotOnce(
 	filter bson.M,
 	pipeline mongo.Pipeline,
 	opts *options.FindOneAndUpdateOptions,
-	maxSends int,
-	windowStart int64,
+	limits []SendLimit,
+	now int64,
 ) (bool, error) {
 	ctx, cancel := dbService.getContext()
 	defer cancel()
@@ -161,20 +198,26 @@ func (dbService *UserDBService) reservePhoneDestinationSendSlotOnce(
 		FindOneAndUpdate(ctx, filter, pipeline, opts).Decode(&before)
 	if errors.Is(err, mongo.ErrNoDocuments) {
 		// No record existed, so the upsert created one holding this send: nothing had been sent
-		// to this number in the window and the slot is granted.
+		// to this number in any window and the slot is granted.
 		return true, nil
 	}
 	if err != nil {
 		return false, err
 	}
 
-	used := 0
-	for _, sentAt := range before.Sends {
-		if sentAt > windowStart {
-			used++
+	for _, limit := range limits {
+		windowStart := now - limit.WindowSeconds
+		used := 0
+		for _, sentAt := range before.Sends {
+			if sentAt > windowStart {
+				used++
+			}
+		}
+		if used >= limit.MaxSends {
+			return false, nil
 		}
 	}
-	return used < maxSends, nil
+	return true, nil
 }
 
 // PhoneDestinationSendsInWindow reports how many verification messages were sent to a number
@@ -208,18 +251,74 @@ func (dbService *UserDBService) PhoneDestinationSendsInWindow(instanceID string,
 	return sent, nil
 }
 
-// CreateIndexForPhoneVerificationSends creates the TTL index that keeps the send records from
-// growing without bound. It is separate from CreateIndexForUser because it indexes a different
-// collection; both are called once per instance at startup.
+// CreateIndexForPhoneVerificationSends makes sure the TTL index that keeps the send records from
+// growing without bound exists and expires them after PhoneVerificationSendRetention. It is
+// separate from CreateIndexForUser because it indexes a different collection; both are called
+// once per instance at startup.
+//
+// Creating an index whose key already has one with another TTL fails rather than changing it, so
+// an index left by an earlier version with a shorter retention is changed in place with collMod.
+// Left as it was, it would delete a record while its sends still count towards the daily limit.
 func (dbService *UserDBService) CreateIndexForPhoneVerificationSends(instanceID string) error {
 	ctx, cancel := dbService.getContext()
 	defer cancel()
 
-	_, err := dbService.collectionRefPhoneVerificationSends(instanceID).Indexes().CreateOne(
-		ctx, mongo.IndexModel{
-			Keys:    bson.D{{Key: "updatedAt", Value: 1}},
-			Options: options.Index().SetExpireAfterSeconds(int32(PhoneVerificationSendRetention)),
-		},
-	)
-	return err
+	collection := dbService.collectionRefPhoneVerificationSends(instanceID)
+	expireAfter, found, err := phoneVerificationSendTTL(ctx, collection)
+	if err != nil {
+		return err
+	}
+	if !found {
+		_, err = collection.Indexes().CreateOne(
+			ctx, mongo.IndexModel{
+				Keys:    bson.D{{Key: "updatedAt", Value: 1}},
+				Options: options.Index().SetExpireAfterSeconds(int32(PhoneVerificationSendRetention)),
+			},
+		)
+		return err
+	}
+	if expireAfter == PhoneVerificationSendRetention {
+		return nil
+	}
+	return collection.Database().RunCommand(ctx, bson.D{
+		{Key: "collMod", Value: PhoneVerificationSendCollection},
+		{Key: "index", Value: bson.D{
+			{Key: "keyPattern", Value: bson.D{{Key: "updatedAt", Value: 1}}},
+			{Key: "expireAfterSeconds", Value: int64(PhoneVerificationSendRetention)},
+		}},
+	}).Err()
+}
+
+// phoneVerificationSendTTL looks for the index on updatedAt alone and returns its TTL in seconds
+// (-1 if it has none).
+func phoneVerificationSendTTL(ctx context.Context, collection *mongo.Collection) (int64, bool, error) {
+	// The driver lists no index, without an error, for a collection that does not exist yet.
+	cursor, err := collection.Indexes().List(ctx)
+	if err != nil {
+		return 0, false, err
+	}
+	var specs []bson.M
+	if err := cursor.All(ctx, &specs); err != nil {
+		return 0, false, err
+	}
+	for _, spec := range specs {
+		key, ok := spec["key"].(bson.M)
+		if !ok || len(key) != 1 {
+			continue
+		}
+		if _, onUpdatedAt := key["updatedAt"]; !onUpdatedAt {
+			continue
+		}
+		switch expire := spec["expireAfterSeconds"].(type) {
+		case int32:
+			return int64(expire), true, nil
+		case int64:
+			return expire, true, nil
+		case float64:
+			return int64(expire), true, nil
+		default:
+			return -1, true, nil
+		}
+	}
+	return 0, false, nil
 }

@@ -190,14 +190,17 @@ func TestResendContactVerificationCapsSendsPerDestinationAcrossAccounts(t *testi
 }
 
 // TestPhoneDestinationRecordsOutliveTheirWindow guards the one thing the TTL index and the rate
-// limit window have to agree on: a record must not be swept away while it still holds sends that
-// count, or the cap would silently reset early.
+// limit windows have to agree on: a record must not be swept away while it still holds sends that
+// count, or a cap would silently reset early. The reservation refuses such a window outright, so
+// a mismatch would also turn every verification send into an error.
 func TestPhoneDestinationRecordsOutliveTheirWindow(t *testing.T) {
-	if userdb.PhoneVerificationSendRetention < phoneDestinationRateLimitWindow {
-		t.Errorf(
-			"send records are kept %d s but the rate limit window is %d s: a record can expire while its sends still count",
-			userdb.PhoneVerificationSendRetention, phoneDestinationRateLimitWindow,
-		)
+	for _, limit := range phoneDestinationSendLimits {
+		if userdb.PhoneVerificationSendRetention < limit.WindowSeconds {
+			t.Errorf(
+				"send records are kept %d s but a rate limit window is %d s: a record can expire while its sends still count",
+				userdb.PhoneVerificationSendRetention, limit.WindowSeconds,
+			)
+		}
 	}
 }
 

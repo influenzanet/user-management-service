@@ -644,7 +644,7 @@ func (s *userManagementServer) AddPhoneNumber(ctx context.Context, req *api.Phon
 	// accounts are free to create; the number's own budget, counted across every account, is
 	// reserved here — past every refusal that sends nothing, before anything is written or sent
 	// (see ReservePhoneDestinationSendSlot).
-	destinationFree, err := s.userDBservice.ReservePhoneDestinationSendSlot(req.Token.InstanceId, phone, allowedPhoneDestinationSends, phoneDestinationRateLimitWindow)
+	destinationFree, err := s.userDBservice.ReservePhoneDestinationSendSlot(req.Token.InstanceId, phone, phoneDestinationSendLimits)
 	if err != nil {
 		logger.Error.Printf("AddPhoneNumber: %s", err.Error())
 		return nil, status.Error(codes.Internal, "could not reserve the send budget")
@@ -794,7 +794,7 @@ func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.Pho
 	// accounts are free to create; the number's own budget, counted across every account, is
 	// reserved here — past every refusal that sends nothing, before anything is written or sent
 	// (see ReservePhoneDestinationSendSlot).
-	destinationFree, err := s.userDBservice.ReservePhoneDestinationSendSlot(req.Token.InstanceId, phone, allowedPhoneDestinationSends, phoneDestinationRateLimitWindow)
+	destinationFree, err := s.userDBservice.ReservePhoneDestinationSendSlot(req.Token.InstanceId, phone, phoneDestinationSendLimits)
 	if err != nil {
 		logger.Error.Printf("EditPhoneNumber: %s", err.Error())
 		return nil, status.Error(codes.Internal, "could not reserve the send budget")

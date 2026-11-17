@@ -154,7 +154,7 @@ func TestAuditAddPhoneNumber(t *testing.T) {
 
 		target := auditPhone()
 		for i := 0; i < allowedPhoneDestinationSends; i++ {
-			if ok, err := testUserDBService.ReservePhoneDestinationSendSlot(testInstanceID, target, allowedPhoneDestinationSends, phoneDestinationRateLimitWindow); err != nil || !ok {
+			if ok, err := testUserDBService.ReservePhoneDestinationSendSlot(testInstanceID, target, phoneDestinationSendLimits); err != nil || !ok {
 				t.Fatalf("setup: %v %v", ok, err)
 			}
 		}
