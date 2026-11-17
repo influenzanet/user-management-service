@@ -101,7 +101,7 @@ func (s *userManagementServer) AutoValidateTempToken(ctx context.Context, req *a
 
 	if err != nil {
 		if err.Error() == "wrong token" {
-			logger.Warning.Printf("SECURITY WARNING: temptoken cannot be found %s", req.TempToken)
+			logger.Warning.Printf("SECURITY WARNING: temptoken cannot be found %s", tokens.LogFingerprint(req.TempToken))
 		} else if err.Error() == "wrong token purpose" {
 			logger.Warning.Printf("SECURITY WARNING: temptoken with wrong prupose found: %s - by user %s in instance %s", tokenInfos.Purpose, tokenInfos.UserID, tokenInfos.InstanceID)
 		} else if err.Error() == "token expired" {
