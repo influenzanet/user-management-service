@@ -14,6 +14,7 @@ import (
 	itc "github.com/influenzanet/user-management-service/pkg/grpc/interceptors"
 	"github.com/influenzanet/user-management-service/pkg/models"
 	"github.com/influenzanet/user-management-service/pkg/utils"
+	"github.com/influenzanet/user-management-service/pkg/whatsappqueue"
 	"google.golang.org/grpc"
 )
 
@@ -38,6 +39,9 @@ type userManagementServer struct {
 	instanceIDs       []string
 	whatsAppClient    WhatsAppClient
 	whatsApp          config.WhatsAppSettings
+	// whatsAppQueue withdraws queued WhatsApp messages from messaging when the participant
+	// withdraws what they were queued for.
+	whatsAppQueue *whatsappqueue.Canceller
 }
 
 // NewUserManagementServer creates a new service instance
@@ -52,7 +56,12 @@ func NewUserManagementServer(
 	whatsAppClient WhatsAppClient,
 	whatsApp config.WhatsAppSettings,
 ) api.UserManagementApiServer {
+	var whatsAppQueue *whatsappqueue.Canceller
+	if clients != nil {
+		whatsAppQueue = whatsappqueue.NewCanceller(clients.MessagingService)
+	}
 	return &userManagementServer{
+		whatsAppQueue:     whatsAppQueue,
 		clients:           clients,
 		userDBservice:     userDBservice,
 		globalDBService:   globalDBservice,

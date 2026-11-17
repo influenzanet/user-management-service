@@ -357,7 +357,8 @@ func (dbService *UserDBService) AddPhoneContactInfoIfAbsent(instanceID string, u
 
 // ReplacePhoneContactInfo overwrites the user's phone contact info entry in place with a
 // targeted update, leaving every other field of the document untouched except the channel
-// list, which loses whatsapp (see channelsWithoutWhatsAppExpr).
+// list, which loses whatsapp (see channelsWithoutWhatsAppExpr). The claim on the number it
+// replaces is released (see releaseClaimsNoLongerHeld).
 func (dbService *UserDBService) ReplacePhoneContactInfo(instanceID string, userID string, ci models.ContactInfo) error {
 	ctx, cancel := dbService.getContext()
 	defer cancel()
@@ -369,8 +370,8 @@ func (dbService *UserDBService) ReplacePhoneContactInfo(instanceID string, userI
 	filter := bson.M{"_id": _id}
 	// A single aggregation-pipeline update: the phone entry is replaced and the channel list
 	// is rewritten in one atomic write on the document, so no reader or concurrent
-	// UpdateContactPreferences can observe or produce a state where whatsapp was dropped and
-	// the e-mail fallback not yet stored. Positional arrayFilters are not available in
+	// UpdateContactPreferences can observe or produce a state where the new, unverified number
+	// is stored and whatsapp still enabled. Positional arrayFilters are not available in
 	// pipeline updates, hence the $map over contactInfos.
 	update := mongo.Pipeline{
 		{{Key: "$set", Value: bson.M{
@@ -386,28 +387,29 @@ func (dbService *UserDBService) ReplacePhoneContactInfo(instanceID string, userI
 			"timestamps.updatedAt":                 time.Now().Unix(),
 		}}},
 	}
-	_, err = dbService.collectionRefUsers(instanceID).UpdateOne(ctx, filter, update)
-	return err
+	if _, err = dbService.collectionRefUsers(instanceID).UpdateOne(ctx, filter, update); err != nil {
+		return err
+	}
+	dbService.releaseClaimsNoLongerHeldOrLog(instanceID, _id)
+	return nil
+}
+
+// storedChannelsExpr is the aggregation expression for the channel list as it is meant: the
+// stored list, or e-mail for an account written before channels existed (field missing or null).
+// An empty list stays empty: it means no channel.
+func storedChannelsExpr() bson.M {
+	return bson.M{"$ifNull": bson.A{"$contactPreferences.preferredChannels", bson.A{models.ChannelEmail}}}
 }
 
 // channelsWithoutWhatsAppExpr is the aggregation expression for the stored channel list once
-// the whatsapp channel is gone. The replacement is unverified, so the whatsapp channel loses the
-// destination it stood for and goes with it, in the same operation as the phone change: leaving
-// it on would describe a delivery the platform cannot make until the new number is verified.
-// A user must always keep at least one channel, so if nothing else would remain the list falls
-// back to e-mail. Doing it inside the expression (rather than a $pull followed by an $addToSet)
-// is what keeps the list from ever being stored empty.
+// the whatsapp channel is gone. The phone it stood for was removed or replaced, so the channel
+// goes with it, in the same operation as the phone change: leaving it on would describe a
+// delivery the platform cannot make. Nothing is added in its place: a participant who was
+// reached on whatsapp only is left with no channel, and turns one on again in the settings.
 func channelsWithoutWhatsAppExpr() bson.M {
-	return bson.M{"$let": bson.M{
-		"vars": bson.M{"rest": bson.M{"$filter": bson.M{
-			"input": bson.M{"$ifNull": bson.A{"$contactPreferences.preferredChannels", bson.A{}}},
-			"cond":  bson.M{"$ne": bson.A{"$$this", models.ChannelWhatsApp}},
-		}}},
-		"in": bson.M{"$cond": bson.A{
-			bson.M{"$eq": bson.A{bson.M{"$size": "$$rest"}, 0}},
-			bson.M{"$literal": bson.A{models.ChannelEmail}},
-			"$$rest",
-		}},
+	return bson.M{"$filter": bson.M{
+		"input": storedChannelsExpr(),
+		"cond":  bson.M{"$ne": bson.A{"$$this", models.ChannelWhatsApp}},
 	}}
 }
 
@@ -445,16 +447,18 @@ func (dbService *UserDBService) SetContactVerificationSentAt(instanceID string, 
 }
 
 // FinalizePhoneVerification records a successful phone verification with targeted updates: the
-// phone contact info is marked as confirmed, the whatsapp channel is enabled together with
-// email (so enabling whatsapp never silences email delivery), and the spent code is cleared.
+// phone contact info is marked as confirmed, the whatsapp channel is enabled, and the spent code
+// is cleared. Verifying the number after the opt-in statement is the participant's consent to
+// WhatsApp notifications; it says nothing about e-mail, so the e-mail channel is neither
+// added nor removed. An account written before channels existed reads as e-mail and keeps it.
 // The attempts ledger is deliberately absent from the update: a verification sends no message,
 // so it has no attempt to account for and must not rewrite what the atomic reservation
 // maintains — a field that is never named cannot be clobbered.
 // The number to confirm is the one the code was sent to, and it is the only one this write can
-// reach: both the filter and the array filter name it. A number deleted or replaced while the
-// code was being verified therefore yields mongo.ErrNoDocuments instead of confirming whatever
-// number the account happens to carry, which is what let a code sent to one number enable the
-// whatsapp channel for another.
+// reach: both the filter and the contact the update rewrites name it. A number deleted or
+// replaced while the code was being verified therefore yields mongo.ErrNoDocuments instead of
+// confirming whatever number the account happens to carry, which is what let a code sent to one
+// number enable the whatsapp channel for another.
 // Whether that number is still *pending* is the caller's responsibility, not this method's: the
 // write deliberately also re-confirms a number that is already confirmed, so that a repeated
 // finalisation is idempotent rather than an error (see the idempotency test).
@@ -472,23 +476,27 @@ func (dbService *UserDBService) FinalizePhoneVerification(instanceID string, use
 		return models.User{}, mongo.ErrNoDocuments
 	}
 	now := time.Now().Unix()
-	update := bson.M{
-		"$set": bson.M{
-			"contactInfos.$[ci].confirmedAt": now,
-			"account.phoneVerificationCode":  models.VerificationCode{},
-			"timestamps.updatedAt":           now,
-		},
-		"$addToSet": bson.M{
-			"contactPreferences.preferredChannels": bson.M{
-				"$each": bson.A{models.ChannelEmail, models.ChannelWhatsApp},
-			},
-		},
-	}
-	opts := options.FindOneAndUpdate().
-		SetArrayFilters(options.ArrayFilters{
-			Filters: []interface{}{contactInfoElementFilter(models.ContactTypePhone, phone)},
-		}).
-		SetReturnDocument(options.After)
+	// A pipeline update, because the channel list is computed from what is stored (a legacy
+	// account has none stored and means e-mail); positional arrayFilters are not available in
+	// pipelines, hence the $map over contactInfos. Every value from outside is a $literal.
+	isThisPhone := bson.M{"$and": bson.A{
+		bson.M{"$eq": bson.A{"$$this.type", models.ContactTypePhone}},
+		bson.M{"$eq": bson.A{"$$this.phone", bson.M{"$literal": phone}}},
+	}}
+	update := mongo.Pipeline{bson.D{{Key: "$set", Value: bson.M{
+		"contactInfos": bson.M{"$map": bson.M{
+			"input": bson.M{"$ifNull": bson.A{"$contactInfos", bson.A{}}},
+			"in": bson.M{"$cond": bson.A{
+				isThisPhone,
+				bson.M{"$mergeObjects": bson.A{"$$this", bson.M{"confirmedAt": now}}},
+				"$$this",
+			}},
+		}},
+		"account.phoneVerificationCode":        bson.M{"$literal": models.VerificationCode{}},
+		"contactPreferences.preferredChannels": channelsWithWhatsAppExpr(),
+		"timestamps.updatedAt":                 now,
+	}}}}
+	opts := options.FindOneAndUpdate().SetReturnDocument(options.After)
 
 	filter := bson.M{
 		"_id": _id,
@@ -506,11 +514,18 @@ func (dbService *UserDBService) FinalizePhoneVerification(instanceID string, use
 	if err != nil {
 		return models.User{}, err
 	}
-	whatsAppWasEnabled := false
-	for _, channel := range before.ContactPreferences.PreferredChannels {
-		if channel == models.ChannelWhatsApp {
-			whatsAppWasEnabled = true
-		}
+	whatsAppWasEnabled := before.ContactPreferences.HasPreferredChannel(models.ChannelWhatsApp)
+
+	// A number another account holds verified is refused even when no claim records it: accounts
+	// verified before claims existed have none until tools/normalize-phone-numbers seeds them, and
+	// nothing before this point asks. Only somebody who received the code gets here, so
+	// the answer tells nobody anything about a number they do not control.
+	elsewhere, err := dbService.verifiedOnAnotherAccount(instanceID, _id, phone)
+	if err != nil {
+		return models.User{}, err
+	}
+	if elsewhere {
+		return models.User{}, ErrPhoneVerifiedElsewhere
 	}
 
 	// Only one account can hold a verified number: the claim is taken before the contact is
@@ -545,6 +560,20 @@ func (dbService *UserDBService) FinalizePhoneVerification(instanceID string, use
 		return models.User{}, err
 	}
 	return updated, nil
+}
+
+// channelsWithWhatsAppExpr is the aggregation expression for the channel list with whatsapp
+// enabled: the list as meant (see storedChannelsExpr), with whatsapp appended unless it is
+// already there. Nothing else is added.
+func channelsWithWhatsAppExpr() bson.M {
+	return bson.M{"$let": bson.M{
+		"vars": bson.M{"current": storedChannelsExpr()},
+		"in": bson.M{"$cond": bson.A{
+			bson.M{"$in": bson.A{models.ChannelWhatsApp, "$$current"}},
+			"$$current",
+			bson.M{"$concatArrays": bson.A{"$$current", bson.A{models.ChannelWhatsApp}}},
+		}},
+	}}
 }
 
 func (dbService *UserDBService) UpdateAccountPreferredLang(instanceID string, userID string, lang string) (models.User, error) {
@@ -594,13 +623,14 @@ func (dbService *UserDBService) UpdateContactPreferences(instanceID string, user
 		"contactPreferences.receiveWeeklyMessageDayOfWeek": prefs.ReceiveWeeklyMessageDayOfWeek,
 		"timestamps.updatedAt":                             time.Now().Unix(),
 	}
-	update := bson.M{"$set": set}
-	if len(prefs.PreferredChannels) == 0 {
-		// Preserve the model's omitempty semantics; null would break later $addToSet.
-		update["$unset"] = bson.M{"contactPreferences.preferredChannels": ""}
-	} else {
-		set["contactPreferences.preferredChannels"] = prefs.PreferredChannels
+	// The list is always stored, an empty one included: empty means no channel, while a missing
+	// field would read as e-mail. A nil list is stored as an empty one, never as null.
+	channels := prefs.PreferredChannels
+	if channels == nil {
+		channels = []string{}
 	}
+	set["contactPreferences.preferredChannels"] = channels
+	update := bson.M{"$set": set}
 	err := dbService.collectionRefUsers(instanceID).FindOneAndUpdate(ctx, filter, update, &fro).Decode(&elem)
 	return elem, err
 }
@@ -679,6 +709,8 @@ func (dbService *UserDBService) CountRecentlyCreatedUsers(instanceID string, int
 	return
 }
 
+// DeleteUser removes the user document and releases the claims on the numbers it held verified,
+// so a deleted account leaves no number behind.
 func (dbService *UserDBService) DeleteUser(instanceID string, id string) error {
 	_id, _ := primitive.ObjectIDFromHex(id)
 	filter := bson.M{"_id": _id}
@@ -692,6 +724,7 @@ func (dbService *UserDBService) DeleteUser(instanceID string, id string) error {
 	if res.DeletedCount < 1 {
 		return errors.New("no user found with the given id")
 	}
+	dbService.releaseClaimsNoLongerHeldOrLog(instanceID, _id)
 	return nil
 }
 
@@ -986,59 +1019,10 @@ func (dbService *UserDBService) CreateIndexForUser(instanceID string) error {
 	return err
 }
 
-// IsPhoneNumberTaken checks if a phone number is already in use
-func (dbService *UserDBService) IsPhoneNumberTaken(ctx context.Context, instanceID string, phoneNumbers []string) (bool, error) {
-	return dbService.IsPhoneNumberTakenExcludingUser(ctx, instanceID, phoneNumbers, "")
-}
-
-// IsPhoneNumberTakenExcludingUser checks if a phone number is taken by any user except the specified one.
-//
-// Only a verified contact counts. An account that merely carries a number has asserted it, not
-// proved it, and an assertion used to be enough to hold the number for good: one mistyped digit
-// at signup, or a signup abandoned before the code was used, and the participant the number
-// actually belongs to could never register it. What an unverified claim still does is keep its
-// own account from starting a second verification, which the per-account guards in AddPhoneNumber
-// and EditPhoneNumber enforce; holding the number against everybody else is reserved to proof.
-// See ReleaseUnverifiedPhoneClaims for what happens to those claims once somebody proves it.
-func (dbService *UserDBService) IsPhoneNumberTakenExcludingUser(ctx context.Context, instanceID string, phoneNumbers []string, excludeUserID string) (bool, error) {
-	// Numbers are stored in E.164 form, so the question is asked in that form whatever the
-	// caller's spelling; the spelling given stays in the list for data written before numbers
-	// were normalised.
-	var forms []string
-	for _, phone := range phoneNumbers {
-		forms = append(forms, verifiedPhoneForms(phone)...)
-	}
-	filter := bson.M{
-		"contactInfos": bson.M{
-			"$elemMatch": bson.M{
-				"type":        models.ContactTypePhone,
-				"phone":       bson.M{"$in": forms},
-				"confirmedAt": bson.M{"$gt": 0},
-			},
-		},
-	}
-
-	// Exclude specific user if provided
-	if excludeUserID != "" {
-		userObjID, err := primitive.ObjectIDFromHex(excludeUserID)
-		if err == nil {
-			filter["_id"] = bson.M{"$ne": userObjID}
-		} else {
-			logger.Warning.Printf("IsPhoneNumberTakenExcludingUser: invalid excludeUserID: %v", err)
-		}
-	}
-
-	count, err := dbService.collectionRefUsers(instanceID).CountDocuments(ctx, filter)
-	if err != nil {
-		return false, err
-	}
-	return count > 0, nil
-}
-
 // unverifiedPhoneClaim matches a phone contact info that carries this number without anybody
-// having proved control of it. It states the same condition as SetPhoneVerificationCode and
-// IsPhoneNumberTakenExcludingUser, so the three agree on what "not verified" means, including
-// for documents written before confirmedAt existed, where the field is absent rather than zero.
+// having proved control of it. It states the same condition as SetPhoneVerificationCode, so the
+// two agree on what "not verified" means, including for documents written before confirmedAt
+// existed, where the field is absent rather than zero.
 func unverifiedPhoneClaim(phone string) bson.M {
 	return bson.M{
 		"type":        models.ContactTypePhone,
@@ -1056,14 +1040,15 @@ func unverifiedPhoneClaim(phone string) bson.M {
 // proved, so the claims it removes are by construction claims to a number that belongs to
 // somebody else.
 //
-// A released account also loses the whatsapp channel and keeps (or regains) the e-mail one, so
-// it is never left with whatsapp enabled and no number to deliver it to, and never left with no
-// channel at all.
+// A released account also loses the whatsapp channel, so it is never left with whatsapp enabled
+// and no number to deliver it to. Nothing is added in its place, e-mail included: a participant
+// whose only channel was whatsapp is left with none.
 //
 // exceptUserID is the account that did the proving and is never touched. Verified contacts are
 // never touched either, on any account: this method removes claims, never proven contacts.
-// Both writes are targeted — a $pull of the one contact and a $set of the one code — so nothing
-// else on those documents is rewritten and no concurrent update is clobbered.
+// The writes are targeted — the contact list and the channel list in one write, the code in
+// another — so nothing else on those documents is rewritten and no concurrent update is
+// clobbered.
 //
 // It returns how many accounts lost a claim, for the caller's log.
 func (dbService *UserDBService) ReleaseUnverifiedPhoneClaims(instanceID string, phone string, exceptUserID string) (int64, error) {
@@ -1092,29 +1077,24 @@ func (dbService *UserDBService) ReleaseUnverifiedPhoneClaims(instanceID string, 
 
 	now := time.Now().Unix()
 
-	// The e-mail channel is restored before the claim goes, and in a write of its own, because
-	// MongoDB refuses $pull and $addToSet on one path in a single update ("would create a
-	// conflict"). Restoring it first also means the filter still matches these accounts: after
-	// the $pull below they no longer carry the claim. An account that already had e-mail is
-	// unaffected, $addToSet being what it is, and an account that gains it cannot be silenced
-	// by this method — which is the point, since the next write takes its whatsapp channel away.
-	if _, err := dbService.collectionRefUsers(instanceID).UpdateMany(ctx, claimFilter, bson.M{
-		"$addToSet": bson.M{"contactPreferences.preferredChannels": models.ChannelEmail},
-	}); err != nil {
-		return 0, err
-	}
-
-	// The claim and the whatsapp channel go together, in one write: the channel stood for a
-	// number this account is about to stop having, and an account left with whatsapp enabled and
-	// no phone describes a delivery the platform cannot make. DeletePhoneNumber and
-	// ReplacePhoneContactInfo revoke it the same way. Two different paths under one $pull is
-	// allowed, unlike mixing $pull and $addToSet on the same one.
-	res, err := dbService.collectionRefUsers(instanceID).UpdateMany(ctx, claimFilter, bson.M{
-		"$pull": bson.M{
-			"contactInfos":                         unverifiedPhoneClaim(phone),
-			"contactPreferences.preferredChannels": models.ChannelWhatsApp,
-		},
-		"$set": bson.M{"timestamps.updatedAt": now},
+	// The claim and the whatsapp channel go together, in one pipeline write: the channel stood
+	// for a number this account is about to stop having. DeletePhoneNumber and
+	// ReplacePhoneContactInfo revoke it the same way. The pipeline (rather than a $pull) also
+	// reads a legacy account, which has no list stored, as the e-mail it means.
+	isUnverifiedClaim := bson.M{"$and": bson.A{
+		bson.M{"$eq": bson.A{"$$this.type", models.ContactTypePhone}},
+		bson.M{"$eq": bson.A{"$$this.phone", bson.M{"$literal": phone}}},
+		bson.M{"$not": bson.A{bson.M{"$gt": bson.A{"$$this.confirmedAt", 0}}}},
+	}}
+	res, err := dbService.collectionRefUsers(instanceID).UpdateMany(ctx, claimFilter, mongo.Pipeline{
+		bson.D{{Key: "$set", Value: bson.M{
+			"contactInfos": bson.M{"$filter": bson.M{
+				"input": bson.M{"$ifNull": bson.A{"$contactInfos", bson.A{}}},
+				"cond":  bson.M{"$not": bson.A{isUnverifiedClaim}},
+			}},
+			"contactPreferences.preferredChannels": channelsWithoutWhatsAppExpr(),
+			"timestamps.updatedAt":                 now,
+		}}},
 	})
 	if err != nil {
 		return 0, err
@@ -1141,7 +1121,8 @@ func (dbService *UserDBService) ReleaseUnverifiedPhoneClaims(instanceID string, 
 	return res.ModifiedCount, nil
 }
 
-// DeletePhoneNumber removes a phone number from a user
+// DeletePhoneNumber removes the user's phone number, the whatsapp channel it stood for and any
+// pending code, and releases the claim on the number (see releaseClaimsNoLongerHeld).
 func (dbService *UserDBService) DeletePhoneNumber(instanceID, userID string) (models.User, error) {
 	ctx, cancel := dbService.getContext()
 	defer cancel()
@@ -1152,10 +1133,10 @@ func (dbService *UserDBService) DeletePhoneNumber(instanceID, userID string) (mo
 	}
 
 	filter := bson.M{"_id": userObjID}
-	// One aggregation-pipeline update: the phone, the whatsapp channel and the e-mail fallback
-	// change together in a single atomic write on the document. A $pull followed by a separate
-	// $addToSet would leave a window with an empty channel list, and a read-modify-write
-	// (UpdateUser) would silently revert a concurrent UpdateContactPreferences.
+	// One aggregation-pipeline update: the phone and the whatsapp channel go together in a single
+	// atomic write on the document. A $pull of each in separate writes would leave a window with
+	// whatsapp enabled and no phone, and a read-modify-write (UpdateUser) would silently revert a
+	// concurrent UpdateContactPreferences. Nothing is added in place of whatsapp.
 	update := mongo.Pipeline{
 		{{Key: "$set", Value: bson.M{
 			"contactInfos": bson.M{"$filter": bson.M{
@@ -1180,6 +1161,7 @@ func (dbService *UserDBService) DeletePhoneNumber(instanceID, userID string) (mo
 		return models.User{}, err
 	}
 
+	dbService.releaseClaimsNoLongerHeldOrLog(instanceID, userObjID)
 	return updatedUser, nil
 }
 

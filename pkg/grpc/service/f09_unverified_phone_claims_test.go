@@ -84,9 +84,13 @@ func TestVerifyWhatsAppCodeReleasesUnverifiedClaims(t *testing.T) {
 		}
 	})
 
-	t.Run("a number verified by somebody else is still refused", func(t *testing.T) {
+	t.Run("a number verified by somebody else is refused at verification", func(t *testing.T) {
+		// Adding it sends the code like any other number; proving it is what is refused.
 		latecomer := addRateLimitTestUser(t, "f09_latecomer@test.com", nil)
-		_, err := s.AddPhoneNumber(context.Background(), &api.PhoneMsg{Token: &latecomer, NewPhone: contestedPhone})
+		if _, err := s.AddPhoneNumber(context.Background(), &api.PhoneMsg{Token: &latecomer, NewPhone: contestedPhone}); err != nil {
+			t.Fatalf("adding the number must send the code: %v", err)
+		}
+		err := verifyWithStoredCode(t, &s, &latecomer)
 		if ok, msg := shouldHaveGrpcErrorStatus(err, "phone number already taken"); !ok {
 			t.Error(msg)
 		}
@@ -131,8 +135,7 @@ func TestVerifyWhatsAppCodeKeepsOtherContacts(t *testing.T) {
 	}
 }
 
-// GAP1: the signup path. The rule change reaches it through IsPhoneNumberTaken, which delegates
-// to the helper F-09 narrowed, but nothing above drives SignupWithEmail itself.
+// GAP1: the signup path, driven through SignupWithEmail itself.
 func TestSignupWithPhoneHeldUnverifiedByAnotherUser(t *testing.T) {
 	const claimedAtSignup = "+393230001201"
 	const verifiedAtSignup = "+393230001202"
@@ -153,19 +156,25 @@ func TestSignupWithPhoneHeldUnverifiedByAnotherUser(t *testing.T) {
 		}
 	})
 
-	t.Run("a number somebody has verified is still refused, and refused like a duplicate address", func(t *testing.T) {
-		// The F-08 answer, not the old AlreadyExists one: the two findings compose here.
+	t.Run("a number somebody has verified is stored unverified too", func(t *testing.T) {
+		// Signup does not ask who else holds the number.
 		owner := addVerifyCodeTestUser(t, "f09_signup_verified_owner@test.com", verifiedAtSignup, models.VerificationCode{}, nil, nil)
 		if _, err := testUserDBService.FinalizePhoneVerification(testInstanceID, owner.Id, verifiedAtSignup); err != nil {
 			t.Fatalf("failed to seed the verified owner: %s", err.Error())
 		}
 
-		_, err := s.SignupWithEmail(context.Background(), signupReq("f09_signup_blocked@test.com", verifiedAtSignup))
-		if ok, msg := shouldHaveGrpcErrorStatus(err, "user creation failed"); !ok {
-			t.Error(msg)
+		if _, err := s.SignupWithEmail(context.Background(), signupReq("f09_signup_second@test.com", verifiedAtSignup)); err != nil {
+			t.Fatalf("signup must accept the number: %s", err.Error())
 		}
-		if status.Code(err) != codes.Internal {
-			t.Errorf("expected Internal, got %v", status.Code(err))
+		user, err := testUserDBService.GetUserByAccountID(testInstanceID, "f09_signup_second@test.com")
+		if err != nil {
+			t.Fatalf("the account was not created: %s", err.Error())
+		}
+		if ci, found := user.FindContactInfoByTypeAndAddr(models.ContactTypePhone, verifiedAtSignup); !found || ci.ConfirmedAt != 0 {
+			t.Errorf("the number was not stored unverified: %+v", user.ContactInfos)
+		}
+		if ci, _ := phoneOf(t, owner.Id); ci.ConfirmedAt == 0 {
+			t.Errorf("the owner lost the verified number: %+v", ci)
 		}
 	})
 }
@@ -199,8 +208,8 @@ func TestEditPhoneNumberOverUnverifiedClaim(t *testing.T) {
 		t.Error("verifying through the change-phone path did not release the stale claim")
 	}
 
-	// The other half of the rule: a number somebody has actually proved is still closed, and
-	// "phone number already taken" now means exactly that.
+	// The other half of the rule: a number somebody has actually proved is still closed, at
+	// verification, and "phone number already taken" now means exactly that.
 	const verifiedElsewhere = "+393230001213"
 	owner := addVerifyCodeTestUser(t, "f09_edit_verified_owner@test.com", verifiedElsewhere, models.VerificationCode{}, nil, nil)
 	if _, err := testUserDBService.FinalizePhoneVerification(testInstanceID, owner.Id, verifiedElsewhere); err != nil {
@@ -208,7 +217,10 @@ func TestEditPhoneNumberOverUnverifiedClaim(t *testing.T) {
 	}
 	blocked := addVerifyCodeTestUser(t, "f09_edit_blocked@test.com", "+393230001214", models.VerificationCode{}, nil, nil)
 
-	_, err := s.EditPhoneNumber(context.Background(), &api.PhoneMsg{Token: &blocked, NewPhone: verifiedElsewhere})
+	if _, err := s.EditPhoneNumber(context.Background(), &api.PhoneMsg{Token: &blocked, NewPhone: verifiedElsewhere}); err != nil {
+		t.Fatalf("changing to the number must send the code: %v", err)
+	}
+	err := verifyWithStoredCode(t, &s, &blocked)
 	if ok, msg := shouldHaveGrpcErrorStatus(err, "phone number already taken"); !ok {
 		t.Error(msg)
 	}

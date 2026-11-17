@@ -8,6 +8,7 @@ import (
 	"github.com/influenzanet/user-management-service/pkg/dbs/globaldb"
 	"github.com/influenzanet/user-management-service/pkg/dbs/userdb"
 	"github.com/influenzanet/user-management-service/pkg/models"
+	"github.com/influenzanet/user-management-service/pkg/whatsappqueue"
 )
 
 // UserManagementTimerService handles background times for user management (cleanup for example).
@@ -20,7 +21,7 @@ type UserManagementTimerService struct {
 	ReminderTimeThreshold                int64 // if user account not verified, send a reminder email to the user after this many seconds
 	NotifyInactiveUserThreshold          int64 // if user account is inactive, send a reminder email to the user after this many seconds
 	DeleteAccountAfterNotifyingThreshold int64 // if user account is notified by mail, delete account after this many seconds
-
+	whatsAppQueue                        *whatsappqueue.Canceller
 }
 
 func NewUserManagmentTimerService(
@@ -33,7 +34,12 @@ func NewUserManagmentTimerService(
 	notifyInactiveUserThreshold int64,
 	deleteAccountAfterNotifyingThreshold int64,
 ) *UserManagementTimerService {
+	var whatsAppQueue *whatsappqueue.Canceller
+	if clients != nil {
+		whatsAppQueue = whatsappqueue.NewCanceller(clients.MessagingService)
+	}
 	return &UserManagementTimerService{
+		whatsAppQueue:                        whatsAppQueue,
 		globalDBService:                      globalDBService,
 		userDBService:                        userDBService,
 		TimerEventFrequency:                  frequency,

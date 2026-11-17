@@ -388,6 +388,7 @@ func (s *userManagementServer) LoginWithExternalIDP(ctx context.Context, req *ap
 		// on which weekday the user will receive the reminder emails
 		user.ContactPreferences.SubscribedToWeekly = false
 		user.ContactPreferences.ReceiveWeeklyMessageDayOfWeek = int32(s.weekdayStrategy.Weekday())
+		user.ContactPreferences.PreferredChannels = models.DefaultPreferredChannels()
 
 		id, err := s.userDBservice.AddUser(req.InstanceId, user)
 		if err != nil {
@@ -550,31 +551,15 @@ func (s *userManagementServer) SignupWithEmail(ctx context.Context, req *api.Sig
 		logger.Info.Printf("Signup: phone number ignored because WhatsApp is disabled")
 	} else if req.Phone != "" {
 		phone, phoneErr := utils.NormalizePhone(req.Phone)
-		if phoneErr == nil {
-			// Check if phone number is already taken
-			phoneSlice := []string{phone}
-			isTaken, err := s.userDBservice.IsPhoneNumberTaken(ctx, req.InstanceId, phoneSlice)
-			if err != nil {
-				logger.Error.Printf("ERROR: signup method failed to check phone availability: %s", err.Error())
-				return nil, status.Error(codes.Internal, "failed to check phone availability")
-			} else if isTaken {
-				// Whether a number already belongs to a participant is not something an
-				// anonymous caller may learn: answered on its own, before an account exists and
-				// before anything is spent, this endpoint reports membership of an
-				// epidemiological study for any number fed to it. The refusal is therefore the
-				// one a duplicate account address gets from AddUser below, byte for byte, so
-				// the two cases cannot be told apart from the outside. The real reason stays
-				// where only the operator can read it.
-				logger.Warning.Printf("SECURITY WARNING: signup attempt with an already registered phone number %s", utils.MaskPhone(phone))
-				return nil, status.Error(codes.Internal, "user creation failed")
-			} else {
-				newUser.AddNewPhone(phone, false) // Add as unverified
-				logger.Debug.Printf("Added unverified phone %s for new user", utils.MaskPhone(phone))
-			}
-		} else {
+		if phoneErr != nil {
 			logger.Warning.Printf("Invalid phone format during signup: %s", utils.MaskPhone(req.Phone))
 			return nil, status.Error(codes.InvalidArgument, "phone not valid")
 		}
+		// Stored unverified whoever else carries the number: asking first would tell an
+		// anonymous caller whether a number belongs to a participant. Ownership is settled at
+		// verification, which refuses a number another account has proved.
+		newUser.AddNewPhone(phone, false)
+		logger.Debug.Printf("Added unverified phone %s for new user", utils.MaskPhone(phone))
 	}
 
 	if req.Use_2Fa {
@@ -588,6 +573,7 @@ func (s *userManagementServer) SignupWithEmail(ctx context.Context, req *api.Sig
 	// on which weekday the user will receive the reminder emails
 	newUser.ContactPreferences.SubscribedToWeekly = true
 	newUser.ContactPreferences.ReceiveWeeklyMessageDayOfWeek = int32(s.weekdayStrategy.Weekday())
+	newUser.ContactPreferences.PreferredChannels = models.DefaultPreferredChannels()
 
 	id, err := s.userDBservice.AddUser(req.InstanceId, newUser)
 	if err != nil {
@@ -731,7 +717,7 @@ func (s *userManagementServer) VerifyContact(ctx context.Context, req *api.TempT
 	return user.ToAPI(), err
 }
 
-func (s *userManagementServer) ResendContactVerification(ctx context.Context, req *api.ResendContactVerificationReq) (*api.ServiceStatus, error) {
+func (s *userManagementServer) ResendContactVerification(ctx context.Context, req *api.ResendContactVerificationReq) (_ *api.ServiceStatus, err error) {
 	if req == nil || utils.IsTokenEmpty(req.Token) || req.Address == "" || req.Type == "" {
 		return nil, status.Error(codes.InvalidArgument, "missing argument")
 	}
@@ -786,6 +772,8 @@ func (s *userManagementServer) ResendContactVerification(ctx context.Context, re
 			logger.Error.Printf("ResendContactVerification: %s", err.Error())
 		}
 	case models.ContactTypePhone:
+		audit := s.newPhoneAudit(req.Token, LOG_EVENT_PHONE_CODE_RESEND, req.Address, "code_sent")
+		defer func() { audit.record(err) }()
 		// AddPhoneNumber and EditPhoneNumber refuse a send when WhatsApp is not configured,
 		// and the routes that start one are behind the account-confirmed middleware. This
 		// branch reaches the same paid send, so it answers the same way — and it checks here
@@ -812,6 +800,7 @@ func (s *userManagementServer) ResendContactVerification(ctx context.Context, re
 			return nil, status.Error(codes.InvalidArgument, "address not found")
 		}
 		phone := ci.Phone
+		audit.phone = phone
 		// A verified number has nothing left to verify: without this, an account could keep
 		// asking for codes it does not need, three paid messages per window, indefinitely.
 		if ci.ConfirmedAt > 0 {
@@ -829,6 +818,7 @@ func (s *userManagementServer) ResendContactVerification(ctx context.Context, re
 			return nil, status.Error(codes.Internal, err.Error())
 		}
 		if !slotFree {
+			audit.outcome = outcomeRateLimitedAccount
 			return nil, status.Error(codes.ResourceExhausted, "too many phone verification attempts, try again later")
 		}
 		// And the number's own budget, counted across every account: since F-09 several accounts
@@ -840,6 +830,7 @@ func (s *userManagementServer) ResendContactVerification(ctx context.Context, re
 			return nil, status.Error(codes.Internal, "could not reserve the send budget")
 		}
 		if !destinationFree {
+			audit.outcome = outcomeRateLimitedDestination
 			return nil, status.Error(codes.ResourceExhausted, "too many phone verification attempts, try again later")
 		}
 		// Generate and store new phone verification code (separate from login 2FA — G-3 fix)
@@ -877,6 +868,7 @@ func (s *userManagementServer) ResendContactVerification(ctx context.Context, re
 			if errors.Is(err, httpClients.ErrRecipientNotAllowed) {
 				return nil, status.Error(codes.FailedPrecondition, "phone number not enabled to receive WhatsApp messages")
 			}
+			audit.outcome = "send_failed"
 			return nil, status.Error(codes.Internal, "failed to send verification code")
 		}
 		// Mark the cooldown only after the message was accepted, like the email branch

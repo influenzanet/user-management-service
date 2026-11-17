@@ -91,6 +91,7 @@ func (s *userManagementServer) CreateUser(ctx context.Context, req *api.CreateUs
 	newUser.ContactPreferences.SendNewsletterTo = []string{newUser.ContactInfos[0].ID.Hex()}
 	newUser.ContactPreferences.SubscribedToWeekly = false
 	newUser.ContactPreferences.ReceiveWeeklyMessageDayOfWeek = int32(s.weekdayStrategy.Weekday())
+	newUser.ContactPreferences.PreferredChannels = models.DefaultPreferredChannels()
 
 	instanceID := req.Token.InstanceId
 	id, err := s.userDBservice.AddUser(instanceID, newUser)

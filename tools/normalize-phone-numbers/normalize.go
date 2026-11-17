@@ -71,6 +71,13 @@ type ClaimConflict struct {
 	OwnerID string
 }
 
+// StaleClaim is a claim whose owner no longer holds the number verified, or no longer exists (item
+// 48). With apply it is released.
+type StaleClaim struct {
+	Number  string
+	OwnerID string
+}
+
 // Report is the outcome of one run on one instance.
 type Report struct {
 	Instance          string
@@ -90,6 +97,10 @@ type Report struct {
 	ClaimsSeeded   int
 	ClaimsPresent  int
 	ClaimConflicts []ClaimConflict
+	// StaleClaims are the claims left behind by accounts that no longer hold the number (released
+	// with apply, reported otherwise); StaleClaimsReleased counts the ones released.
+	StaleClaims         []StaleClaim
+	StaleClaimsReleased int
 	// SkippedConcurrent counts the writes that matched nothing because the stored number had
 	// changed since it was read; the next run picks them up.
 	SkippedConcurrent int
@@ -265,7 +276,18 @@ func NormalizePhoneNumbers(svc *userdb.UserDBService, instanceID string, apply b
 		return report.Changes[i].Field < report.Changes[j].Field
 	})
 
-	// Pass 4: the verified holders outside a collision get their claim.
+	// Pass 4: claims left behind by accounts that no longer hold the number are released, before
+	// seeding, so a verified holder whose number still carried such a claim gets its own.
+	stale, released, err := svc.ReleaseStaleVerifiedPhoneClaims(instanceID, apply)
+	for _, c := range stale {
+		report.StaleClaims = append(report.StaleClaims, StaleClaim{Number: utils.MaskPhone(c.Number), OwnerID: c.UserID})
+	}
+	report.StaleClaimsReleased = released
+	if err != nil {
+		return report, err
+	}
+
+	// Pass 5: the verified holders outside a collision get their claim.
 	owners := map[string]string{} // normalised number -> its only verified holder
 	for number, ids := range verified {
 		if collidingNumbers[number] {

@@ -145,6 +145,8 @@ func TestRevertPhoneConfirmationLeavesAnotherConfirmationAlone(t *testing.T) {
 
 // A repeated verification by the holder must not release the holder's claim when the
 // confirmation write fails (here the number disappears between the claim and the confirmation).
+// The number is pulled with a raw write: DeletePhoneNumber releases the claim itself,
+// which would hide what this test is about.
 func TestFinalizePhoneVerificationFailureKeepsAClaimTheCallDidNotCreate(t *testing.T) {
 	const phone = "+391230002004"
 	a := claimTestUser(t, "keep_claim_a@test.com", phone, 0)
@@ -155,7 +157,10 @@ func TestFinalizePhoneVerificationFailureKeepsAClaimTheCallDidNotCreate(t *testi
 
 	setHook(t, func(userID primitive.ObjectID) {
 		afterPhoneClaimHook = nil
-		if _, err := testDBService.DeletePhoneNumber(testInstanceID, a); err != nil {
+		ctx, cancel := testDBService.getContext()
+		defer cancel()
+		if _, err := testDBService.collectionRefUsers(testInstanceID).UpdateOne(ctx, bson.M{"_id": aID},
+			bson.M{"$pull": bson.M{"contactInfos": bson.M{"type": models.ContactTypePhone}}}); err != nil {
 			t.Errorf("setup failed: %v", err)
 		}
 	})

@@ -1,6 +1,7 @@
 package models
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/influenzanet/user-management-service/pkg/api"
@@ -115,4 +116,41 @@ func TestContactPreferencesZeroValue(t *testing.T) {
 	if result.ReceiveWeeklyMessageDayOfWeek != 0 {
 		t.Error("expected 0 for ReceiveWeeklyMessageDayOfWeek on zero-value")
 	}
+}
+
+// A missing list (legacy account) goes out as e-mail; an empty one means no channel and goes
+// out empty. Proto3 cannot tell the two apart, so this is the only place the difference exists.
+func TestContactPreferencesToAPIResolvesTheLegacyDefault(t *testing.T) {
+	cases := []struct {
+		name   string
+		stored []string
+		want   string
+	}{
+		{"missing (legacy) reads as e-mail", nil, "[email]"},
+		{"empty means no channel", []string{}, "[]"},
+		{"whatsapp only stays whatsapp only", []string{ChannelWhatsApp}, "[whatsapp]"},
+		{"both are kept in order", []string{ChannelWhatsApp, ChannelEmail}, "[whatsapp email]"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			prefs := ContactPreferences{PreferredChannels: c.stored}
+			if got := fmt.Sprint(prefs.ToAPI().PreferredChannels); got != c.want {
+				t.Errorf("ToAPI: expected %s, got %s", c.want, got)
+			}
+			if got := prefs.HasPreferredChannel(ChannelEmail); got != (c.want == "[email]" || c.want == "[whatsapp email]") {
+				t.Errorf("HasPreferredChannel(email) = %v for %v", got, c.stored)
+			}
+			if got := prefs.HasPreferredChannel(ChannelWhatsApp); got != (c.stored != nil && len(c.stored) > 0 && c.want != "[email]") {
+				t.Errorf("HasPreferredChannel(whatsapp) = %v for %v", got, c.stored)
+			}
+		})
+	}
+
+	t.Run("the default is a fresh list each time", func(t *testing.T) {
+		a := DefaultPreferredChannels()
+		a[0] = ChannelWhatsApp
+		if got := DefaultPreferredChannels(); got[0] != ChannelEmail {
+			t.Errorf("a caller changed the shared default: %v", got)
+		}
+	})
 }

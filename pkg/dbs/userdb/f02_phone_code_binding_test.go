@@ -16,9 +16,10 @@ import (
 // is meant for is still pending, and only that number can be confirmed with it.
 
 const (
-	bindingPhoneSent    = "+391230000701" // the number a code was sent to
-	bindingPhoneCurrent = "+391230000702" // the number the account carries afterwards
-	bindingPhoneOther   = "+391230000703" // a number of its own: only one account can hold a verified number
+	bindingPhoneSent     = "+391230000701" // the number a code was sent to
+	bindingPhoneCurrent  = "+391230000702" // the number the account carries afterwards
+	bindingPhoneOther    = "+391230000703" // a number of its own: only one account can hold a verified number
+	bindingPhoneFinalize = "+391230000709" // a number nobody else carries
 )
 
 func bindingCode(code string, phone string) models.VerificationCode {
@@ -100,12 +101,14 @@ func TestDbSetPhoneVerificationCodeRequiresPendingPhone(t *testing.T) {
 
 func TestDbFinalizePhoneVerificationConfirmsOnlyTheMatchingNumber(t *testing.T) {
 	t.Run("confirms the number the code was sent to", func(t *testing.T) {
-		id := bindingUser(t, "binding_finalize_ok@test.com", bindingPhoneSent, 0)
-		updated, err := testDBService.FinalizePhoneVerification(testInstanceID, id, bindingPhoneSent)
+		// A number of its own: another test of this file holds bindingPhoneSent verified, and
+		// a number verified elsewhere is refused.
+		id := bindingUser(t, "binding_finalize_ok@test.com", bindingPhoneFinalize, 0)
+		updated, err := testDBService.FinalizePhoneVerification(testInstanceID, id, bindingPhoneFinalize)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		phone, found := updated.FindContactInfoByTypeAndAddr(models.ContactTypePhone, bindingPhoneSent)
+		phone, found := updated.FindContactInfoByTypeAndAddr(models.ContactTypePhone, bindingPhoneFinalize)
 		if !found || phone.ConfirmedAt == 0 {
 			t.Errorf("the number the code was sent to was not confirmed: %+v", phone)
 		}

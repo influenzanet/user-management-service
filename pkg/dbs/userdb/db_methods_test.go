@@ -11,6 +11,7 @@ import (
 
 	"github.com/coneno/logger"
 	"github.com/influenzanet/user-management-service/pkg/models"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 )
@@ -841,7 +842,7 @@ func TestDbSetContactVerificationSentAt(t *testing.T) {
 func TestDbFinalizePhoneVerification(t *testing.T) {
 	now := time.Now().Unix()
 
-	t.Run("confirms the phone and enables both channels without touching the ledger", func(t *testing.T) {
+	t.Run("confirms the phone and enables whatsapp without touching the ledger", func(t *testing.T) {
 		ledger := []int64{now - 20, now - 10}
 		id := addReserveTestUser(t, "finalize_ok@test.com", ledger, []models.ContactInfo{
 			{ID: primitive.NewObjectID(), Type: models.ContactTypeEmail, Email: "finalize_ok@test.com", ConfirmedAt: now},
@@ -860,15 +861,110 @@ func TestDbFinalizePhoneVerification(t *testing.T) {
 		if !found || phone.ConfirmedAt == 0 {
 			t.Errorf("phone was not marked as verified: %+v", phone)
 		}
-		channels := updated.ContactPreferences.PreferredChannels
-		if !containsChannel(channels, models.ChannelEmail) || !containsChannel(channels, models.ChannelWhatsApp) {
-			t.Errorf("both email and whatsapp channels must be enabled, got %v", channels)
+		email, _ := updated.FindContactInfoByTypeAndAddr(models.ContactTypeEmail, "finalize_ok@test.com")
+		if email.ConfirmedAt != now {
+			t.Errorf("the e-mail contact was rewritten: %+v", email)
+		}
+		if !containsChannel(updated.ContactPreferences.PreferredChannels, models.ChannelWhatsApp) {
+			t.Errorf("whatsapp must be enabled, got %v", updated.ContactPreferences.PreferredChannels)
 		}
 		if updated.Account.PhoneVerificationCode.Code != "" {
 			t.Errorf("spent verification code was not cleared: %+v", updated.Account.PhoneVerificationCode)
 		}
 		if len(updated.Account.PhoneVerificationAttempts) != len(ledger) {
 			t.Errorf("the attempts ledger was rewritten: %v instead of %v", updated.Account.PhoneVerificationAttempts, ledger)
+		}
+	})
+
+	// Verification adds whatsapp and nothing else. E-mail stays as the participant left it,
+	// and an account written before channels existed (which reads as e-mail) keeps e-mail.
+	for i, c := range []struct {
+		name   string
+		before interface{} // what is stored; unsetField means the field is missing
+		want   string
+	}{
+		{"no channel", []string{}, "[whatsapp]"},
+		{"whatsapp only (re-verification)", []string{models.ChannelWhatsApp}, "[whatsapp]"},
+		{"email only", []string{models.ChannelEmail}, "[email whatsapp]"},
+		{"legacy, field missing", unsetField, "[email whatsapp]"},
+		{"legacy, field null", nil, "[email whatsapp]"},
+	} {
+		t.Run("channels after verification: "+c.name, func(t *testing.T) {
+			phone := fmt.Sprintf("+3912300000%d", 20+i)
+			id := addReserveTestUser(t, fmt.Sprintf("finalize_channels_%d@test.com", i), []int64{}, []models.ContactInfo{
+				{ID: primitive.NewObjectID(), Type: models.ContactTypePhone, Phone: phone},
+			})
+			_id, _ := primitive.ObjectIDFromHex(id)
+			update := bson.M{"$set": bson.M{"contactPreferences.preferredChannels": c.before}}
+			if c.before == unsetField {
+				update = bson.M{"$unset": bson.M{"contactPreferences.preferredChannels": ""}}
+			}
+			ctx, cancel := testDBService.getContext()
+			_, err := testDBService.collectionRefUsers(testInstanceID).UpdateOne(ctx, bson.M{"_id": _id}, update)
+			cancel()
+			if err != nil {
+				t.Fatal(err)
+			}
+			updated, err := testDBService.FinalizePhoneVerification(testInstanceID, id, phone)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got := fmt.Sprint(updated.ContactPreferences.PreferredChannels); got != c.want {
+				t.Errorf("expected %s, got %s", c.want, got)
+			}
+		})
+	}
+
+	// A WhatsApp-only participant changes the number and verifies the new one: the change leaves
+	// no channel, the verification gives whatsapp back, and e-mail never appears.
+	t.Run("a whatsapp-only participant who changes number stays whatsapp-only", func(t *testing.T) {
+		id := addReserveTestUser(t, "finalize_wa_only_change@test.com", []int64{}, []models.ContactInfo{
+			{ID: primitive.NewObjectID(), Type: models.ContactTypePhone, Phone: "+391230000040", ConfirmedAt: now},
+		})
+		if _, err := testDBService.UpdateContactPreferences(testInstanceID, id, models.ContactPreferences{
+			PreferredChannels: []string{models.ChannelWhatsApp},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if err := testDBService.ReplacePhoneContactInfo(testInstanceID, id, models.ContactInfo{
+			ID: primitive.NewObjectID(), Type: models.ContactTypePhone, Phone: "+391230000041",
+		}); err != nil {
+			t.Fatal(err)
+		}
+		user, _ := testDBService.GetUserByID(testInstanceID, id)
+		if got := fmt.Sprint(user.ContactPreferences.PreferredChannels); got != "[]" {
+			t.Errorf("after the change the participant has no channel, got %s", got)
+		}
+		updated, err := testDBService.FinalizePhoneVerification(testInstanceID, id, "+391230000041")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := fmt.Sprint(updated.ContactPreferences.PreferredChannels); got != "[whatsapp]" {
+			t.Errorf("expected [whatsapp], got %s", got)
+		}
+	})
+
+	// The contact list is rewritten by the pipeline: only the verified phone changes.
+	t.Run("confirms only the phone the code was sent to", func(t *testing.T) {
+		id := addReserveTestUser(t, "finalize_only_this@test.com", []int64{}, []models.ContactInfo{
+			{ID: primitive.NewObjectID(), Type: models.ContactTypeEmail, Email: "finalize_only_this@test.com"},
+			{ID: primitive.NewObjectID(), Type: models.ContactTypePhone, Phone: "+391230000050"},
+			{ID: primitive.NewObjectID(), Type: models.ContactTypeEmail, Email: "second_only_this@test.com"},
+		})
+		updated, err := testDBService.FinalizePhoneVerification(testInstanceID, id, "+391230000050")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(updated.ContactInfos) != 3 {
+			t.Fatalf("contacts lost or added: %+v", updated.ContactInfos)
+		}
+		for _, ci := range updated.ContactInfos {
+			if ci.Type == models.ContactTypeEmail && ci.ConfirmedAt != 0 {
+				t.Errorf("an e-mail contact was confirmed by a phone verification: %+v", ci)
+			}
+			if ci.Type == models.ContactTypePhone && ci.ConfirmedAt == 0 {
+				t.Errorf("the phone was not confirmed: %+v", ci)
+			}
 		}
 	})
 
@@ -896,11 +992,15 @@ func TestDbFinalizePhoneVerification(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if len(updated.ContactPreferences.PreferredChannels) != 2 {
-			t.Errorf("channels were duplicated: %v", updated.ContactPreferences.PreferredChannels)
+		// The account has no list stored (legacy), so it reads as e-mail; whatsapp is added once.
+		if got := fmt.Sprint(updated.ContactPreferences.PreferredChannels); got != "[email whatsapp]" {
+			t.Errorf("channels were duplicated or lost: %s", got)
 		}
 	})
 }
+
+// unsetField marks, in a table of stored values, a field that is not stored at all.
+var unsetField = &struct{}{}
 
 func containsChannel(channels []string, channel string) bool {
 	for _, c := range channels {

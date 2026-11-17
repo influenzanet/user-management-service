@@ -15,6 +15,10 @@ func (s *userManagementServer) SaveLogEvent(
 	eventName string,
 	msg string,
 ) {
+	if s.clients == nil || s.clients.LoggingService == nil {
+		logger.Error.Printf("failed to save log %s: no logging service client", eventName)
+		return
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 

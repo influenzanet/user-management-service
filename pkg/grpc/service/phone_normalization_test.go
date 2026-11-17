@@ -130,20 +130,34 @@ func TestAddPhoneNumberRefusesNumbersThatAreNotInternational(t *testing.T) {
 	}
 }
 
-func TestAddPhoneNumberSameNumberInAnotherFormIsTaken(t *testing.T) {
+// requireTakenAtVerification checks the outcome for a number another account holds verified:
+// the account carries it in E.164 form, unverified, and proving it is refused.
+func requireTakenAtVerification(t *testing.T, s userManagementServer, token *api_types.TokenInfos, e164 string) {
+	t.Helper()
+	if ci, found := phoneOf(t, token.Id); !found || ci.Phone != e164 || ci.ConfirmedAt != 0 {
+		t.Errorf("the number must be stored as %q, unverified: %+v", e164, ci)
+	}
+	err := verifyWithStoredCode(t, &s, token)
+	if status.Code(err) != codes.InvalidArgument || status.Convert(err).Message() != "phone number already taken" {
+		t.Errorf("verification: unexpected answer: %v", err)
+	}
+	if ci, _ := phoneOf(t, token.Id); ci.ConfirmedAt != 0 {
+		t.Errorf("the number was confirmed on a second account: %+v", ci)
+	}
+}
+
+func TestAddPhoneNumberSameNumberInAnotherFormIsRefusedAtVerification(t *testing.T) {
 	e164, forms := phoneFormsOf(200)
 	s := newPhoneTestServer(&countingWhatsAppClient{})
 	seedPhoneOwner(t, "e164_owner@test.com", e164)
 
 	for i, form := range forms {
 		token := addRateLimitTestUser(t, fmt.Sprintf("e164_taken_%d@test.com", i), nil)
-		err := addPhone(s, &token, form)
-		if status.Code(err) != codes.InvalidArgument || status.Convert(err).Message() != "phone number already taken" {
-			t.Errorf("form %q: unexpected answer: %v", form, err)
+		if err := addPhone(s, &token, form); err != nil {
+			t.Errorf("form %q: adding must send the code: %v", form, err)
+			continue
 		}
-		if _, found := phoneOf(t, token.Id); found {
-			t.Errorf("form %q: the number was stored on a second account", form)
-		}
+		requireTakenAtVerification(t, s, &token, e164)
 	}
 }
 
@@ -167,13 +181,10 @@ func TestAddPhoneNumberFirstAddedThenAnotherFormByTheSecond(t *testing.T) {
 		t.Fatalf("verification failed: %s", err.Error())
 	}
 
-	err := addPhone(s, &second, "+39 347 612 0300")
-	if status.Code(err) != codes.InvalidArgument || status.Convert(err).Message() != "phone number already taken" {
-		t.Fatalf("unexpected answer: %v", err)
+	if err := addPhone(s, &second, "+39 347 612 0300"); err != nil {
+		t.Fatalf("adding must send the code: %v", err)
 	}
-	if _, found := phoneOf(t, second.Id); found {
-		t.Error("the number was stored on a second account")
-	}
+	requireTakenAtVerification(t, s, &second, "+393476120300")
 }
 
 func TestAddPhoneNumberAgainInAnotherFormIsTheSameNumber(t *testing.T) {
@@ -236,16 +247,13 @@ func TestEditPhoneNumberComparesNormalisedValues(t *testing.T) {
 		}
 	})
 
-	t.Run("another account's verified number is taken in any form", func(t *testing.T) {
+	t.Run("another account's verified number is refused at verification in any form", func(t *testing.T) {
 		seedPhoneOwner(t, "e164_edit_owner@test.com", "+393476120520")
 		token := addVerifyCodeTestUser(t, "e164_edit_taker@test.com", "+393476120521", models.VerificationCode{}, nil, nil)
-		err := edit(&token, "0039 347 612 0520")
-		if status.Code(err) != codes.InvalidArgument || status.Convert(err).Message() != "phone number already taken" {
-			t.Errorf("unexpected answer: %v", err)
+		if err := edit(&token, "0039 347 612 0520"); err != nil {
+			t.Fatalf("changing must send the code: %v", err)
 		}
-		if ci, _ := phoneOf(t, token.Id); ci.Phone != "+393476120521" {
-			t.Errorf("the contact changed to %q", ci.Phone)
-		}
+		requireTakenAtVerification(t, s, &token, "+393476120520")
 	})
 
 	t.Run("a new number is stored normalised", func(t *testing.T) {
@@ -334,10 +342,17 @@ func TestSignupWithEmailStoresE164AndComparesNormalisedValues(t *testing.T) {
 		t.Errorf("the number was not stored normalised and unverified: %+v", user.ContactInfos)
 	}
 
-	// The number of an existing participant, in another form, is refused like a duplicate account
-	_, err = s.SignupWithEmail(context.Background(), signupReq("e164_signup_probe@test.com", "+39 347 612 0800"))
-	if status.Code(err) != codes.Internal || status.Convert(err).Message() != "user creation failed" {
-		t.Errorf("unexpected answer: %v", err)
+	// The number of an existing participant, in another form, is stored normalised and
+	// unverified like any other
+	if _, err = s.SignupWithEmail(context.Background(), signupReq("e164_signup_second@test.com", "+39 347 612 0800")); err != nil {
+		t.Fatalf("unexpected error: %s", err.Error())
+	}
+	second, err := testUserDBService.GetUserByAccountID(testInstanceID, "e164_signup_second@test.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ci, found := second.FindContactInfoByTypeAndAddr(models.ContactTypePhone, "+393476120800"); !found || ci.ConfirmedAt != 0 {
+		t.Errorf("the number was not stored normalised and unverified: %+v", second.ContactInfos)
 	}
 
 	// A number without an international prefix is not valid
@@ -470,18 +485,21 @@ func TestSameNumberInDifferentFormsBurstEndsOnOneAccount(t *testing.T) {
 	if verified := accountsVerifiedOn(t, tokens, e164); verified != 1 {
 		t.Fatalf("%d accounts hold the number verified, want exactly 1", verified)
 	}
-	// Late comers, in yet other forms, are told it is taken
-	for i, form := range forms {
+	// Late comers, in other forms, get the code and are refused when they prove it. Two of them:
+	// each send now counts against the number's own budget, which the burst has nearly spent.
+	for i, form := range forms[1:3] {
 		late := addRateLimitTestUser(t, fmt.Sprintf("e164_burst_late_%d@test.com", i), nil)
-		err := addPhone(s, &late, form)
-		if status.Code(err) != codes.InvalidArgument || status.Convert(err).Message() != "phone number already taken" {
-			t.Errorf("late account with %q: unexpected answer: %v", form, err)
+		if err := addPhone(s, &late, form); err != nil {
+			t.Errorf("late account with %q: unexpected error: %v", form, err)
+			continue
 		}
+		requireTakenAtVerification(t, s, &late, e164)
 	}
 }
 
 // Staggered: the same, with the accounts started a few milliseconds apart, so that some of them
-// find the number already verified when they add it and the others still race to prove it.
+// add the number after it was verified (and still get the code) and the others race to prove
+// it.
 func TestSameNumberInDifferentFormsStaggeredEndsOnOneAccount(t *testing.T) {
 	const accounts = 8
 	e164, forms := phoneFormsOf(1100)
@@ -498,12 +516,8 @@ func TestSameNumberInDifferentFormsStaggeredEndsOnOneAccount(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			time.Sleep(time.Duration(i) * 15 * time.Millisecond)
-			err := addPhone(s, &tokens[i], forms[i%len(forms)])
-			if err != nil {
-				// Allowed only as "taken": an earlier account has already proved the number
-				if status.Convert(err).Message() != "phone number already taken" {
-					t.Errorf("account %d: unexpected error: %s", i, err.Error())
-				}
+			if err := addPhone(s, &tokens[i], forms[i%len(forms)]); err != nil {
+				t.Errorf("account %d: adding must send the code whoever holds the number: %s", i, err.Error())
 				return
 			}
 			user, _ := testUserDBService.GetUserByID(testInstanceID, tokens[i].Id)

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -16,8 +17,9 @@ import (
 // Functional coverage of the phone verification endpoint, which had none: what a correct, a
 // wrong, an expired and an exhausted code do to the user document and to the response.
 //
-// The channel assertions are the ones the client's TC-024 checks: verifying a phone must enable
-// whatsapp next to email, and must not disturb the channels the user had already chosen.
+// The channel assertions follow the client's TC-024, amended so that verifying a
+// phone enables whatsapp and touches no other channel. An account with no list stored (legacy)
+// reads as e-mail and keeps it; a whatsapp-only account stays whatsapp-only.
 
 func addVerifyCodeTestUser(t *testing.T, accountID string, phone string, code models.VerificationCode, channels []string, ledger []int64) api_types.TokenInfos {
 	t.Helper()
@@ -141,7 +143,7 @@ func TestVerifyWhatsAppCode(t *testing.T) {
 		}
 	})
 
-	t.Run("a correct code verifies the phone and enables whatsapp next to email", func(t *testing.T) {
+	t.Run("a correct code verifies the phone and enables whatsapp next to the legacy e-mail", func(t *testing.T) {
 		ledger := []int64{time.Now().Unix() - 30}
 		token := addVerifyCodeTestUser(t, "verify_ok@test.com", "+393230000404", validCode("123456"), nil, ledger)
 
@@ -159,7 +161,7 @@ func TestVerifyWhatsAppCode(t *testing.T) {
 		}
 		channels := channelsOf(t, token.Id)
 		if !hasChannel(channels, models.ChannelWhatsApp) || !hasChannel(channels, models.ChannelEmail) {
-			t.Errorf("both whatsapp and email must be enabled, got %v", channels)
+			t.Errorf("a legacy account (e-mail) must keep e-mail and gain whatsapp, got %v", channels)
 		}
 		user, _ := testUserDBService.GetUserByID(testInstanceID, token.Id)
 		if user.Account.PhoneVerificationCode.Code != "" {
@@ -167,6 +169,19 @@ func TestVerifyWhatsAppCode(t *testing.T) {
 		}
 		if len(user.Account.PhoneVerificationAttempts) != len(ledger) {
 			t.Errorf("the attempts ledger was rewritten: %v instead of %v", user.Account.PhoneVerificationAttempts, ledger)
+		}
+	})
+
+	// Verification never adds e-mail.
+	t.Run("a correct code adds whatsapp only", func(t *testing.T) {
+		for i, before := range [][]string{{}, {models.ChannelWhatsApp}} {
+			token := addVerifyCodeTestUser(t, fmt.Sprintf("verify_wa_only_%d@test.com", i), fmt.Sprintf("+39323000042%d", i), validCode("123456"), before, nil)
+			if _, err := s.VerifyWhatsAppCode(context.Background(), &api.VerifyWhatsAppCodeReq{Token: &token, Code: "123456"}); err != nil {
+				t.Fatalf("unexpected error: %s", err.Error())
+			}
+			if got := channelsOf(t, token.Id); len(got) != 1 || got[0] != models.ChannelWhatsApp {
+				t.Errorf("from %v: expected [whatsapp], got %v", before, got)
+			}
 		}
 	})
 

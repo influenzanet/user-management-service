@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/coneno/logger"
 	"github.com/influenzanet/user-management-service/pkg/models"
 	"github.com/influenzanet/user-management-service/pkg/utils"
 	"go.mongodb.org/mongo-driver/bson"
@@ -22,9 +23,11 @@ import (
 // collection is the serialisation point instead: inserting the same _id twice fails in the
 // database, whichever replica the requests land on.
 //
-// Nothing needs to be cleaned up when a participant deletes or changes the number: a claim whose
-// owner no longer holds the number verified is stale, and the next verification of that number
-// takes it over (see claimVerifiedPhone).
+// A claim whose owner no longer holds the number verified is stale. The next verification of that
+// number takes it over (see claimVerifiedPhone), so a stale claim never blocks anybody; it is still
+// released when the account deletes or changes the number, or is deleted, because a claim names
+// the account a number belonged to and nothing should keep that after the number is gone (item
+// 48, see releaseClaimsNoLongerHeld). ReleaseStaleVerifiedPhoneClaims sweeps what was left behind.
 const VerifiedPhoneCollection = "verifiedPhones"
 
 // ErrPhoneVerifiedElsewhere reports that another account already holds the number verified.
@@ -61,6 +64,22 @@ func (dbService *UserDBService) holdsVerifiedPhone(instanceID string, userID pri
 		}},
 	})
 	return holds > 0, err
+}
+
+// verifiedOnAnotherAccount reports whether an account other than userID carries the number, in
+// any of its spellings, confirmed.
+func (dbService *UserDBService) verifiedOnAnotherAccount(instanceID string, userID primitive.ObjectID, phone string) (bool, error) {
+	ctx, cancel := dbService.getContext()
+	defer cancel()
+	n, err := dbService.collectionRefUsers(instanceID).CountDocuments(ctx, bson.M{
+		"_id": bson.M{"$ne": userID},
+		"contactInfos": bson.M{"$elemMatch": bson.M{
+			"type":        models.ContactTypePhone,
+			"phone":       bson.M{"$in": verifiedPhoneForms(phone)},
+			"confirmedAt": bson.M{"$gt": 0},
+		}},
+	}, options.Count().SetLimit(1))
+	return n > 0, err
 }
 
 // afterPhoneClaimHook, when set, runs between the claim and the confirmation of
@@ -194,10 +213,10 @@ func (dbService *UserDBService) confirmPhoneClaim(instanceID string, userID prim
 // that call wrote, so a confirmation made by anybody else in the meantime is left alone. What it
 // undoes is the part that proves the number: confirmedAt goes back to zero and, when the call
 // is the one that enabled the whatsapp channel (it was not enabled before), the channel is
-// removed again. The e-mail channel that the confirmation also adds is left in place: it is the
-// default every account falls back to, and removing it could leave the account with no channel.
-// The spent verification code is not restored: the participant asks for a new one. A failure
-// here is returned to the caller, who reports it instead of the lost claim.
+// removed again. The rest of the channel list is what it was: the confirmation adds nothing else
+// (an account written before channels existed has its e-mail default stored by it, which means
+// the same). The spent verification code is not restored: the participant asks for a new one. A
+// failure here is returned to the caller, who reports it instead of the lost claim.
 func (dbService *UserDBService) revertPhoneConfirmation(instanceID string, userID primitive.ObjectID, phone string, confirmedAt int64, whatsAppWasEnabled bool) error {
 	ctx, cancel := dbService.getContext()
 	defer cancel()
@@ -228,6 +247,122 @@ func (dbService *UserDBService) releaseVerifiedPhoneClaim(instanceID string, use
 	ctx, cancel := dbService.getContext()
 	defer cancel()
 	_, _ = dbService.collectionRefVerifiedPhones(instanceID).DeleteOne(ctx, bson.M{"_id": verifiedPhoneKey(phone), "userId": userID})
+}
+
+// afterHeldCheckHook, when set, runs in releaseClaimIfStale between the check that the owner no
+// longer holds the number and the delete of the claim; tests use it to let the owner verify the
+// number again in this window. It is nil in production.
+var afterHeldCheckHook func(owner primitive.ObjectID)
+
+// releaseClaimIfStale deletes the claim on number when its owner on record, owner, no longer
+// holds the number verified. The delete names the revision read before the check: an owner that
+// verifies the number again in the meantime confirms the claim (see confirmPhoneClaim), which
+// moves the revision, so a claim that has become valid again is never deleted. It reports
+// whether the claim was deleted.
+func (dbService *UserDBService) releaseClaimIfStale(instanceID string, number string, owner primitive.ObjectID, rev int64) (bool, error) {
+	holds, err := dbService.holdsVerifiedPhone(instanceID, owner, number)
+	if err != nil || holds {
+		return false, err
+	}
+	if afterHeldCheckHook != nil {
+		afterHeldCheckHook(owner)
+	}
+	ctx, cancel := dbService.getContext()
+	defer cancel()
+	res, err := dbService.collectionRefVerifiedPhones(instanceID).DeleteOne(ctx,
+		bson.M{"_id": number, "userId": owner, "rev": revisionFilter(rev)})
+	if err != nil {
+		return false, err
+	}
+	return res.DeletedCount > 0, nil
+}
+
+type storedClaim struct {
+	Number string             `bson:"_id"`
+	UserID primitive.ObjectID `bson:"userId"`
+	Rev    int64              `bson:"rev"`
+}
+
+func (dbService *UserDBService) findClaims(instanceID string, filter bson.M) ([]storedClaim, error) {
+	ctx, cancel := dbService.getContext()
+	defer cancel()
+	cur, err := dbService.collectionRefVerifiedPhones(instanceID).Find(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	var claims []storedClaim
+	if err := cur.All(ctx, &claims); err != nil {
+		return nil, err
+	}
+	return claims, nil
+}
+
+// releaseClaimsNoLongerHeld releases every claim in the name of userID on a number the account no
+// longer holds verified. It runs after the account's phone was deleted or replaced, and
+// after the account itself was deleted; checking each claim against the account, rather than
+// deleting by the number just removed, also clears what an earlier failure left behind, and
+// never touches a claim the account still holds.
+func (dbService *UserDBService) releaseClaimsNoLongerHeld(instanceID string, userID primitive.ObjectID) error {
+	claims, err := dbService.findClaims(instanceID, bson.M{"userId": userID})
+	if err != nil {
+		return err
+	}
+	for _, c := range claims {
+		if _, err := dbService.releaseClaimIfStale(instanceID, c.Number, c.UserID, c.Rev); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// releaseClaimsNoLongerHeldOrLog runs releaseClaimsNoLongerHeld after a write that has already
+// succeeded. A failure is logged and not returned: the phone or the account is already gone, a
+// claim left behind blocks nobody (the next verification of the number takes it over), and
+// ReleaseStaleVerifiedPhoneClaims sweeps it later.
+func (dbService *UserDBService) releaseClaimsNoLongerHeldOrLog(instanceID string, userID primitive.ObjectID) {
+	if err := dbService.releaseClaimsNoLongerHeld(instanceID, userID); err != nil {
+		logger.Error.Printf("failed to release the phone claims of user %s: %v", userID.Hex(), err)
+	}
+}
+
+// StaleVerifiedPhoneClaim is a claim whose owner no longer holds the number verified, or no longer
+// exists.
+type StaleVerifiedPhoneClaim struct {
+	Number string
+	UserID string
+}
+
+// ReleaseStaleVerifiedPhoneClaims finds the stale claims of an instance and, with apply, releases
+// them. It returns the claims found stale and how many were released; a claim that became valid
+// again between the two steps is reported and kept. Without apply nothing is written.
+func (dbService *UserDBService) ReleaseStaleVerifiedPhoneClaims(instanceID string, apply bool) ([]StaleVerifiedPhoneClaim, int, error) {
+	claims, err := dbService.findClaims(instanceID, bson.M{})
+	if err != nil {
+		return nil, 0, err
+	}
+	var stale []StaleVerifiedPhoneClaim
+	released := 0
+	for _, c := range claims {
+		if !apply {
+			holds, err := dbService.holdsVerifiedPhone(instanceID, c.UserID, c.Number)
+			if err != nil {
+				return stale, released, err
+			}
+			if !holds {
+				stale = append(stale, StaleVerifiedPhoneClaim{Number: c.Number, UserID: c.UserID.Hex()})
+			}
+			continue
+		}
+		deleted, err := dbService.releaseClaimIfStale(instanceID, c.Number, c.UserID, c.Rev)
+		if err != nil {
+			return stale, released, err
+		}
+		if deleted {
+			stale = append(stale, StaleVerifiedPhoneClaim{Number: c.Number, UserID: c.UserID.Hex()})
+			released++
+		}
+	}
+	return stale, released, nil
 }
 
 // verifiedPhoneForms lists the spellings under which an account may hold the same number: the

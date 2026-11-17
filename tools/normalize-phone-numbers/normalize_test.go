@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -290,11 +291,16 @@ func TestClaimsAreSeededForVerifiedHoldersOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if dry.ClaimsToSeed != 2 || dry.ClaimsSeeded != 0 || len(dry.ClaimConflicts) != 1 {
+	// The claim of the other account is stale (that account does not hold the number): a dry run
+	// reports it, and the conflict it causes, and writes nothing.
+	if dry.ClaimsToSeed != 2 || dry.ClaimsSeeded != 0 || len(dry.ClaimConflicts) != 1 || len(dry.StaleClaims) != 1 || dry.StaleClaimsReleased != 0 {
 		t.Errorf("unexpected dry run: %+v", dry)
 	}
 	if _, found := claimOf(t, instance, "+442079460018"); found {
 		t.Fatal("a dry run seeded a claim")
+	}
+	if owner, _ := claimOf(t, instance, "+393316221419"); owner != other {
+		t.Fatal("a dry run released a claim")
 	}
 
 	for i := 0; i < 2; i++ {
@@ -302,15 +308,16 @@ func TestClaimsAreSeededForVerifiedHoldersOnly(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		wantSeeded, wantPresent := 2, 0
+		// First run: the stale claim is released, then all three holders get theirs.
+		wantSeeded, wantPresent, wantReleased := 3, 0, 1
 		if i == 1 {
-			wantSeeded, wantPresent = 0, 2
+			wantSeeded, wantPresent, wantReleased = 0, 3, 0
 		}
-		if report.ClaimsSeeded != wantSeeded || report.ClaimsPresent != wantPresent || len(report.ClaimConflicts) != 1 {
+		if report.ClaimsSeeded != wantSeeded || report.ClaimsPresent != wantPresent || len(report.ClaimConflicts) != 0 || report.StaleClaimsReleased != wantReleased {
 			t.Errorf("run %d: unexpected report: %+v", i, report)
 		}
-		if c := report.ClaimConflicts[0]; c.UserID != taken.Hex() || c.OwnerID != other.Hex() || c.Number != "+39***1419" {
-			t.Errorf("run %d: unexpected conflict: %+v", i, c)
+		if i == 0 && (len(report.StaleClaims) != 1 || report.StaleClaims[0].OwnerID != other.Hex() || report.StaleClaims[0].Number != "+39***1419") {
+			t.Errorf("run %d: unexpected stale claims: %+v", i, report.StaleClaims)
 		}
 	}
 	if owner, found := claimOf(t, instance, "+442079460018"); !found || owner != legacy {
@@ -322,8 +329,49 @@ func TestClaimsAreSeededForVerifiedHoldersOnly(t *testing.T) {
 	if _, found := claimOf(t, instance, "+4930123456"); found {
 		t.Errorf("a claim was seeded for unverified %s", unverified.Hex())
 	}
-	if owner, _ := claimOf(t, instance, "+393316221419"); owner != other {
-		t.Errorf("a claim of another account was overwritten: %v", owner)
+	if owner, _ := claimOf(t, instance, "+393316221419"); owner != taken {
+		t.Errorf("the verified holder did not get the number after the stale claim went: %v", owner)
+	}
+}
+
+// Item 48: claims left by accounts that deleted or changed the number, or were deleted, before the
+// service released them itself.
+func TestStaleClaimsAreReleased(t *testing.T) {
+	instance := freshInstance(t)
+	holder := insertUser(t, instance, "+34612345601", 5, "")
+	moved := insertUser(t, instance, "+34612345602", 0, "") // had the number verified, then changed it
+	ctx, cancel := testUserDBService.GetContext()
+	defer cancel()
+	claims := testUserDBService.GetCollection(instance, userdb.VerifiedPhoneCollection)
+	for number, owner := range map[string]primitive.ObjectID{
+		"+34612345601": holder,                  // valid
+		"+34612345603": moved,                   // the account no longer carries the number
+		"+34612345604": primitive.NewObjectID(), // the account was deleted
+	} {
+		if _, err := claims.InsertOne(ctx, bson.M{"_id": number, "userId": owner, "claimedAt": int64(1)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	report, err := NormalizePhoneNumbers(testUserDBService, instance, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.StaleClaimsReleased != 2 || len(report.StaleClaims) != 2 {
+		t.Errorf("unexpected report: %+v", report)
+	}
+	for _, c := range report.StaleClaims {
+		if strings.Contains(c.Number, "345603") || strings.Contains(c.Number, "345604") {
+			t.Errorf("the report must mask the number: %+v", c)
+		}
+	}
+	if owner, found := claimOf(t, instance, "+34612345601"); !found || owner != holder {
+		t.Errorf("a valid claim was released: %v %v", owner, found)
+	}
+	for _, number := range []string{"+34612345603", "+34612345604"} {
+		if _, found := claimOf(t, instance, number); found {
+			t.Errorf("the stale claim on %s is still there", number)
+		}
 	}
 }
 
@@ -424,5 +472,44 @@ func TestStaleCodeBoundToAnotherNumberIsNormalisedOnItsOwn(t *testing.T) {
 	contact, code := storedPhones(t, instance, id)
 	if contact != "+442079460018" || code != "+442079460018" {
 		t.Errorf("got %q %q", contact, code)
+	}
+}
+
+// captureStdout returns what fn prints.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := os.Stdout
+	os.Stdout = w
+	fn()
+	os.Stdout = original
+	w.Close()
+	out, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(out)
+}
+
+func TestReportListsStaleClaims(t *testing.T) {
+	stale := []StaleClaim{{Number: "+34***5603", OwnerID: "aaa"}, {Number: "+34***5604", OwnerID: "bbb"}}
+
+	dry := captureStdout(t, func() { printReport(Report{Instance: "x", StaleClaims: stale}) })
+	if !strings.Contains(dry, "Stale claims that would be released: 2") {
+		t.Errorf("dry run report: %q", dry)
+	}
+	applied := captureStdout(t, func() {
+		printReport(Report{Instance: "x", Applied: true, StaleClaims: stale, StaleClaimsReleased: 2})
+	})
+	if !strings.Contains(applied, "Stale claims released: 2") {
+		t.Errorf("applied report: %q", applied)
+	}
+	for _, out := range []string{dry, applied} {
+		if !strings.Contains(out, "stale claim  +34***5603 owner=aaa") || !strings.Contains(out, "stale claim  +34***5604 owner=bbb") {
+			t.Errorf("the stale claims are not listed: %q", out)
+		}
 	}
 }

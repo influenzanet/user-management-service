@@ -10,6 +10,7 @@ import (
 
 	"github.com/coneno/logger"
 	"github.com/golang/mock/gomock"
+	api_types "github.com/influenzanet/go-utils/pkg/api_types"
 	"github.com/influenzanet/user-management-service/internal/config"
 	loggingMock "github.com/influenzanet/user-management-service/test/mocks/logging_service"
 	messageMock "github.com/influenzanet/user-management-service/test/mocks/messaging_service"
@@ -18,20 +19,17 @@ import (
 	"github.com/influenzanet/user-management-service/pkg/models"
 	"github.com/influenzanet/user-management-service/pkg/utils"
 	"go.mongodb.org/mongo-driver/bson/primitive"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
-// F-08: "this number is already registered" is an answer only the owner of the number is
-// entitled to. Signup gave it to anyone, with no account and nothing spent, which turns the
-// endpoint into a membership oracle: feed it a list of numbers and it says which ones belong to
-// a participant of an epidemiological study. AddPhoneNumber and EditPhoneNumber gave the same
-// answer to an authenticated caller before reserving a send slot, so probing was unmetered
-// there too and the three-per-window budget never came into play.
+// F-08: "this number is already registered" is an answer about a third party.
+// Signup gave it to anyone, with no account and nothing spent, and AddPhoneNumber and
+// EditPhoneNumber gave it to any logged-in account: feed them a list of numbers and they said
+// which ones belong to a participant of an epidemiological study.
 //
-// The fix is not to hide the answer from the account holder, who needs it, but to take the
-// reward away: signup answers exactly what a duplicate account address answers, and the two
-// authenticated endpoints charge a probe to the same budget a real send spends.
+// The question is no longer asked at all. Signup stores the number unverified, and adding
+// or changing a phone sends the code, whoever else carries or has proved the number. Ownership is
+// settled at verification, which refuses a number another account has proved: only the person
+// who receives the code can get that far, and they learn nothing they did not know.
 
 const (
 	// The number another participant already holds. It is seeded verified on purpose: an
@@ -66,17 +64,6 @@ func captureWarnings(t *testing.T, fn func()) string {
 	defer logger.Warning.SetOutput(original)
 	fn()
 	return buf.String()
-}
-
-// attemptsOf returns how many phone verification sends the user has on record, which is the
-// budget a probe must now be charged to.
-func attemptsOf(t *testing.T, userID string) int {
-	t.Helper()
-	user, err := testUserDBService.GetUserByID(testInstanceID, userID)
-	if err != nil {
-		t.Fatalf("unexpected error: %s", err.Error())
-	}
-	return len(user.Account.PhoneVerificationAttempts)
 }
 
 func newSignupTestServer(t *testing.T) userManagementServer {
@@ -119,73 +106,74 @@ func signupReq(email string, phone string) *api.SignupWithEmailMsg {
 	}
 }
 
-func TestSignupWithEmail_TakenPhoneIsIndistinguishable(t *testing.T) {
+// verifyWithStoredCode completes the verification the way the participant would: with the code
+// the service stored (and sent).
+func verifyWithStoredCode(t *testing.T, s *userManagementServer, token *api_types.TokenInfos) error {
+	t.Helper()
+	user, err := testUserDBService.GetUserByID(testInstanceID, token.Id)
+	if err != nil {
+		t.Fatalf("unexpected error: %s", err.Error())
+	}
+	if user.Account.PhoneVerificationCode.Code == "" {
+		t.Fatal("no code was stored for the number")
+	}
+	_, err = s.VerifyWhatsAppCode(context.Background(), &api.VerifyWhatsAppCodeReq{Token: token, Code: user.Account.PhoneVerificationCode.Code})
+	return err
+}
+
+// requireOwnerUntouched checks that the account holding the number verified still holds it, with
+// its claim, whatever the other account did.
+func requireOwnerUntouched(t *testing.T, ownerAccountID string, phone string) {
+	t.Helper()
+	owner, err := testUserDBService.GetUserByAccountID(testInstanceID, ownerAccountID)
+	if err != nil {
+		t.Fatalf("unexpected error: %s", err.Error())
+	}
+	ci, found := owner.FindContactInfoByTypeAndAddr(models.ContactTypePhone, phone)
+	if !found || ci.ConfirmedAt == 0 {
+		t.Errorf("the owner lost the verified number: %+v", owner.ContactInfos)
+	}
+}
+
+func TestSignupWithEmail_ClaimedPhoneIsStoredUnverified(t *testing.T) {
 	s := newSignupTestServer(t)
 	seedPhoneOwner(t, "oracle_owner@test.com", oracleTakenPhone)
 
-	t.Run("a taken number is refused exactly as a duplicate account address is", func(t *testing.T) {
-		// The reference answer: sign the same address up twice.
-		existing := signupReq("oracle_duplicate@test.com", "")
-		if _, err := s.SignupWithEmail(context.Background(), existing); err != nil {
-			t.Fatalf("the first signup must succeed: %s", err.Error())
-		}
-		_, duplicateErr := s.SignupWithEmail(context.Background(), existing)
-		if duplicateErr == nil {
-			t.Fatal("signing the same address up twice must fail")
-		}
-
-		_, takenPhoneErr := s.SignupWithEmail(context.Background(), signupReq("oracle_probe@test.com", oracleTakenPhone))
-		if takenPhoneErr == nil {
-			t.Fatal("signing up with a number another account holds must fail")
-		}
-
-		if status.Code(takenPhoneErr) != status.Code(duplicateErr) {
-			t.Errorf("the status code tells a registered number from a registered address: %v vs %v",
-				status.Code(takenPhoneErr), status.Code(duplicateErr))
-		}
-		if status.Convert(takenPhoneErr).Message() != status.Convert(duplicateErr).Message() {
-			t.Errorf("the message tells a registered number from a registered address: %q vs %q",
-				status.Convert(takenPhoneErr).Message(), status.Convert(duplicateErr).Message())
-		}
-	})
-
-	t.Run("the refusal is logged with the masked number for the operator", func(t *testing.T) {
-		warnings := captureWarnings(t, func() {
-			_, _ = s.SignupWithEmail(context.Background(), signupReq("oracle_logged@test.com", oracleTakenPhone))
+	for name, phone := range map[string]string{"a number another account has verified": oracleTakenPhone, "a free number": oracleFreePhone} {
+		t.Run(name+" creates the account, the number unverified", func(t *testing.T) {
+			email := "oracle_signup_" + phone[len(phone)-3:] + "@test.com"
+			var resp *api.TokenResponse
+			warnings := captureWarnings(t, func() {
+				var err error
+				resp, err = s.SignupWithEmail(context.Background(), signupReq(email, phone))
+				if err != nil {
+					t.Fatalf("the signup must succeed: %s", err.Error())
+				}
+			})
+			if len(resp.AccessToken) < 1 || len(resp.RefreshToken) < 1 {
+				t.Fatalf("unexpected response: %s", resp)
+			}
+			// Nothing about the number is flagged: there is no probe to flag any more.
+			if strings.Contains(warnings, utils.MaskPhone(phone)) {
+				t.Errorf("the signup logged the number as something special: %q", warnings)
+			}
+			user, err := testUserDBService.GetUserByAccountID(testInstanceID, email)
+			if err != nil {
+				t.Fatalf("the account was not created: %s", err.Error())
+			}
+			ci, found := user.FindContactInfoByTypeAndAddr(models.ContactTypePhone, phone)
+			if !found {
+				t.Fatalf("the number was not stored: %+v", user.ContactInfos)
+			}
+			if ci.ConfirmedAt != 0 {
+				t.Errorf("a number given at signup must stay unverified: %+v", ci)
+			}
+			if user.ContactPreferences.HasPreferredChannel(models.ChannelWhatsApp) {
+				t.Errorf("an unverified number must not enable whatsapp: %v", user.ContactPreferences.PreferredChannels)
+			}
 		})
-
-		if !strings.Contains(warnings, "SECURITY WARNING") {
-			t.Errorf("the probe was not flagged as a security event: %q", warnings)
-		}
-		if !strings.Contains(warnings, utils.MaskPhone(oracleTakenPhone)) {
-			t.Errorf("the operator cannot tell which number was probed: %q", warnings)
-		}
-		if strings.Contains(warnings, oracleTakenPhone) {
-			t.Errorf("the full number was written to the log: %q", warnings)
-		}
-	})
-
-	t.Run("a free number still creates the account", func(t *testing.T) {
-		resp, err := s.SignupWithEmail(context.Background(), signupReq("oracle_free@test.com", oracleFreePhone))
-		if err != nil {
-			t.Fatalf("a signup with an unused number must succeed: %s", err.Error())
-		}
-		if len(resp.AccessToken) < 1 || len(resp.RefreshToken) < 1 {
-			t.Fatalf("unexpected response: %s", resp)
-		}
-
-		user, err := testUserDBService.GetUserByAccountID(testInstanceID, "oracle_free@test.com")
-		if err != nil {
-			t.Fatalf("the account was not created: %s", err.Error())
-		}
-		ci, found := user.FindContactInfoByTypeAndAddr(models.ContactTypePhone, oracleFreePhone)
-		if !found {
-			t.Fatalf("the number was not stored: %+v", user.ContactInfos)
-		}
-		if ci.ConfirmedAt != 0 {
-			t.Errorf("a number given at signup must stay unverified: %+v", ci)
-		}
-	})
+	}
+	requireOwnerUntouched(t, "oracle_owner@test.com", oracleTakenPhone)
 
 	t.Run("an invalid number is still answered on its own", func(t *testing.T) {
 		// A malformed number says nothing about who is registered, so the caller keeps the
@@ -197,84 +185,77 @@ func TestSignupWithEmail_TakenPhoneIsIndistinguishable(t *testing.T) {
 	})
 }
 
-func TestAddPhoneNumberProbeSpendsASlot(t *testing.T) {
+func TestAddPhoneNumberWithAClaimedNumberSendsTheCode(t *testing.T) {
 	mockWhatsApp := &countingWhatsAppClient{}
 	s := newRateLimitTestServer(mockWhatsApp)
+	s.Intervals.MaxVerificationAttempts = 3
 	seedPhoneOwner(t, "oracle_add_owner@test.com", oracleTakenPhone)
 	token := addRateLimitTestUser(t, "oracle_add_prober@test.com", nil)
 
-	t.Run("a probe costs the caller one of the sends it could have made", func(t *testing.T) {
-		before := attemptsOf(t, token.Id)
-
-		_, err := s.AddPhoneNumber(context.Background(), &api.PhoneMsg{Token: &token, NewPhone: oracleTakenPhone})
-		if status.Code(err) != codes.InvalidArgument {
-			t.Fatalf("expected InvalidArgument, got %v", err)
+	t.Run("the code is sent as for any number", func(t *testing.T) {
+		resp, err := s.AddPhoneNumber(context.Background(), &api.PhoneMsg{Token: &token, NewPhone: oracleTakenPhone})
+		if err != nil {
+			t.Fatalf("adding a number another account holds must send the code: %v", err)
 		}
-
-		if after := attemptsOf(t, token.Id); after != before+1 {
-			t.Errorf("probing a registered number was free: attempts went from %d to %d", before, after)
+		if mockWhatsApp.count() != 1 {
+			t.Errorf("expected one send, got %d", mockWhatsApp.count())
 		}
-		if mockWhatsApp.count() != 0 {
-			t.Errorf("a refused probe reached Meta %d times", mockWhatsApp.count())
+		phone, found := phoneOf(t, token.Id)
+		if !found || phone.Phone != oracleTakenPhone || phone.ConfirmedAt != 0 {
+			t.Errorf("the number must be stored unverified: %+v", phone)
+		}
+		for _, ci := range resp.ContactInfos {
+			if ci.Type == models.ContactTypePhone && ci.ConfirmedAt != 0 {
+				t.Errorf("the response shows the number verified: %+v", ci)
+			}
 		}
 	})
 
-	t.Run("the budget runs out, so probing cannot continue", func(t *testing.T) {
-		// One slot is already gone above; spend the rest and check the next probe is stopped
-		// by the rate limit rather than answered.
-		for i := attemptsOf(t, token.Id); i < allowedPhoneVerificationAttempts; i++ {
-			if _, err := s.AddPhoneNumber(context.Background(), &api.PhoneMsg{Token: &token, NewPhone: oracleTakenPhone}); status.Code(err) != codes.InvalidArgument {
-				t.Fatalf("probe %d: expected InvalidArgument, got %v", i+1, err)
-			}
+	t.Run("verification refuses the number, and the owner keeps it", func(t *testing.T) {
+		err := verifyWithStoredCode(t, &s, &token)
+		if ok, msg := shouldHaveGrpcErrorStatus(err, "phone number already taken"); !ok {
+			t.Error(msg)
 		}
-
-		_, err := s.AddPhoneNumber(context.Background(), &api.PhoneMsg{Token: &token, NewPhone: oracleTakenPhone})
-		if status.Code(err) != codes.ResourceExhausted {
-			t.Errorf("the %dth probe was still answered: %v", allowedPhoneVerificationAttempts+1, err)
+		phone, _ := phoneOf(t, token.Id)
+		if phone.ConfirmedAt != 0 {
+			t.Errorf("the number was confirmed on the second account: %+v", phone)
 		}
+		if hasChannel(channelsOf(t, token.Id), models.ChannelWhatsApp) {
+			t.Errorf("whatsapp was enabled for a number the account does not hold")
+		}
+		requireOwnerUntouched(t, "oracle_add_owner@test.com", oracleTakenPhone)
 	})
 }
 
-func TestEditPhoneNumberProbeSpendsASlot(t *testing.T) {
+func TestEditPhoneNumberToAClaimedNumberSendsTheCode(t *testing.T) {
 	mockWhatsApp := &countingWhatsAppClient{}
 	s := newRateLimitTestServer(mockWhatsApp)
+	s.Intervals.MaxVerificationAttempts = 3
 	seedPhoneOwner(t, "oracle_edit_owner@test.com", oracleTakenPhone)
 	// The prober already holds a number of their own, which is what EditPhoneNumber requires.
 	token := addVerifyCodeTestUser(t, "oracle_edit_prober@test.com", oracleOwnPhone, models.VerificationCode{}, nil, nil)
 
-	t.Run("a probe costs the caller one of the sends it could have made", func(t *testing.T) {
-		before := attemptsOf(t, token.Id)
-
-		_, err := s.EditPhoneNumber(context.Background(), &api.PhoneMsg{Token: &token, NewPhone: oracleTakenPhone})
-		if status.Code(err) != codes.InvalidArgument {
-			t.Fatalf("expected InvalidArgument, got %v", err)
+	t.Run("the code is sent and the number replaced, unverified", func(t *testing.T) {
+		if _, err := s.EditPhoneNumber(context.Background(), &api.PhoneMsg{Token: &token, NewPhone: oracleTakenPhone}); err != nil {
+			t.Fatalf("changing to a number another account holds must send the code: %v", err)
 		}
-
-		if after := attemptsOf(t, token.Id); after != before+1 {
-			t.Errorf("probing a registered number was free: attempts went from %d to %d", before, after)
+		if mockWhatsApp.count() != 1 {
+			t.Errorf("expected one send, got %d", mockWhatsApp.count())
 		}
-		if mockWhatsApp.count() != 0 {
-			t.Errorf("a refused probe reached Meta %d times", mockWhatsApp.count())
-		}
-	})
-
-	t.Run("the refused probe leaves the caller's own number in place", func(t *testing.T) {
 		phone, found := phoneOf(t, token.Id)
-		if !found || phone.Phone != oracleOwnPhone {
-			t.Errorf("the refusal replaced the number it refused to change: %+v", phone)
+		if !found || phone.Phone != oracleTakenPhone || phone.ConfirmedAt != 0 {
+			t.Errorf("the number must be replaced, unverified: %+v", phone)
 		}
 	})
 
-	t.Run("the budget runs out, so probing cannot continue", func(t *testing.T) {
-		for i := attemptsOf(t, token.Id); i < allowedPhoneVerificationAttempts; i++ {
-			if _, err := s.EditPhoneNumber(context.Background(), &api.PhoneMsg{Token: &token, NewPhone: oracleTakenPhone}); status.Code(err) != codes.InvalidArgument {
-				t.Fatalf("probe %d: expected InvalidArgument, got %v", i+1, err)
-			}
+	t.Run("verification refuses the number, and the owner keeps it", func(t *testing.T) {
+		err := verifyWithStoredCode(t, &s, &token)
+		if ok, msg := shouldHaveGrpcErrorStatus(err, "phone number already taken"); !ok {
+			t.Error(msg)
 		}
-
-		_, err := s.EditPhoneNumber(context.Background(), &api.PhoneMsg{Token: &token, NewPhone: oracleTakenPhone})
-		if status.Code(err) != codes.ResourceExhausted {
-			t.Errorf("the %dth probe was still answered: %v", allowedPhoneVerificationAttempts+1, err)
+		if phone, _ := phoneOf(t, token.Id); phone.ConfirmedAt != 0 {
+			t.Errorf("the number was confirmed on the second account: %+v", phone)
 		}
+		requireOwnerUntouched(t, "oracle_edit_owner@test.com", oracleTakenPhone)
 	})
 }

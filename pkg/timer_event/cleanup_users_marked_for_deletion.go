@@ -66,6 +66,9 @@ func (s *UserManagementTimerService) CleanupUsersMarkedForDeletion() {
 				logger.Error.Printf("error, when trying to delete user: %s", err.Error())
 				continue
 			}
+			// Nothing queued or archived on WhatsApp outlives the account. This job runs
+			// in the background already, so the retries run in line.
+			s.whatsAppQueue.Cancel(instance.InstanceID, u.ID.Hex(), nil, true)
 			// ---> Trigger message sending
 			_, err = s.clients.MessagingService.QueueEmailTemplateForSending(context.TODO(), &messageAPI.SendEmailReq{
 				InstanceId:        instance.InstanceID,

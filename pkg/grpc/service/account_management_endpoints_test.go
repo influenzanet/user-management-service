@@ -8,6 +8,7 @@ import (
 
 	"github.com/golang/mock/gomock"
 	api_types "github.com/influenzanet/go-utils/pkg/api_types"
+	loggingAPI "github.com/influenzanet/logging-service/pkg/api"
 	"github.com/influenzanet/user-management-service/internal/config"
 	"github.com/influenzanet/user-management-service/pkg/api"
 	httpClients "github.com/influenzanet/user-management-service/pkg/http/clients"
@@ -16,6 +17,7 @@ import (
 	loggingMock "github.com/influenzanet/user-management-service/test/mocks/logging_service"
 	messageMock "github.com/influenzanet/user-management-service/test/mocks/messaging_service"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -1082,15 +1084,18 @@ func TestUpdateContactPreferencesChannelRules(t *testing.T) {
 		}
 	})
 
-	t.Run("an empty list is refused and the stored channels are left alone", func(t *testing.T) {
+	t.Run("an empty list is accepted as no channel, with the other preferences", func(t *testing.T) {
 		token := newPrefsUser(t, "prefs_empty_list@test.com", time.Now().Unix())
-		_, err := update(token, []string{})
-		if status.Code(err) != codes.InvalidArgument {
-			t.Errorf("expected InvalidArgument, got %v", err)
+		resp, err := update(token, []string{})
+		if err != nil {
+			t.Fatalf("unexpected error: %s", err.Error())
+		}
+		if len(resp.ContactPreferences.PreferredChannels) != 0 || !resp.ContactPreferences.SubscribedToWeekly {
+			t.Errorf("expected no channel and the weekly subscription, got %+v", resp.ContactPreferences)
 		}
 		user, _ := testUserDBService.GetUserByID(testInstanceID, token.Id)
-		if len(user.ContactPreferences.PreferredChannels) != 0 {
-			t.Errorf("a refused request must not be persisted: %v", user.ContactPreferences.PreferredChannels)
+		if got := user.ContactPreferences.PreferredChannels; got == nil || len(got) != 0 {
+			t.Errorf("expected an empty list stored, got %#v", got)
 		}
 	})
 
@@ -1497,6 +1502,15 @@ func TestPhoneVerificationRateLimit(t *testing.T) {
 			},
 			NewPhone: "+393234567890",
 		}
+		// The refusal is an audit event.
+		mockLoggingClient.EXPECT().SaveLogEvent(gomock.Any(), gomock.Any()).DoAndReturn(
+			func(_ context.Context, in *loggingAPI.NewLogEvent, _ ...grpc.CallOption) (*api_types.ServiceStatus, error) {
+				if in.EventName != LOG_EVENT_PHONE_ADD || in.EventType != loggingAPI.LogEventType_SECURITY ||
+					in.Msg != "outcome=rate_limited_account phone=+39***7890" {
+					t.Errorf("unexpected audit event: %v", in)
+				}
+				return nil, nil
+			})
 		_, err := s.AddPhoneNumber(context.Background(), req)
 		if status.Code(err) != codes.ResourceExhausted {
 			t.Errorf("wrong error code: %v instead of %v", status.Code(err), codes.ResourceExhausted)

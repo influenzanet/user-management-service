@@ -9,6 +9,7 @@ import (
 
 	"github.com/influenzanet/user-management-service/pkg/models"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/bsontype"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 )
@@ -257,7 +258,10 @@ func TestF03RemoveLegacyContactWithoutID(t *testing.T) {
 	}
 }
 
-func TestF03EmptyPreferenceChannelsRemainOmitted(t *testing.T) {
+// An empty channel list means no channel and and is stored as an empty array, a nil one too. It
+// is never left out or stored as null, which would read as the legacy e-mail default. A later
+// verification adds whatsapp and nothing else.
+func TestF03EmptyPreferenceChannelsAreStoredEmpty(t *testing.T) {
 	for i, channels := range [][]string{nil, {}} {
 		// A number of its own per round: only one account can hold a verified number.
 		phone := fmt.Sprintf("+39123456700%d", i)
@@ -277,11 +281,19 @@ func TestF03EmptyPreferenceChannelsRemainOmitted(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if raw.Lookup("contactPreferences", "preferredChannels").Type != 0 {
-			t.Error("empty channel list must be omitted, not stored as null/empty")
+		stored := raw.Lookup("contactPreferences", "preferredChannels")
+		if stored.Type != bsontype.Array {
+			t.Fatalf("an empty channel list must be stored as an array, got BSON type %v", stored.Type)
 		}
-		if _, err := testDBService.FinalizePhoneVerification(testInstanceID, id, phone); err != nil {
-			t.Errorf("verification after empty preferences failed: %v", err)
+		if values, _ := stored.Array().Values(); len(values) != 0 {
+			t.Errorf("an empty channel list must be stored empty, got %v", values)
+		}
+		verified, err := testDBService.FinalizePhoneVerification(testInstanceID, id, phone)
+		if err != nil {
+			t.Fatalf("verification after empty preferences failed: %v", err)
+		}
+		if fmt.Sprint(verified.ContactPreferences.PreferredChannels) != "[whatsapp]" {
+			t.Errorf("verification must add whatsapp only, got %v", verified.ContactPreferences.PreferredChannels)
 		}
 	}
 }

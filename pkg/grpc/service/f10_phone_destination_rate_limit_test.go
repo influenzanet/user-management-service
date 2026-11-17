@@ -201,15 +201,10 @@ func TestPhoneDestinationRecordsOutliveTheirWindow(t *testing.T) {
 	}
 }
 
-// TestPhoneProbeDoesNotSpendTheDestinationBudget covers the one thing a budget keyed by
-// destination must not do: let a caller spend somebody else's number.
-//
-// The uniqueness check refuses a number another participant has verified, and that refusal sends
-// nothing. If it were charged to the number, anyone could walk a victim's number down to zero and
-// leave its owner unable to ask for their own code. The per-account budget still pays for the
-// probe, which is what F-08 put there; the number's budget is only touched once a message is
-// actually about to be sent.
-func TestPhoneProbeDoesNotSpendTheDestinationBudget(t *testing.T) {
+// A code goes to a number even when another account holds it verified, so the number's
+// own budget is what protects its owner from being sent codes by other accounts. Those sends
+// count against it like any other.
+func TestSendsToAClaimedNumberSpendTheDestinationBudget(t *testing.T) {
 	const (
 		addTarget  = "+393230030005"
 		editTarget = "+393230030006"
@@ -219,8 +214,7 @@ func TestPhoneProbeDoesNotSpendTheDestinationBudget(t *testing.T) {
 	mockWhatsApp := &countingWhatsAppClient{}
 	s := newRateLimitTestServer(mockWhatsApp)
 
-	// probeBudgetSpent reports how much of the number's window the refused probes consumed.
-	probeBudgetSpent := func(t *testing.T, phone string) int {
+	budgetSpent := func(t *testing.T, phone string) int {
 		t.Helper()
 		spent, err := testUserDBService.PhoneDestinationSendsInWindow(testInstanceID, phone, phoneDestinationRateLimitWindow)
 		if err != nil {
@@ -229,43 +223,31 @@ func TestPhoneProbeDoesNotSpendTheDestinationBudget(t *testing.T) {
 		return spent
 	}
 
-	t.Run("AddPhoneNumber probes leave the number untouched", func(t *testing.T) {
-		seedPhoneOwner(t, "f10_probe_add_owner@test.com", addTarget)
-		prober := addDestinationTestUser(t, "f10_probe_add@test.com", "")
-
-		// Three probes is the caller's own whole window, so this is as much probing as one
-		// account can do at all.
-		for i := 0; i < allowedPhoneVerificationAttempts; i++ {
-			_, err := s.AddPhoneNumber(context.Background(), &api.PhoneMsg{Token: &prober, NewPhone: addTarget})
-			if status.Code(err) != codes.InvalidArgument {
-				t.Fatalf("probe %d: expected InvalidArgument, got %v", i+1, err)
-			}
+	t.Run("AddPhoneNumber", func(t *testing.T) {
+		seedPhoneOwner(t, "f10_claimed_add_owner@test.com", addTarget)
+		other := addDestinationTestUser(t, "f10_claimed_add@test.com", "")
+		if _, err := s.AddPhoneNumber(context.Background(), &api.PhoneMsg{Token: &other, NewPhone: addTarget}); err != nil {
+			t.Fatalf("unexpected error: %v", err)
 		}
-
-		if spent := probeBudgetSpent(t, addTarget); spent != 0 {
-			t.Errorf("refused probes spent %d of the number's sends; a probe delivers nothing and must cost the number nothing", spent)
+		if spent := budgetSpent(t, addTarget); spent != 1 {
+			t.Errorf("the send spent %d of the number's budget, want 1", spent)
 		}
-		if mockWhatsApp.sendsTo(addTarget) != 0 {
-			t.Errorf("a refused probe reached Meta")
+		if mockWhatsApp.sendsTo(addTarget) != 1 {
+			t.Errorf("expected one send to the number, got %d", mockWhatsApp.sendsTo(addTarget))
 		}
 	})
 
-	t.Run("EditPhoneNumber probes leave the number untouched", func(t *testing.T) {
-		seedPhoneOwner(t, "f10_probe_edit_owner@test.com", editTarget)
-		prober := addDestinationTestUser(t, "f10_probe_edit@test.com", proberOwn)
-
-		for i := 0; i < allowedPhoneVerificationAttempts; i++ {
-			_, err := s.EditPhoneNumber(context.Background(), &api.PhoneMsg{Token: &prober, NewPhone: editTarget})
-			if status.Code(err) != codes.InvalidArgument {
-				t.Fatalf("probe %d: expected InvalidArgument, got %v", i+1, err)
-			}
+	t.Run("EditPhoneNumber", func(t *testing.T) {
+		seedPhoneOwner(t, "f10_claimed_edit_owner@test.com", editTarget)
+		other := addDestinationTestUser(t, "f10_claimed_edit@test.com", proberOwn)
+		if _, err := s.EditPhoneNumber(context.Background(), &api.PhoneMsg{Token: &other, NewPhone: editTarget}); err != nil {
+			t.Fatalf("unexpected error: %v", err)
 		}
-
-		if spent := probeBudgetSpent(t, editTarget); spent != 0 {
-			t.Errorf("refused probes spent %d of the number's sends; a probe delivers nothing and must cost the number nothing", spent)
+		if spent := budgetSpent(t, editTarget); spent != 1 {
+			t.Errorf("the send spent %d of the number's budget, want 1", spent)
 		}
-		if mockWhatsApp.sendsTo(editTarget) != 0 {
-			t.Errorf("a refused probe reached Meta")
+		if mockWhatsApp.sendsTo(editTarget) != 1 {
+			t.Errorf("expected one send to the number, got %d", mockWhatsApp.sendsTo(editTarget))
 		}
 	})
 }

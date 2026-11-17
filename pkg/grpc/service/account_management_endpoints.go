@@ -283,6 +283,8 @@ func (s *userManagementServer) DeleteAccount(ctx context.Context, req *api.UserR
 	if err := s.userDBservice.DeleteUser(req.Token.InstanceId, req.UserId); err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
+	// A deleted participant leaves no WhatsApp behind: nothing queued, nothing archived.
+	s.whatsAppQueue.CancelInBackground(req.Token.InstanceId, req.UserId, nil, true)
 
 	// remove all TempTokens for the given user ID using auth-service
 	if err := s.globalDBService.DeleteAllTempTokenForUser(req.Token.InstanceId, req.Token.Id, ""); err != nil {
@@ -392,18 +394,36 @@ func (s *userManagementServer) UpdateContactPreferences(ctx context.Context, req
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
+	s.recordChannelsChanged(req.Token.InstanceId, req.Token.Id, user.ContactPreferences, updatedUser.ContactPreferences)
+	if messageTypes, withdrawn := withdrawnWhatsApp(user.ContactPreferences, updatedUser.ContactPreferences); withdrawn {
+		s.whatsAppQueue.CancelInBackground(req.Token.InstanceId, req.Token.Id, messageTypes, false)
+	}
 	return updatedUser.ToAPI(), nil
+}
+
+// withdrawnWhatsApp tells which of the participant's queued WhatsApp messages a preferences change
+// withdraws: all of them (no types) when whatsapp leaves the channels; otherwise the message
+// types of the subscriptions turned off. withdrawn is false when the change withdraws nothing.
+func withdrawnWhatsApp(before, after models.ContactPreferences) (messageTypes []string, withdrawn bool) {
+	if before.HasPreferredChannel(models.ChannelWhatsApp) && !after.HasPreferredChannel(models.ChannelWhatsApp) {
+		return nil, true
+	}
+	if before.SubscribedToWeekly && !after.SubscribedToWeekly {
+		messageTypes = append(messageTypes, constants.EMAIL_TYPE_WEEKLY)
+	}
+	if before.SubscribedToNewsletter && !after.SubscribedToNewsletter {
+		messageTypes = append(messageTypes, constants.EMAIL_TYPE_NEWSLETTER)
+	}
+	return messageTypes, len(messageTypes) > 0
 }
 
 // resolvePreferredChannels checks the requested notification channels against what the user can
 // actually be reached on, and returns the list to persist: exactly the channels the user chose,
 // deduplicated and in the order requested.
 //
-// The channels say how a message is delivered, not whether the user wants it: whether is what the
-// newsletter and weekly subscription flags express. A user may therefore keep a single channel,
-// e-mail or whatsapp, but never none: an empty list is not a preference but a message with no
-// transport, and it is also indistinguishable from "never set" once stored. It is refused rather
-// than silently completed, so that what is stored is what the user picked.
+// An empty list is accepted and means no channel: the participant gets no notification on any
+// channel. It is stored as such, never completed with e-mail. Transactional e-mails
+// (password reset, verification, account) do not depend on it.
 //
 // The verified-phone requirement is enforced here and not only in the interface: the interface can
 // only stop the honest client, while this is the boundary where the data enters the system.
@@ -433,9 +453,6 @@ func resolvePreferredChannels(requested []string, user models.User) ([]string, e
 			channels = append(channels, channel)
 		}
 	}
-	if len(channels) == 0 {
-		return nil, status.Error(codes.InvalidArgument, "at least one notification channel is required")
-	}
 	return channels, nil
 }
 
@@ -455,12 +472,16 @@ func (s *userManagementServer) UseUnsubscribeToken(ctx context.Context, req *api
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
+	wasSubscribed := user.ContactPreferences.SubscribedToNewsletter
 	user.ContactPreferences.SubscribedToNewsletter = false
 
 	_, err = s.userDBservice.UpdateUser(tokenInfos.InstanceID, user, "contactPreferences.subscribedToNewsletter")
 	if err != nil {
 		logger.Error.Printf("UseUnsubscribeToken: %s", err.Error())
 		return nil, status.Error(codes.Internal, err.Error())
+	}
+	if wasSubscribed {
+		s.whatsAppQueue.CancelInBackground(tokenInfos.InstanceID, tokenInfos.UserID, []string{constants.EMAIL_TYPE_NEWSLETTER}, false)
 	}
 	return &api.ServiceStatus{
 		Status: api.ServiceStatus_NORMAL,
@@ -549,10 +570,12 @@ func (s *userManagementServer) RemoveEmail(ctx context.Context, req *api.Contact
 	return updUser.ToAPI(), nil
 }
 
-func (s *userManagementServer) AddPhoneNumber(ctx context.Context, req *api.PhoneMsg) (*api.User, error) {
+func (s *userManagementServer) AddPhoneNumber(ctx context.Context, req *api.PhoneMsg) (_ *api.User, err error) {
 	if req == nil || utils.IsTokenEmpty(req.Token) || req.NewPhone == "" {
 		return nil, status.Error(codes.InvalidArgument, "missing argument")
 	}
+	audit := s.newPhoneAudit(req.Token, LOG_EVENT_PHONE_ADD, req.NewPhone, "code_sent")
+	defer func() { audit.record(err) }()
 	if !s.whatsApp.Enabled(req.Token.InstanceId) {
 		return nil, status.Error(codes.Unavailable, "WhatsApp is not configured")
 	}
@@ -563,6 +586,7 @@ func (s *userManagementServer) AddPhoneNumber(ctx context.Context, req *api.Phon
 		return nil, status.Error(codes.InvalidArgument, "phone not valid")
 	}
 
+	audit.phone = phone
 	logger.Debug.Printf("AddPhoneNumber: phone=%s", utils.MaskPhone(phone))
 
 	user, err := s.userDBservice.GetUserByID(req.Token.InstanceId, req.Token.Id)
@@ -578,6 +602,7 @@ func (s *userManagementServer) AddPhoneNumber(ctx context.Context, req *api.Phon
 			// Continue with the number as stored, which differs from the normalised one only
 			// for data written before numbers were normalised.
 			phone = ci.Phone
+			audit.phone = phone
 			break
 		}
 	}
@@ -602,28 +627,17 @@ func (s *userManagementServer) AddPhoneNumber(ctx context.Context, req *api.Phon
 	// budget. The user was loaded above, so a failed reservation means the budget is gone.
 	// A reserved slot stays consumed even if the send fails: a failed send still burned a
 	// Meta call.
-	// The reservation also comes before the uniqueness check below, which used to answer for
-	// free: "this number belongs to someone else" is an answer about a third party, and an
-	// unmetered one lets an account holder walk a list of numbers and learn which of them
-	// belong to participants. Charged to this budget, a probe costs exactly what a real send
-	// costs and stops after three in the window, like everything else that leaves here.
+	// Whether another account carries or has proved the number is not asked here: the
+	// answer is about a third party, and it would let an account holder walk a list of numbers
+	// and learn which of them belong to participants. The code is sent either way; verification
+	// refuses a number another account has proved (FinalizePhoneVerification).
 	slotFree, err := s.userDBservice.ReservePhoneVerificationSlot(req.Token.InstanceId, req.Token.Id, allowedPhoneVerificationAttempts, phoneVerificationRateLimitWindow)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	if !slotFree {
+		audit.outcome = outcomeRateLimitedAccount
 		return nil, status.Error(codes.ResourceExhausted, "too many phone verification attempts, try again later")
-	}
-
-	if isNewPhone {
-		// Phone doesn't belong to this user - check if it's taken by someone else (excluding this user)
-		phoneSlice := []string{phone}
-		isTaken, err := s.userDBservice.IsPhoneNumberTakenExcludingUser(ctx, req.Token.InstanceId, phoneSlice, req.Token.Id)
-		if err != nil {
-			return nil, status.Error(codes.Internal, err.Error())
-		} else if isTaken {
-			return nil, status.Error(codes.InvalidArgument, "phone number already taken")
-		}
 	}
 
 	// The account's budget bounds what one account spends, not what one number receives, and
@@ -636,6 +650,7 @@ func (s *userManagementServer) AddPhoneNumber(ctx context.Context, req *api.Phon
 		return nil, status.Error(codes.Internal, "could not reserve the send budget")
 	}
 	if !destinationFree {
+		audit.outcome = outcomeRateLimitedDestination
 		return nil, status.Error(codes.ResourceExhausted, "too many phone verification attempts, try again later")
 	}
 
@@ -695,6 +710,7 @@ func (s *userManagementServer) AddPhoneNumber(ctx context.Context, req *api.Phon
 		if errors.Is(err, httpClients.ErrRecipientNotAllowed) {
 			return nil, status.Error(codes.FailedPrecondition, "phone number not enabled to receive WhatsApp messages")
 		}
+		audit.outcome = "send_failed"
 		return nil, status.Error(codes.Internal, "failed to send verification code")
 	}
 	// Mark the cooldown only after the message was accepted
@@ -709,10 +725,12 @@ func (s *userManagementServer) AddPhoneNumber(ctx context.Context, req *api.Phon
 	return updUser.ToAPI(), nil
 }
 
-func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.PhoneMsg) (*api.User, error) {
+func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.PhoneMsg) (_ *api.User, err error) {
 	if req == nil || utils.IsTokenEmpty(req.Token) || req.NewPhone == "" {
 		return nil, status.Error(codes.InvalidArgument, "missing argument")
 	}
+	audit := s.newPhoneAudit(req.Token, LOG_EVENT_PHONE_CHANGE, req.NewPhone, "code_sent")
+	defer func() { audit.record(err) }()
 	if !s.whatsApp.Enabled(req.Token.InstanceId) {
 		return nil, status.Error(codes.Unavailable, "WhatsApp is not configured")
 	}
@@ -723,6 +741,7 @@ func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.Pho
 		return nil, status.Error(codes.InvalidArgument, "phone not valid")
 	}
 
+	audit.phone = phone
 	logger.Debug.Printf("EditPhoneNumber: phone=%s", utils.MaskPhone(phone))
 
 	user, err := s.userDBservice.GetUserByID(req.Token.InstanceId, req.Token.Id)
@@ -749,35 +768,26 @@ func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.Pho
 	if utils.SamePhone(contactInfo.Phone, phone) && contactInfo.ConfirmedAt == 0 {
 		// Same phone, not verified — keep ContactInfo, just regenerate code (G-8 fix)
 		phone = contactInfo.Phone
+		audit.phone = phone
+		audit.success = "code_resent"
 	} else if utils.SamePhone(contactInfo.Phone, phone) && contactInfo.ConfirmedAt > 0 {
 		return nil, status.Error(codes.InvalidArgument, "phone number already verified")
 	} else {
 		changingNumber = true
+		audit.previous = contactInfo.Phone
 	}
 
 	// Atomically reserve a send slot before touching Meta (see AddPhoneNumber); the user was
 	// loaded above, so a failed reservation means the budget is gone. A reserved slot stays
-	// consumed even if the send fails: a failed send still burned a Meta call. The uniqueness
-	// check below is likewise charged to this budget rather than answered for free, so this
-	// endpoint cannot be walked through a list of numbers to learn which of them are
-	// registered (see AddPhoneNumber).
+	// consumed even if the send fails: a failed send still burned a Meta call. As in
+	// AddPhoneNumber, nothing here says whether another account holds the number.
 	slotFree, err := s.userDBservice.ReservePhoneVerificationSlot(req.Token.InstanceId, req.Token.Id, allowedPhoneVerificationAttempts, phoneVerificationRateLimitWindow)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	if !slotFree {
+		audit.outcome = outcomeRateLimitedAccount
 		return nil, status.Error(codes.ResourceExhausted, "too many phone verification attempts, try again later")
-	}
-
-	if changingNumber {
-		// Different phone number - check if it's taken by someone else
-		phoneSlice := []string{phone}
-		isTaken, err := s.userDBservice.IsPhoneNumberTakenExcludingUser(ctx, req.Token.InstanceId, phoneSlice, req.Token.Id)
-		if err != nil {
-			return nil, status.Error(codes.Internal, err.Error())
-		} else if isTaken {
-			return nil, status.Error(codes.InvalidArgument, "phone number already taken")
-		}
 	}
 
 	// The account's budget bounds what one account spends, not what one number receives, and
@@ -790,6 +800,7 @@ func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.Pho
 		return nil, status.Error(codes.Internal, "could not reserve the send budget")
 	}
 	if !destinationFree {
+		audit.outcome = outcomeRateLimitedDestination
 		return nil, status.Error(codes.ResourceExhausted, "too many phone verification attempts, try again later")
 	}
 
@@ -802,6 +813,8 @@ func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.Pho
 		}); err != nil {
 			return nil, status.Error(codes.Internal, err.Error())
 		}
+		// Messages queued for the old number go with it.
+		s.whatsAppQueue.CancelInBackground(req.Token.InstanceId, req.Token.Id, nil, false)
 	}
 
 	vc, err := tokens.GenerateVerificationCode(6)
@@ -832,6 +845,7 @@ func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.Pho
 		if errors.Is(err, httpClients.ErrRecipientNotAllowed) {
 			return nil, status.Error(codes.FailedPrecondition, "phone number not enabled to receive WhatsApp messages")
 		}
+		audit.outcome = "send_failed"
 		return nil, status.Error(codes.Internal, "failed to send verification code")
 	}
 	// Mark the cooldown only after the message was accepted
@@ -846,24 +860,37 @@ func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.Pho
 	return updUser.ToAPI(), nil
 }
 
-func (s *userManagementServer) DeletePhoneNumber(ctx context.Context, req *api_types.TokenInfos) (*api.User, error) {
+func (s *userManagementServer) DeletePhoneNumber(ctx context.Context, req *api_types.TokenInfos) (_ *api.User, err error) {
 
 	if req == nil || utils.IsTokenEmpty(req) {
 		return nil, status.Error(codes.InvalidArgument, "missing argument")
+	}
+	audit := s.newPhoneAudit(req, LOG_EVENT_PHONE_DELETE, "", "deleted")
+	defer func() { audit.record(err) }()
+	// Read only to name the number in the audit event.
+	if current, readErr := s.userDBservice.GetUserByID(req.InstanceId, req.Id); readErr == nil {
+		for _, ci := range current.ContactInfos {
+			if ci.Type == models.ContactTypePhone {
+				audit.phone = ci.Phone
+			}
+		}
 	}
 
 	updatedUser, err := s.userDBservice.DeletePhoneNumber(req.InstanceId, req.Id)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
+	s.whatsAppQueue.CancelInBackground(req.InstanceId, req.Id, nil, false)
 
 	return updatedUser.ToAPI(), nil
 }
 
-func (s *userManagementServer) VerifyWhatsAppCode(ctx context.Context, req *api.VerifyWhatsAppCodeReq) (*api.User, error) {
+func (s *userManagementServer) VerifyWhatsAppCode(ctx context.Context, req *api.VerifyWhatsAppCodeReq) (_ *api.User, err error) {
 	if req == nil || utils.IsTokenEmpty(req.Token) || req.Code == "" {
 		return nil, status.Error(codes.InvalidArgument, "missing argument")
 	}
+	audit := s.newPhoneAudit(req.Token, LOG_EVENT_PHONE_VERIFICATION, "", "verified")
+	defer func() { audit.record(err) }()
 
 	// A code that cannot be verified at all — none pending, or expired — is answered before
 	// the counter is touched. The attempts exist to stop someone guessing a six digit code,
@@ -887,6 +914,7 @@ func (s *userManagementServer) VerifyWhatsAppCode(ctx context.Context, req *api.
 	// progress, which is what this is: it separates neither case from the other, and it spends
 	// no attempt, for the same reason an expired code spends none.
 	sentTo := pending.Account.PhoneVerificationCode.Phone
+	audit.phone = sentTo
 	if sentTo == "" {
 		return nil, status.Error(codes.InvalidArgument, "no phone verification in progress")
 	}
@@ -914,8 +942,12 @@ func (s *userManagementServer) VerifyWhatsAppCode(ctx context.Context, req *api.
 		// whatsapp channel and clears the code, instead of saving a user read a moment ago:
 		// a full document save would carry a stale attempts ledger and drop the slots
 		// reserved by concurrent sends.
+		audit.outcome = "removed_after_failed_attempts"
 		if _, updErr := s.userDBservice.DeletePhoneNumber(req.Token.InstanceId, req.Token.Id); updErr != nil {
 			logger.Error.Printf("VerifyWhatsAppCode: failed to remove phone: %v", updErr)
+			audit.outcome = "removal_after_failed_attempts_failed"
+		} else {
+			s.whatsAppQueue.CancelInBackground(req.Token.InstanceId, req.Token.Id, nil, false)
 		}
 		return nil, status.Error(codes.PermissionDenied, "too many attempts, phone number removed")
 	}
@@ -929,11 +961,11 @@ func (s *userManagementServer) VerifyWhatsAppCode(ctx context.Context, req *api.
 		return nil, status.Error(codes.PermissionDenied, "invalid verification code")
 	}
 
-	// Code correct: mark the phone as verified, enable the whatsapp channel next to email
-	// (both, so enabling whatsapp never silences email delivery) and clear the spent code —
-	// all with targeted updates, in one atomic operation. Adding the channels is left to
-	// $addToSet, so a concurrent change of the notification preferences is not overwritten
-	// by the list this request read.
+	// Code correct: mark the phone as verified, enable the whatsapp channel and clear the spent
+	// code, in one atomic write. Only whatsapp is added: the e-mail channel stays as the
+	// participant left it. The channel list is computed by the database from what is stored, so
+	// a concurrent change of the notification preferences is not overwritten by the list this
+	// request read.
 	updatedUser, err := s.userDBservice.FinalizePhoneVerification(req.Token.InstanceId, req.Token.Id, user.Account.PhoneVerificationCode.Phone)
 	if err == mongo.ErrNoDocuments {
 		// The number moved between the check above and this write. Nothing was confirmed and no

@@ -71,6 +71,9 @@ verified, outside the collisions: absent claims are inserted, a claim already in
 is left, and a claim in the name of another account is reported (`claim conflict`) and left as it
 is. It is idempotent. A dry run reports how many claims would be seeded.
 
+Before seeding, it releases the stale claims: claims whose owner no longer holds the number
+verified, or no longer exists (`stale claim`, with the owner's ID). A dry run lists them.
+
 ## Guarantees
 
 - Writes are targeted `$set` updates whose filter names the number that was read, so a number

@@ -101,6 +101,14 @@ func printReport(r Report) {
 		fmt.Printf("Claims that would be seeded: %d\n", r.ClaimsToSeed)
 	}
 	fmt.Printf("Claims already in place: %d\n", r.ClaimsPresent)
+	if r.Applied {
+		fmt.Printf("Stale claims released: %d\n", r.StaleClaimsReleased)
+	} else {
+		fmt.Printf("Stale claims that would be released: %d\n", len(r.StaleClaims))
+	}
+	for _, c := range r.StaleClaims {
+		fmt.Printf("  stale claim  %s owner=%s\n", c.Number, c.OwnerID)
+	}
 	fmt.Printf("Claims held by another account, left untouched: %d\n", len(r.ClaimConflicts))
 	for _, c := range r.ClaimConflicts {
 		fmt.Printf("  claim conflict  %s verified holder=%s claim owner=%s\n", c.Number, c.UserID, c.OwnerID)

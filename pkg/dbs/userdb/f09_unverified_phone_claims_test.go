@@ -2,6 +2,7 @@ package userdb
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -99,60 +100,10 @@ func phoneContactsOf(t *testing.T, userID string) []models.ContactInfo {
 	return phones
 }
 
-func TestDbIsPhoneNumberTakenCountsOnlyVerified(t *testing.T) {
-	ctx := context.Background()
-
-	t.Run("a number only claimed, never verified, is free", func(t *testing.T) {
-		claimUser(t, "claims_unverified_holder@test.com", claimedPhone, 0, "")
-
-		taken, err := testDBService.IsPhoneNumberTaken(ctx, testInstanceID, []string{claimedPhone})
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if taken {
-			t.Error("an unverified claim still blocks the number for its real owner")
-		}
-	})
-
-	t.Run("a verified number is taken", func(t *testing.T) {
-		claimUser(t, "claims_verified_holder@test.com", unrelatedPhone, time.Now().Unix(), "")
-
-		taken, err := testDBService.IsPhoneNumberTaken(ctx, testInstanceID, []string{unrelatedPhone})
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if !taken {
-			t.Error("a number somebody proved control of is reported as free")
-		}
-	})
-
-	t.Run("the excluding form applies the same rule", func(t *testing.T) {
-		const phone = "+391230001003"
-		holder := claimUser(t, "claims_excl_holder@test.com", phone, time.Now().Unix(), "")
-		other := claimUser(t, "claims_excl_other@test.com", "", 0, "")
-
-		taken, err := testDBService.IsPhoneNumberTakenExcludingUser(ctx, testInstanceID, []string{phone}, other)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if !taken {
-			t.Error("a verified number held by somebody else is reported as free")
-		}
-
-		taken, err = testDBService.IsPhoneNumberTakenExcludingUser(ctx, testInstanceID, []string{phone}, holder)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if taken {
-			t.Error("the holder is told its own number is taken")
-		}
-	})
-}
-
 func TestDbReleaseUnverifiedPhoneClaims(t *testing.T) {
 	t.Run("removes another account's unverified claim and the code bound to it", func(t *testing.T) {
-		// Its own number: the uniqueness test above leaves a claim on claimedPhone, and a
-		// shared number would make the count below depend on the order of the tests.
+		// Its own number: a shared number would make the count below depend on the order of
+		// the tests.
 		const phone = "+391230001009"
 		stale := claimUser(t, "release_stale@test.com", phone, 0, "111111")
 		verifier := claimUser(t, "release_verifier@test.com", phone, time.Now().Unix(), "")
@@ -237,11 +188,8 @@ func TestDbReleaseUnverifiedPhoneClaims(t *testing.T) {
 		}
 
 		released := channelsOfUser(t, stale)
-		if hasChan(released, models.ChannelWhatsApp) {
-			t.Errorf("a released account kept whatsapp with no phone: %v", released)
-		}
-		if !hasChan(released, models.ChannelEmail) {
-			t.Errorf("a released account was left without email: %v", released)
+		if fmt.Sprint(released) != "[email]" {
+			t.Errorf("a released account must lose whatsapp and keep email: %v", released)
 		}
 
 		kept := channelsOfUser(t, verifier)
@@ -250,16 +198,70 @@ func TestDbReleaseUnverifiedPhoneClaims(t *testing.T) {
 		}
 	})
 
-	t.Run("an account with no channels gains email when released", func(t *testing.T) {
-		const phone = "+391230001012"
-		stale := claimUser(t, "release_nochannels_stale@test.com", phone, 0, "777777")
-		verifier := claimUser(t, "release_nochannels_verifier@test.com", phone, time.Now().Unix(), "")
+	// The claim takeover never adds e-mail. An account reached on whatsapp only is left with
+	// no channel; an account with no channel stays without one.
+	for name, channels := range map[string][]string{
+		"whatsapp only": {models.ChannelWhatsApp},
+		"no channel":    {},
+	} {
+		t.Run("a released account with "+name+" gains no e-mail", func(t *testing.T) {
+			phone := "+39123000101" + fmt.Sprint(3+len(channels))
+			stale := claimUser(t, "release_noemail_"+fmt.Sprint(len(channels))+"@test.com", phone, 0, "777777")
+			verifier := claimUser(t, "release_noemail_verifier_"+fmt.Sprint(len(channels))+"@test.com", phone, time.Now().Unix(), "")
+			seedChannels(t, stale, channels)
+
+			if _, err := testDBService.ReleaseUnverifiedPhoneClaims(testInstanceID, phone, verifier); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			got := channelsOfUser(t, stale)
+			if got == nil || len(got) != 0 {
+				t.Errorf("expected no channel, got %#v", got)
+			}
+			if phones := phoneContactsOf(t, stale); len(phones) != 0 {
+				t.Errorf("the claim was not released: %+v", phones)
+			}
+		})
+	}
+
+	t.Run("a legacy account with no channel list still reads as e-mail", func(t *testing.T) {
+		const phone = "+391230001015"
+		stale := claimUser(t, "release_legacy_stale@test.com", phone, 0, "")
+		verifier := claimUser(t, "release_legacy_verifier@test.com", phone, time.Now().Unix(), "")
+		staleID, _ := primitive.ObjectIDFromHex(stale)
+		if _, err := testDBService.collectionRefUsers(testInstanceID).UpdateOne(context.Background(),
+			bson.M{"_id": staleID}, bson.M{"$unset": bson.M{"contactPreferences.preferredChannels": ""}}); err != nil {
+			t.Fatal(err)
+		}
 
 		if _, err := testDBService.ReleaseUnverifiedPhoneClaims(testInstanceID, phone, verifier); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if !hasChan(channelsOfUser(t, stale), models.ChannelEmail) {
-			t.Errorf("a released account was left with no channel at all: %v", channelsOfUser(t, stale))
+		user, _ := testDBService.GetUserByID(testInstanceID, stale)
+		if got := fmt.Sprint(user.ContactPreferences.EffectivePreferredChannels()); got != "[email]" {
+			t.Errorf("a legacy account must keep its e-mail default, got %s", got)
+		}
+	})
+
+	t.Run("a verified contact on another account is never removed", func(t *testing.T) {
+		const phone = "+391230001016"
+		// Two accounts both verified (data written before claims existed): the release removes
+		// claims only, never proven contacts, so the other verified one stays.
+		other := claimUser(t, "release_keep_verified_other@test.com", phone, time.Now().Unix(), "")
+		verifier := claimUser(t, "release_keep_verified_verifier@test.com", phone, time.Now().Unix(), "")
+		seedChannels(t, other, []string{models.ChannelWhatsApp})
+
+		released, err := testDBService.ReleaseUnverifiedPhoneClaims(testInstanceID, phone, verifier)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if released != 0 {
+			t.Errorf("a verified contact was counted as released: %d", released)
+		}
+		if phones := phoneContactsOf(t, other); len(phones) != 1 || phones[0].ConfirmedAt == 0 {
+			t.Errorf("a verified contact was removed: %+v", phones)
+		}
+		if got := fmt.Sprint(channelsOfUser(t, other)); got != "[whatsapp]" {
+			t.Errorf("the channels of an untouched account changed: %s", got)
 		}
 	})
 

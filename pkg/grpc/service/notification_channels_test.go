@@ -37,6 +37,9 @@ func TestResolvePreferredChannels(t *testing.T) {
 		{"both, whatsapp first", []string{models.ChannelWhatsApp, models.ChannelEmail}, withPhone, []string{models.ChannelWhatsApp, models.ChannelEmail}},
 		{"duplicates are collapsed", []string{models.ChannelEmail, models.ChannelWhatsApp, models.ChannelEmail, models.ChannelWhatsApp}, withPhone, []string{models.ChannelEmail, models.ChannelWhatsApp}},
 		{"repeated email", []string{models.ChannelEmail, models.ChannelEmail}, noPhone, []string{models.ChannelEmail}},
+		// No channel is a choice, stored as an empty list and never completed with e-mail.
+		{"an empty list means no channel", []string{}, withPhone, []string{}},
+		{"a nil list means no channel", nil, noPhone, []string{}},
 	}
 	for _, c := range accepted {
 		t.Run(c.name, func(t *testing.T) {
@@ -47,6 +50,10 @@ func TestResolvePreferredChannels(t *testing.T) {
 			if !reflect.DeepEqual(got, c.want) {
 				t.Errorf("expected %v, got %v", c.want, got)
 			}
+			// nil would be stored as null and read back as the legacy e-mail default.
+			if got == nil {
+				t.Error("the list to persist must never be nil")
+			}
 		})
 	}
 
@@ -55,8 +62,6 @@ func TestResolvePreferredChannels(t *testing.T) {
 		requested []string
 		user      models.User
 	}{
-		{"nil list", nil, withPhone},
-		{"empty list", []string{}, withPhone},
 		{"whatsapp without any phone", []string{models.ChannelWhatsApp}, noPhone},
 		{"whatsapp with an unverified phone", []string{models.ChannelWhatsApp}, unverifiedPhone},
 		{"email and whatsapp without a verified phone", []string{models.ChannelEmail, models.ChannelWhatsApp}, unverifiedPhone},
@@ -139,26 +144,37 @@ func TestUpdateContactPreferencesStoresExactlyTheChosenChannels(t *testing.T) {
 		}
 	})
 
-	t.Run("an empty list is refused and the stored value is unchanged", func(t *testing.T) {
-		token := seed(t, "exact_empty_refused@test.com", []string{models.ChannelWhatsApp})
-		for _, channels := range [][]string{nil, {}} {
-			_, err := update(token, channels)
-			if status.Code(err) != codes.InvalidArgument {
-				t.Errorf("expected InvalidArgument, got %v", err)
+	t.Run("an empty list is stored as no channel", func(t *testing.T) {
+		for i, channels := range [][]string{nil, {}} {
+			token := seed(t, fmt.Sprintf("exact_empty_stored_%d@test.com", i), []string{models.ChannelEmail, models.ChannelWhatsApp})
+			resp, err := update(token, channels)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
 			}
-			if got, want := stored(token), []string{models.ChannelWhatsApp}; !reflect.DeepEqual(got, want) {
-				t.Errorf("a refused request changed the stored channels: expected %v, got %v", want, got)
+			if got := resp.ContactPreferences.PreferredChannels; len(got) != 0 {
+				t.Errorf("response: expected no channel, got %v", got)
+			}
+			if got := stored(token); got == nil || len(got) != 0 {
+				t.Errorf("stored: expected an empty list, got %#v", got)
+			}
+			// And reading it back (as messaging does, over gRPC) still says no channel.
+			user, err := s.GetUser(context.Background(), &api.UserReference{Token: token})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := user.ContactPreferences.PreferredChannels; len(got) != 0 {
+				t.Errorf("GetUser: expected no channel, got %v", got)
 			}
 		}
 	})
 
-	t.Run("after the phone is deleted the fallback is email and whatsapp cannot be chosen", func(t *testing.T) {
+	t.Run("after the phone is deleted no channel is left and whatsapp cannot be chosen", func(t *testing.T) {
 		token := seed(t, "exact_after_delete@test.com", []string{models.ChannelWhatsApp})
 		if _, err := testUserDBService.DeletePhoneNumber(testInstanceID, token.Id); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if got, want := stored(token), []string{models.ChannelEmail}; !reflect.DeepEqual(got, want) {
-			t.Errorf("expected the e-mail fallback %v, got %v", want, got)
+		if got := stored(token); got == nil || len(got) != 0 {
+			t.Errorf("expected no channel (no e-mail fallback), got %#v", got)
 		}
 		_, err := update(token, []string{models.ChannelWhatsApp})
 		if status.Code(err) != codes.InvalidArgument {
@@ -168,7 +184,8 @@ func TestUpdateContactPreferencesStoresExactlyTheChosenChannels(t *testing.T) {
 }
 
 // Through the endpoint, a burst of preference updates racing with the removal of the phone
-// never leaves the user without a channel, nor with whatsapp and no verified phone.
+// never leaves the channel list missing (which would read as e-mail), nor with whatsapp and no
+// verified phone. An empty list is a legitimate outcome.
 func TestUpdateContactPreferencesUnderConcurrentPhoneRemoval(t *testing.T) {
 	s := userManagementServer{
 		userDBservice:   testUserDBService,
@@ -240,8 +257,8 @@ func TestUpdateContactPreferencesUnderConcurrentPhoneRemoval(t *testing.T) {
 					t.Fatalf("failed to read user: %v", err)
 				}
 				channels := user.ContactPreferences.PreferredChannels
-				if len(channels) == 0 {
-					t.Fatalf("iteration %d: the user was left without any channel", i)
+				if channels == nil {
+					t.Fatalf("iteration %d: the channel list is missing, which reads as e-mail", i)
 				}
 				for _, ch := range channels {
 					if ch == models.ChannelWhatsApp {

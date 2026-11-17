@@ -17,7 +17,7 @@ import (
 
 // Signup sends the registration e-mail in a goroutine of its own, while the request goes on to
 // issue the tokens. The goroutine must not share any variable with the request: it used to
-// write the request's err (item 8), a data race that could also hand the e-mail's error to the
+// write the request's err, a data race that could also hand the e-mail's error to the
 // token checks that follow.
 //
 // The messaging call fails here so that the goroutine has an error to write, and the test waits
