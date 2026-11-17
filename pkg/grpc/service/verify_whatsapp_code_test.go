@@ -17,11 +17,11 @@ import (
 // Functional coverage of the phone verification endpoint, which had none: what a correct, a
 // wrong, an expired and an exhausted code do to the user document and to the response.
 //
-// The channel assertions follow the client's TC-024, amended so that verifying a
-// phone enables whatsapp and touches no other channel. An account with no list stored (legacy)
-// reads as e-mail and keeps it; a whatsapp-only account stays whatsapp-only.
+// The channel rule: verifying a phone enables whatsapp and touches no other channel. An account
+// with no list stored (legacy) reads as e-mail and keeps it; a whatsapp-only account stays
+// whatsapp-only.
 
-func addVerifyCodeTestUser(t *testing.T, accountID string, phone string, code models.VerificationCode, channels []string, ledger []int64) api_types.TokenInfos {
+func addVerifyCodeTestUser(t *testing.T, accountID string, phone string, code clearPhoneCode, channels []string, ledger []int64) api_types.TokenInfos {
 	t.Helper()
 
 	contactInfos := []models.ContactInfo{
@@ -38,12 +38,15 @@ func addVerifyCodeTestUser(t *testing.T, accountID string, phone string, code mo
 		code.Phone = phone
 	}
 
+	// The ID is chosen here because the stored digest covers it.
+	id := primitive.NewObjectID()
 	users, err := addTestUsers([]models.User{
 		{
+			ID: id,
 			Account: models.Account{
 				Type:                      "email",
 				AccountID:                 accountID,
-				PhoneVerificationCode:     code,
+				PhoneVerificationCode:     code.stored(t, id.Hex()),
 				PhoneVerificationAttempts: ledger,
 			},
 			ContactPreferences: models.ContactPreferences{PreferredChannels: channels},
@@ -56,8 +59,8 @@ func addVerifyCodeTestUser(t *testing.T, accountID string, phone string, code mo
 	return api_types.TokenInfos{Id: users[0].ID.Hex(), InstanceId: testInstanceID}
 }
 
-func validCode(code string) models.VerificationCode {
-	return models.VerificationCode{
+func validCode(code string) clearPhoneCode {
+	return clearPhoneCode{
 		Code:      code,
 		Attempts:  0,
 		CreatedAt: time.Now().Unix(),
@@ -164,7 +167,7 @@ func TestVerifyWhatsAppCode(t *testing.T) {
 			t.Errorf("a legacy account (e-mail) must keep e-mail and gain whatsapp, got %v", channels)
 		}
 		user, _ := testUserDBService.GetUserByID(testInstanceID, token.Id)
-		if user.Account.PhoneVerificationCode.Code != "" {
+		if user.Account.PhoneVerificationCode.CodeHash != "" {
 			t.Errorf("the spent code was not cleared: %+v", user.Account.PhoneVerificationCode)
 		}
 		if len(user.Account.PhoneVerificationAttempts) != len(ledger) {
@@ -224,7 +227,7 @@ func TestVerifyWhatsAppCode(t *testing.T) {
 	})
 
 	t.Run("says that no verification is in progress instead of removing the phone", func(t *testing.T) {
-		token := addVerifyCodeTestUser(t, "verify_no_code_pending@test.com", "+393230000408", models.VerificationCode{}, nil, nil)
+		token := addVerifyCodeTestUser(t, "verify_no_code_pending@test.com", "+393230000408", clearPhoneCode{}, nil, nil)
 
 		_, err := s.VerifyWhatsAppCode(context.Background(), &api.VerifyWhatsAppCodeReq{Token: &token, Code: "123456"})
 		if status.Code(err) != codes.InvalidArgument {
@@ -257,7 +260,7 @@ func TestVerifyWhatsAppCode(t *testing.T) {
 			t.Errorf("email delivery must survive the removal, got %v", channels)
 		}
 		user, _ := testUserDBService.GetUserByID(testInstanceID, token.Id)
-		if user.Account.PhoneVerificationCode.Code != "" {
+		if user.Account.PhoneVerificationCode.CodeHash != "" {
 			t.Errorf("the code of a removed phone must be cleared: %+v", user.Account.PhoneVerificationCode)
 		}
 	})

@@ -295,7 +295,7 @@ var ErrPhoneNotPending = errors.New("phone number is not pending verification")
 // so a request that read the account before the number changed cannot bind a fresh code to a
 // number the participant has since replaced. It returns ErrPhoneNotPending when that is the
 // case, which is before the caller hands anything to Meta.
-func (dbService *UserDBService) SetPhoneVerificationCode(instanceID string, userID string, code models.VerificationCode) error {
+func (dbService *UserDBService) SetPhoneVerificationCode(instanceID string, userID string, code models.PhoneVerificationCode) error {
 	ctx, cancel := dbService.getContext()
 	defer cancel()
 
@@ -492,7 +492,7 @@ func (dbService *UserDBService) FinalizePhoneVerification(instanceID string, use
 				"$$this",
 			}},
 		}},
-		"account.phoneVerificationCode":        bson.M{"$literal": models.VerificationCode{}},
+		"account.phoneVerificationCode":        bson.M{"$literal": models.PhoneVerificationCode{}},
 		"contactPreferences.preferredChannels": channelsWithWhatsAppExpr(),
 		"timestamps.updatedAt":                 now,
 	}}}}

@@ -13,7 +13,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// F-02: the verification code was stored without the number it had been sent to, so it
+// The verification code used to be stored without the number it had been sent to, so it
 // confirmed whichever unverified phone the account carried when it was used. A participant who
 // asked for a code for one number and then changed the number before using it could confirm a
 // number nobody ever proved control of, and the whatsapp channel followed.
@@ -64,7 +64,7 @@ func TestVerifyWhatsAppCodeRejectsCodeSentToAnotherNumber(t *testing.T) {
 		foreign := addForeignCodeUser(t, "binding_foreign_msg@test.com", codeSentTo, nil)
 		_, foreignErr := s.VerifyWhatsAppCode(context.Background(), &api.VerifyWhatsAppCodeReq{Token: &foreign, Code: foreignCodeText})
 
-		none := addVerifyCodeTestUser(t, "binding_no_code@test.com", codeNowOnPhone, models.VerificationCode{}, nil, nil)
+		none := addVerifyCodeTestUser(t, "binding_no_code@test.com", codeNowOnPhone, clearPhoneCode{}, nil, nil)
 		_, noneErr := s.VerifyWhatsAppCode(context.Background(), &api.VerifyWhatsAppCodeReq{Token: &none, Code: foreignCodeText})
 
 		if status.Code(foreignErr) != status.Code(noneErr) || status.Convert(foreignErr).Message() != status.Convert(noneErr).Message() {
@@ -93,8 +93,10 @@ func TestVerifyWhatsAppCodeRejectsCodeSentToAnotherNumber(t *testing.T) {
 	t.Run("a code stored before the binding existed confirms nothing", func(t *testing.T) {
 		// Codes written by the previous build carry no number. They cannot be attributed to
 		// any number, so they are refused and the participant asks for a new one.
-		legacy := validCode(foreignCodeText)
+		id := primitive.NewObjectID()
+		legacy := validCode(foreignCodeText).stored(t, id.Hex())
 		users, err := addTestUsers([]models.User{{
+			ID: id,
 			Account: models.Account{
 				Type: "email", AccountID: "binding_legacy@test.com",
 				PhoneVerificationCode: legacy,

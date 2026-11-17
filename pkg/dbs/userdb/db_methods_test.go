@@ -650,7 +650,7 @@ func TestDbSetPhoneVerificationCode(t *testing.T) {
 		id := addReserveTestUser(t, "set_phone_code@test.com", []int64{now - 1, now - 2}, []models.ContactInfo{
 			{ID: primitive.NewObjectID(), Type: models.ContactTypePhone, Phone: setCodeTestPhone},
 		})
-		code := models.VerificationCode{Code: "123456", Attempts: 0, CreatedAt: now, ExpiresAt: now + 60, Phone: setCodeTestPhone}
+		code := models.PhoneVerificationCode{CodeHash: "123456", Attempts: 0, CreatedAt: now, ExpiresAt: now + 60, Phone: setCodeTestPhone}
 		if err := testDBService.SetPhoneVerificationCode(testInstanceID, id, code); err != nil {
 			t.Errorf("unexpected error: %v", err)
 			return
@@ -660,7 +660,7 @@ func TestDbSetPhoneVerificationCode(t *testing.T) {
 			t.Error(err)
 			return
 		}
-		if user.Account.PhoneVerificationCode.Code != "123456" {
+		if user.Account.PhoneVerificationCode.CodeHash != "123456" {
 			t.Errorf("code not persisted: %+v", user.Account.PhoneVerificationCode)
 		}
 		if len(user.Account.PhoneVerificationAttempts) != 2 {
@@ -848,7 +848,7 @@ func TestDbFinalizePhoneVerification(t *testing.T) {
 			{ID: primitive.NewObjectID(), Type: models.ContactTypeEmail, Email: "finalize_ok@test.com", ConfirmedAt: now},
 			{ID: primitive.NewObjectID(), Type: models.ContactTypePhone, Phone: "+391230000010"},
 		})
-		if err := testDBService.SetPhoneVerificationCode(testInstanceID, id, models.VerificationCode{Code: "123456", Phone: "+391230000010"}); err != nil {
+		if err := testDBService.SetPhoneVerificationCode(testInstanceID, id, models.PhoneVerificationCode{CodeHash: "123456", Phone: "+391230000010"}); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
@@ -868,7 +868,7 @@ func TestDbFinalizePhoneVerification(t *testing.T) {
 		if !containsChannel(updated.ContactPreferences.PreferredChannels, models.ChannelWhatsApp) {
 			t.Errorf("whatsapp must be enabled, got %v", updated.ContactPreferences.PreferredChannels)
 		}
-		if updated.Account.PhoneVerificationCode.Code != "" {
+		if updated.Account.PhoneVerificationCode.CodeHash != "" {
 			t.Errorf("spent verification code was not cleared: %+v", updated.Account.PhoneVerificationCode)
 		}
 		if len(updated.Account.PhoneVerificationAttempts) != len(ledger) {

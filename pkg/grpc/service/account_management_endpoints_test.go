@@ -1593,8 +1593,9 @@ func TestAddPhoneNumberEndpoint(t *testing.T) {
 		if ci.ConfirmationLinkSentAt != 0 {
 			t.Errorf("cooldown timestamp should not be set after a failed send: %d", ci.ConfirmationLinkSentAt)
 		}
-		if len(user.Account.PhoneVerificationCode.Code) != 6 {
-			t.Errorf("verification code should be persisted even if the send fails: %s", user.Account.PhoneVerificationCode.Code)
+		// The stored digest is the one of the code handed to the failed send.
+		if code := sentPhoneCode(t, &s, user.ID.Hex()); len(code) != 6 {
+			t.Errorf("verification code should be persisted even if the send fails: %q", code)
 		}
 		if len(user.Account.PhoneVerificationAttempts) != 1 {
 			t.Errorf("wrong number of recorded attempts: %d instead of %d", len(user.Account.PhoneVerificationAttempts), 1)
@@ -1730,8 +1731,9 @@ func TestEditPhoneNumberEndpoint(t *testing.T) {
 		if ci.ConfirmationLinkSentAt != 0 {
 			t.Errorf("cooldown timestamp should not be set after a failed send: %d", ci.ConfirmationLinkSentAt)
 		}
-		if len(user.Account.PhoneVerificationCode.Code) != 6 {
-			t.Errorf("verification code should be persisted even if the send fails: %s", user.Account.PhoneVerificationCode.Code)
+		// The stored digest is the one of the code handed to the failed send.
+		if code := sentPhoneCode(t, &s, user.ID.Hex()); len(code) != 6 {
+			t.Errorf("verification code should be persisted even if the send fails: %q", code)
 		}
 		if len(user.Account.PhoneVerificationAttempts) != 1 {
 			t.Errorf("wrong number of recorded attempts: %d instead of %d", len(user.Account.PhoneVerificationAttempts), 1)

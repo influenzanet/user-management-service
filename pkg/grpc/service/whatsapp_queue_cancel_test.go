@@ -181,7 +181,7 @@ func TestEditPhoneNumberCancelsWhenTheNumberChanges(t *testing.T) {
 
 	t.Run("a resend to the same pending number changes nothing", func(t *testing.T) {
 		s, q := cancelTestServer(t)
-		token := addVerifyCodeTestUser(t, "wa_cancel_edit_resend@test.com", cancelTestPhone(), models.VerificationCode{}, nil, nil)
+		token := addVerifyCodeTestUser(t, "wa_cancel_edit_resend@test.com", cancelTestPhone(), clearPhoneCode{}, nil, nil)
 		phone, _ := phoneOf(t, token.Id)
 		if _, err := s.EditPhoneNumber(context.Background(), &api.PhoneMsg{Token: &token, NewPhone: phone.Phone}); err != nil {
 			t.Fatal(err)

@@ -20,7 +20,7 @@ import (
 	"google.golang.org/grpc"
 )
 
-// Item 56: every outcome of the phone endpoints, and every change of the notification channels,
+// Every outcome of the phone endpoints, and every change of the notification channels,
 // leaves an audit event in the logging service, naming the number masked and never in full.
 
 type auditRecorder struct {
@@ -126,7 +126,7 @@ func TestAuditAddPhoneNumber(t *testing.T) {
 		}
 		requireAudit(t, rec.only(t), token.Id, LOG_EVENT_PHONE_ADD, logEv, "outcome=phone_not_valid phone=not***mber")
 
-		verified := addVerifyCodeTestUser(t, "audit_add_verified@test.com", auditPhone(), models.VerificationCode{}, nil, nil)
+		verified := addVerifyCodeTestUser(t, "audit_add_verified@test.com", auditPhone(), clearPhoneCode{}, nil, nil)
 		own, _ := phoneOf(t, verified.Id)
 		if _, err := testUserDBService.FinalizePhoneVerification(testInstanceID, verified.Id, own.Phone); err != nil {
 			t.Fatal(err)
@@ -194,7 +194,7 @@ func TestAuditEditPhoneNumber(t *testing.T) {
 
 	t.Run("a new number names the previous one", func(t *testing.T) {
 		old := auditPhone()
-		token := addVerifyCodeTestUser(t, "audit_edit_change@test.com", old, models.VerificationCode{}, nil, nil)
+		token := addVerifyCodeTestUser(t, "audit_edit_change@test.com", old, clearPhoneCode{}, nil, nil)
 		next := auditPhone()
 		if err := edit(&token, next); err != nil {
 			t.Fatal(err)
@@ -205,7 +205,7 @@ func TestAuditEditPhoneNumber(t *testing.T) {
 
 	t.Run("the same pending number is a resend", func(t *testing.T) {
 		phone := auditPhone()
-		token := addVerifyCodeTestUser(t, "audit_edit_resend@test.com", phone, models.VerificationCode{}, nil, nil)
+		token := addVerifyCodeTestUser(t, "audit_edit_resend@test.com", phone, clearPhoneCode{}, nil, nil)
 		if err := edit(&token, phone); err != nil {
 			t.Fatal(err)
 		}
@@ -223,7 +223,7 @@ func TestAuditEditPhoneNumber(t *testing.T) {
 
 	t.Run("rate limited", func(t *testing.T) {
 		phone := auditPhone()
-		token := addVerifyCodeTestUser(t, "audit_edit_limited@test.com", phone, models.VerificationCode{}, nil, recentAttempts(allowedPhoneVerificationAttempts))
+		token := addVerifyCodeTestUser(t, "audit_edit_limited@test.com", phone, clearPhoneCode{}, nil, recentAttempts(allowedPhoneVerificationAttempts))
 		if err := edit(&token, phone); err == nil {
 			t.Fatal("expected a refusal")
 		}
@@ -234,7 +234,7 @@ func TestAuditEditPhoneNumber(t *testing.T) {
 func TestAuditDeletePhoneNumber(t *testing.T) {
 	s, rec := auditTestServer(t, &countingWhatsAppClient{})
 	phone := auditPhone()
-	token := addVerifyCodeTestUser(t, "audit_delete@test.com", phone, models.VerificationCode{}, nil, nil)
+	token := addVerifyCodeTestUser(t, "audit_delete@test.com", phone, clearPhoneCode{}, nil, nil)
 	if _, err := s.DeletePhoneNumber(context.Background(), &token); err != nil {
 		t.Fatal(err)
 	}
@@ -297,7 +297,7 @@ func TestAuditVerifyWhatsAppCode(t *testing.T) {
 	})
 
 	t.Run("nothing to verify", func(t *testing.T) {
-		token := addVerifyCodeTestUser(t, "audit_verify_none@test.com", auditPhone(), models.VerificationCode{}, nil, nil)
+		token := addVerifyCodeTestUser(t, "audit_verify_none@test.com", auditPhone(), clearPhoneCode{}, nil, nil)
 		if err := verify(&token, "123456"); err == nil {
 			t.Fatal("expected a refusal")
 		}

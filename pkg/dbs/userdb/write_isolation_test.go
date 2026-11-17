@@ -14,7 +14,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-var f03UserFields = []string{
+var staleSnapshotUserFields = []string{
 	"profiles", "roles", "account.accountID", "account.accountConfirmedAt", "account.verificationCode",
 	"account.failedLoginAttempts", "account.passwordResetTriggers", "timestamps.lastLogin",
 	"timestamps.lastTokenRefresh", "timestamps.markedForDeletion", "contactInfos",
@@ -24,13 +24,13 @@ var f03UserFields = []string{
 
 // Reading a snapshot, committing the phone operation, then saving the snapshot is
 // the lost-update interleaving. No scheduler timing or sleeps are needed.
-func TestF03StaleUserDoesNotOverwritePhoneState(t *testing.T) {
+func TestStaleUserDoesNotOverwritePhoneState(t *testing.T) {
 	for _, operation := range []string{"reserve", "code", "attempts", "add", "replace", "confirm", "delete"} {
 		t.Run(operation, func(t *testing.T) {
 			user := models.User{
 				Account: models.Account{
 					AccountID:                 primitive.NewObjectID().Hex() + "@test.com",
-					PhoneVerificationCode:     models.VerificationCode{Code: "123456", ExpiresAt: time.Now().Unix() + 300},
+					PhoneVerificationCode:     models.PhoneVerificationCode{CodeHash: "123456", ExpiresAt: time.Now().Unix() + 300},
 					PhoneVerificationAttempts: []int64{},
 				},
 				ContactPreferences: models.ContactPreferences{PreferredChannels: []string{models.ChannelEmail}},
@@ -55,7 +55,7 @@ func TestF03StaleUserDoesNotOverwritePhoneState(t *testing.T) {
 					t.Fatal("reservation was not accepted")
 				}
 			case "code":
-				err = testDBService.SetPhoneVerificationCode(testInstanceID, id, models.VerificationCode{Code: "654321", Attempts: 2, Phone: "+391234567890"})
+				err = testDBService.SetPhoneVerificationCode(testInstanceID, id, models.PhoneVerificationCode{CodeHash: "654321", Attempts: 2, Phone: "+391234567890"})
 			case "attempts":
 				for i := 0; i < 3; i++ {
 					_, err = testDBService.IncrementVerificationCodeAttempts(testInstanceID, id, 3)
@@ -84,7 +84,7 @@ func TestF03StaleUserDoesNotOverwritePhoneState(t *testing.T) {
 				t.Fatal(err)
 			}
 			stale.Profiles = []models.Profile{{ID: primitive.NewObjectID(), Alias: "$literal-profile"}}
-			for _, field := range f03UserFields {
+			for _, field := range staleSnapshotUserFields {
 				t.Run(field, func(t *testing.T) {
 					got, err := testDBService.UpdateUser(testInstanceID, stale, field)
 					if err != nil {
@@ -105,7 +105,7 @@ func TestF03StaleUserDoesNotOverwritePhoneState(t *testing.T) {
 	}
 }
 
-func TestF03UpdateUserRejectsBroadAndProtectedFields(t *testing.T) {
+func TestUpdateUserRejectsBroadAndProtectedFields(t *testing.T) {
 	for _, field := range []string{"", "account", "timestamps", "contactPreferences", "account.password",
 		"account.phoneVerificationCode", "account.phoneVerificationAttempts", "contactPreferences.preferredChannels", "unknown"} {
 		if _, err := testDBService.UpdateUser(testInstanceID, models.User{}, field); err == nil {
@@ -114,7 +114,7 @@ func TestF03UpdateUserRejectsBroadAndProtectedFields(t *testing.T) {
 	}
 }
 
-func TestF03LegacyPhoneFieldsStayMissingOrNull(t *testing.T) {
+func TestLegacyPhoneFieldsStayMissingOrNull(t *testing.T) {
 	ctx, cancel := testDBService.getContext()
 	defer cancel()
 	for _, operation := range []string{"$unset", "$set"} {
@@ -144,7 +144,7 @@ func TestF03LegacyPhoneFieldsStayMissingOrNull(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			for _, field := range f03UserFields {
+			for _, field := range staleSnapshotUserFields {
 				if _, err := testDBService.UpdateUser(testInstanceID, user, field); err != nil {
 					t.Fatal(err)
 				}
@@ -162,7 +162,7 @@ func TestF03LegacyPhoneFieldsStayMissingOrNull(t *testing.T) {
 	}
 }
 
-func TestF03EmailContactMergePreservesPhoneOrder(t *testing.T) {
+func TestEmailContactMergePreservesPhoneOrder(t *testing.T) {
 	for position := 0; position <= 2; position++ {
 		user := models.User{Account: models.Account{AccountID: primitive.NewObjectID().Hex()}}
 		user.AddNewEmail("$first@test.com", true)
@@ -192,7 +192,7 @@ func TestF03EmailContactMergePreservesPhoneOrder(t *testing.T) {
 	}
 }
 
-func TestF03PreferencesCannotRestoreChannelAfterPhoneChange(t *testing.T) {
+func TestPreferencesCannotRestoreChannelAfterPhoneChange(t *testing.T) {
 	for _, operation := range []string{"delete", "replace"} {
 		t.Run(operation, func(t *testing.T) {
 			user := models.User{Account: models.Account{AccountID: primitive.NewObjectID().Hex()}}
@@ -235,7 +235,7 @@ func TestF03PreferencesCannotRestoreChannelAfterPhoneChange(t *testing.T) {
 	}
 }
 
-func TestF03RemoveLegacyContactWithoutID(t *testing.T) {
+func TestRemoveLegacyContactWithoutID(t *testing.T) {
 	user := models.User{
 		Account: models.Account{AccountID: primitive.NewObjectID().Hex()},
 		ContactInfos: []models.ContactInfo{
@@ -261,7 +261,7 @@ func TestF03RemoveLegacyContactWithoutID(t *testing.T) {
 // An empty channel list means no channel and and is stored as an empty array, a nil one too. It
 // is never left out or stored as null, which would read as the legacy e-mail default. A later
 // verification adds whatsapp and nothing else.
-func TestF03EmptyPreferenceChannelsAreStoredEmpty(t *testing.T) {
+func TestEmptyPreferenceChannelsAreStoredEmpty(t *testing.T) {
 	for i, channels := range [][]string{nil, {}} {
 		// A number of its own per round: only one account can hold a verified number.
 		phone := fmt.Sprintf("+39123456700%d", i)
@@ -298,7 +298,7 @@ func TestF03EmptyPreferenceChannelsAreStoredEmpty(t *testing.T) {
 	}
 }
 
-func TestF03ContactConfirmationPreservesConcurrentLedger(t *testing.T) {
+func TestContactConfirmationPreservesConcurrentLedger(t *testing.T) {
 	for _, legacy := range []bool{false, true} {
 		for _, contactType := range []string{models.ContactTypeEmail, models.ContactTypePhone} {
 			user := models.User{Account: models.Account{Type: models.ACCOUNT_TYPE_EMAIL, AccountID: primitive.NewObjectID().Hex() + "@test.com"}}

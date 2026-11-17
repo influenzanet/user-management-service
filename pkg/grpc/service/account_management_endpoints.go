@@ -680,19 +680,11 @@ func (s *userManagementServer) AddPhoneNumber(ctx context.Context, req *api.Phon
 		}
 	}
 
-	// Set phone verification code (separate from login 2FA code — G-3 fix); the targeted
-	// $set leaves the atomically managed attempts array untouched.
-	vc, err := tokens.GenerateVerificationCode(6)
+	// The phone code is kept apart from the login 2FA code, and the targeted $set leaves the
+	// atomically managed attempts array untouched.
+	vc, code, err := s.newPhoneVerificationCode("AddPhoneNumber", req.Token.Id, phone)
 	if err != nil {
-		logger.Error.Printf("AddPhoneNumber: failed to generate verification code: %v", err)
-		return nil, status.Error(codes.Internal, "error while generating verification code")
-	}
-	code := models.VerificationCode{
-		Code:      vc,
-		Attempts:  0,
-		CreatedAt: time.Now().Unix(),
-		ExpiresAt: time.Now().Unix() + s.Intervals.VerificationCodeLifetime,
-		Phone:     phone,
+		return nil, err
 	}
 	// Persist the code before sending, so a delivered code is always verifiable, and only
 	// while this number is still the one waiting to be verified: a request that read the
@@ -766,7 +758,7 @@ func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.Pho
 	changingNumber := false
 	// If trying to set the same phone number that's already unverified, allow re-sending code
 	if utils.SamePhone(contactInfo.Phone, phone) && contactInfo.ConfirmedAt == 0 {
-		// Same phone, not verified — keep ContactInfo, just regenerate code (G-8 fix)
+		// Same phone, not verified — keep ContactInfo, just regenerate code
 		phone = contactInfo.Phone
 		audit.phone = phone
 		audit.success = "code_resent"
@@ -817,17 +809,9 @@ func (s *userManagementServer) EditPhoneNumber(ctx context.Context, req *api.Pho
 		s.whatsAppQueue.CancelInBackground(req.Token.InstanceId, req.Token.Id, nil, false)
 	}
 
-	vc, err := tokens.GenerateVerificationCode(6)
+	vc, code, err := s.newPhoneVerificationCode("EditPhoneNumber", req.Token.Id, phone)
 	if err != nil {
-		logger.Error.Printf("EditPhoneNumber: failed to generate verification code: %v", err)
-		return nil, status.Error(codes.Internal, "error while generating verification code")
-	}
-	code := models.VerificationCode{
-		Code:      vc,
-		Attempts:  0,
-		CreatedAt: time.Now().Unix(),
-		ExpiresAt: time.Now().Unix() + s.Intervals.VerificationCodeLifetime,
-		Phone:     phone,
+		return nil, err
 	}
 	// Persist the code before sending, so a delivered code is always verifiable, and only
 	// while this number is still the one waiting to be verified: a request that read the
@@ -901,7 +885,7 @@ func (s *userManagementServer) VerifyWhatsAppCode(ctx context.Context, req *api.
 	if err != nil {
 		return nil, status.Error(codes.Internal, "user not found")
 	}
-	if pending.Account.PhoneVerificationCode.Code == "" {
+	if pending.Account.PhoneVerificationCode.CodeHash == "" {
 		return nil, status.Error(codes.InvalidArgument, "no phone verification in progress")
 	}
 	if time.Now().Unix() > pending.Account.PhoneVerificationCode.ExpiresAt {
@@ -932,6 +916,14 @@ func (s *userManagementServer) VerifyWhatsAppCode(ctx context.Context, req *api.
 		return nil, status.Error(codes.InvalidArgument, "no phone verification in progress")
 	}
 
+	// Digested before an attempt is spent, so a server that cannot digest codes answers with an
+	// error and leaves the participant's budget alone.
+	submitted, err := tokens.PhoneCodeDigest(req.Token.Id, req.Code)
+	if err != nil {
+		logger.Error.Printf("VerifyWhatsAppCode: %v", err)
+		return nil, status.Error(codes.Internal, "could not check the verification code")
+	}
+
 	// Atomically increment attempts via $inc with a filter that caps at max.
 	// This prevents race conditions: concurrent requests each get a distinct counter value.
 	user, err := s.userDBservice.IncrementVerificationCodeAttempts(
@@ -957,7 +949,7 @@ func (s *userManagementServer) VerifyWhatsAppCode(ctx context.Context, req *api.
 
 	// Compare against the document the increment returned rather than the one read above: a
 	// resend running in between replaces the code, and the participant is typing the new one.
-	if req.Code != user.Account.PhoneVerificationCode.Code {
+	if !tokens.SamePhoneCodeDigest(user.Account.PhoneVerificationCode.CodeHash, submitted) {
 		return nil, status.Error(codes.PermissionDenied, "invalid verification code")
 	}
 

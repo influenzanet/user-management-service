@@ -821,9 +821,9 @@ func (s *userManagementServer) ResendContactVerification(ctx context.Context, re
 			audit.outcome = outcomeRateLimitedAccount
 			return nil, status.Error(codes.ResourceExhausted, "too many phone verification attempts, try again later")
 		}
-		// And the number's own budget, counted across every account: since F-09 several accounts
-		// can hold the same unverified number at once, so this endpoint is a live route to it
-		// (see ReservePhoneDestinationSendSlot).
+		// And the number's own budget, counted across every account: an unverified contact does not
+		// hold the number, so several accounts can carry it at once, and this endpoint is a live
+		// route to it (see ReservePhoneDestinationSendSlot).
 		destinationFree, err := s.userDBservice.ReservePhoneDestinationSendSlot(req.Token.InstanceId, phone, phoneDestinationSendLimits)
 		if err != nil {
 			logger.Error.Printf("ResendContactVerification: %s", err.Error())
@@ -833,20 +833,12 @@ func (s *userManagementServer) ResendContactVerification(ctx context.Context, re
 			audit.outcome = outcomeRateLimitedDestination
 			return nil, status.Error(codes.ResourceExhausted, "too many phone verification attempts, try again later")
 		}
-		// Generate and store new phone verification code (separate from login 2FA — G-3 fix)
-		vc, err := tokens.GenerateVerificationCode(6)
+		// A new phone code, kept apart from the login 2FA code. It is bound to the number as
+		// stored, like AddPhoneNumber and EditPhoneNumber bind theirs, whatever the way the
+		// caller spelled the address.
+		vc, code, err := s.newPhoneVerificationCode("ResendContactVerification", req.Token.Id, phone)
 		if err != nil {
-			logger.Error.Printf("ResendContactVerification: failed to generate verification code: %v", err)
-			return nil, status.Error(codes.Internal, "error while generating verification code")
-		}
-		code := models.VerificationCode{
-			Code:      vc,
-			Attempts:  0,
-			CreatedAt: time.Now().Unix(),
-			ExpiresAt: time.Now().Unix() + s.Intervals.VerificationCodeLifetime,
-			// Bound to the number as stored, like AddPhoneNumber and EditPhoneNumber bind
-			// theirs, whatever the way the caller spelled the address.
-			Phone: phone,
+			return nil, err
 		}
 		// Persist the code before sending it with a targeted $set, so a delivered code is
 		// always verifiable and no full-document replace can clobber concurrent writes. The

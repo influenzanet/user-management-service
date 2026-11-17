@@ -21,7 +21,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
-// F-08: "this number is already registered" is an answer about a third party.
+// "This number is already registered" is an answer about a third party.
 // Signup gave it to anyone, with no account and nothing spent, and AddPhoneNumber and
 // EditPhoneNumber gave it to any logged-in account: feed them a list of numbers and they said
 // which ones belong to a participant of an epidemiological study.
@@ -33,7 +33,8 @@ import (
 
 const (
 	// The number another participant already holds. It is seeded verified on purpose: an
-	// unverified claim is a separate question (F-09) and must not decide these tests.
+	// unverified claim is a separate question (unverified_phone_claims_test.go) and must not
+	// decide these tests.
 	oracleTakenPhone = "+393230000901"
 	oracleFreePhone  = "+393230000902"
 	oracleOwnPhone   = "+393230000903"
@@ -110,14 +111,8 @@ func signupReq(email string, phone string) *api.SignupWithEmailMsg {
 // the service stored (and sent).
 func verifyWithStoredCode(t *testing.T, s *userManagementServer, token *api_types.TokenInfos) error {
 	t.Helper()
-	user, err := testUserDBService.GetUserByID(testInstanceID, token.Id)
-	if err != nil {
-		t.Fatalf("unexpected error: %s", err.Error())
-	}
-	if user.Account.PhoneVerificationCode.Code == "" {
-		t.Fatal("no code was stored for the number")
-	}
-	_, err = s.VerifyWhatsAppCode(context.Background(), &api.VerifyWhatsAppCodeReq{Token: token, Code: user.Account.PhoneVerificationCode.Code})
+	code := sentPhoneCode(t, s, token.Id)
+	_, err := s.VerifyWhatsAppCode(context.Background(), &api.VerifyWhatsAppCodeReq{Token: token, Code: code})
 	return err
 }
 
@@ -233,7 +228,7 @@ func TestEditPhoneNumberToAClaimedNumberSendsTheCode(t *testing.T) {
 	s.Intervals.MaxVerificationAttempts = 3
 	seedPhoneOwner(t, "oracle_edit_owner@test.com", oracleTakenPhone)
 	// The prober already holds a number of their own, which is what EditPhoneNumber requires.
-	token := addVerifyCodeTestUser(t, "oracle_edit_prober@test.com", oracleOwnPhone, models.VerificationCode{}, nil, nil)
+	token := addVerifyCodeTestUser(t, "oracle_edit_prober@test.com", oracleOwnPhone, clearPhoneCode{}, nil, nil)
 
 	t.Run("the code is sent and the number replaced, unverified", func(t *testing.T) {
 		if _, err := s.EditPhoneNumber(context.Background(), &api.PhoneMsg{Token: &token, NewPhone: oracleTakenPhone}); err != nil {

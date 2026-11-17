@@ -11,7 +11,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
-// F-09: a number was counted as taken as soon as any account carried it, verified or not. A
+// A number used to be counted as taken as soon as any account carried it, verified or not. A
 // typo in someone else's signup, or a signup abandoned before the code was ever used, therefore
 // held the number for good: the real owner could never register it, and no endpoint existed to
 // let it go. Only a verified contact proves a number belongs to an account, so only a verified
@@ -40,7 +40,7 @@ func claimUser(t *testing.T, accountID string, phone string, confirmedAt int64, 
 
 	if code != "" {
 		now := time.Now().Unix()
-		stored := models.VerificationCode{Code: code, CreatedAt: now, ExpiresAt: now + 300, Phone: phone}
+		stored := models.PhoneVerificationCode{CodeHash: code, CreatedAt: now, ExpiresAt: now + 300, Phone: phone}
 		if err := testDBService.SetPhoneVerificationCode(testInstanceID, id, stored); err != nil {
 			t.Fatalf("failed to seed the pending code: %v", err)
 		}
@@ -119,7 +119,7 @@ func TestDbReleaseUnverifiedPhoneClaims(t *testing.T) {
 		if phones := phoneContactsOf(t, stale); len(phones) != 0 {
 			t.Errorf("the stale claim survived: %+v", phones)
 		}
-		if code := storedCode(t, stale); code.Code != "" || code.Phone != "" {
+		if code := storedCode(t, stale); code.CodeHash != "" || code.Phone != "" {
 			t.Errorf("the code bound to the released number was kept: %+v", code)
 		}
 	})
@@ -170,7 +170,7 @@ func TestDbReleaseUnverifiedPhoneClaims(t *testing.T) {
 		if phones := phoneContactsOf(t, bystander); len(phones) != 1 || phones[0].Phone != bystanderPhone {
 			t.Errorf("a claim on an unrelated number was released: %+v", phones)
 		}
-		if code := storedCode(t, bystander); code.Code != "222222" {
+		if code := storedCode(t, bystander); code.CodeHash != "222222" {
 			t.Errorf("a code for an unrelated number was reset: %+v", code)
 		}
 	})

@@ -26,6 +26,7 @@ type countingWhatsAppClient struct {
 	mu         sync.Mutex
 	sends      int
 	recipients map[string]int
+	codes      map[string][]string
 	delay      time.Duration
 	err        error
 	beforeSend func(toPhoneNumber string)
@@ -55,7 +56,18 @@ func (m *countingWhatsAppClient) SendVerificationCode(ctx context.Context, toPho
 		m.recipients = map[string]int{}
 	}
 	m.recipients[toPhoneNumber]++
+	if m.codes == nil {
+		m.codes = map[string][]string{}
+	}
+	m.codes[toPhoneNumber] = append(m.codes[toPhoneNumber], code)
 	return nil
+}
+
+// codesSentTo returns the codes delivered to the number, oldest first.
+func (m *countingWhatsAppClient) codesSentTo(phone string) []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]string(nil), m.codes[phone]...)
 }
 
 func (m *countingWhatsAppClient) SendTemplateMessage(ctx context.Context, toPhoneNumber, templateName, lang string, params map[string]string) error {
@@ -177,8 +189,8 @@ func recentAttempts(n int) []int64 {
 	return attempts
 }
 
-// TestAddPhoneNumberRateLimitUnderConcurrency asserts the two properties the rate limiter added
-// for M-7 is supposed to provide, when AddPhoneNumber is called concurrently:
+// TestAddPhoneNumberRateLimitUnderConcurrency asserts the two properties the per-account rate
+// limit on phone verification sends is supposed to provide, when AddPhoneNumber is called concurrently:
 //
 //  1. no more than allowedPhoneVerificationAttempts messages leave per window;
 //  2. every message that left is still counted afterwards, so the limit also holds for the

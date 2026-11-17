@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -959,12 +960,28 @@ func TestVerifyAccountEndpoint(t *testing.T) {
 	})
 }
 
+// mockWhatsAppClient answers every send with err, and remembers each code it was handed, the
+// refused ones included.
 type mockWhatsAppClient struct {
-	err error
+	err   error
+	mu    sync.Mutex
+	codes map[string][]string
 }
 
 func (m *mockWhatsAppClient) SendVerificationCode(ctx context.Context, toPhoneNumber, code, lang string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.codes == nil {
+		m.codes = map[string][]string{}
+	}
+	m.codes[toPhoneNumber] = append(m.codes[toPhoneNumber], code)
 	return m.err
+}
+
+func (m *mockWhatsAppClient) codesSentTo(phone string) []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]string(nil), m.codes[phone]...)
 }
 
 func TestResendContactVerificationEndpoint(t *testing.T) {
@@ -1163,8 +1180,9 @@ func TestResendContactVerificationEndpoint(t *testing.T) {
 		if ci.ConfirmationLinkSentAt != 0 {
 			t.Errorf("cooldown timestamp should not be set after a failed send: %d", ci.ConfirmationLinkSentAt)
 		}
-		if len(user.Account.PhoneVerificationCode.Code) != 6 {
-			t.Errorf("verification code should be persisted even if the send fails: %s", user.Account.PhoneVerificationCode.Code)
+		// The stored digest is the one of the code handed to the failed send.
+		if code := sentPhoneCode(t, &s, user.ID.Hex()); len(code) != 6 {
+			t.Errorf("verification code should be persisted even if the send fails: %q", code)
 		}
 	})
 
@@ -1198,8 +1216,8 @@ func TestResendContactVerificationEndpoint(t *testing.T) {
 		if ci.ConfirmationLinkSentAt == 0 {
 			t.Error("cooldown timestamp should be set after a successful send")
 		}
-		if len(user.Account.PhoneVerificationCode.Code) != 6 {
-			t.Errorf("unexpected verification code: %s", user.Account.PhoneVerificationCode.Code)
+		if code := sentPhoneCode(t, &s, user.ID.Hex()); len(code) != 6 {
+			t.Errorf("unexpected verification code: %q", code)
 		}
 		if len(user.Account.PhoneVerificationAttempts) != 2 {
 			t.Errorf("wrong number of recorded attempts: %d instead of %d", len(user.Account.PhoneVerificationAttempts), 2)

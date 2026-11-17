@@ -28,15 +28,18 @@ import (
 
 // addContactWriteTestUser creates a user with a confirmed email contact info, an unverified phone
 // and an empty attempts ledger, and returns a token for it.
-func addContactWriteTestUser(t *testing.T, accountID string, phone string, code models.VerificationCode) api_types.TokenInfos {
+func addContactWriteTestUser(t *testing.T, accountID string, phone string, code clearPhoneCode) api_types.TokenInfos {
 	t.Helper()
 
+	// The ID is chosen here because the stored digest covers it.
+	id := primitive.NewObjectID()
 	users, err := addTestUsers([]models.User{
 		{
+			ID: id,
 			Account: models.Account{
 				Type:                      "email",
 				AccountID:                 accountID,
-				PhoneVerificationCode:     code,
+				PhoneVerificationCode:     code.stored(t, id.Hex()),
 				PhoneVerificationAttempts: []int64{},
 			},
 			ContactInfos: []models.ContactInfo{
@@ -97,7 +100,7 @@ func TestResendEmailVerificationDoesNotClobberPhoneLedger(t *testing.T) {
 	}
 
 	accountID := "resend_email_ledger@test.com"
-	token := addContactWriteTestUser(t, accountID, "+393230000101", models.VerificationCode{})
+	token := addContactWriteTestUser(t, accountID, "+393230000101", clearPhoneCode{})
 
 	var reserved bool
 	var reserveErr error
@@ -147,7 +150,7 @@ func TestVerifyWhatsAppCodeDoesNotClobberPhoneLedger(t *testing.T) {
 
 	lost := 0
 	for i := 0; i < rounds; i++ {
-		code := models.VerificationCode{
+		code := clearPhoneCode{
 			Code:      "123456",
 			Attempts:  0,
 			CreatedAt: time.Now().Unix(),
@@ -205,7 +208,7 @@ func TestVerifyWhatsAppCodeAtMaxAttemptsDoesNotClobberPhoneLedger(t *testing.T) 
 
 	lost := 0
 	for i := 0; i < rounds; i++ {
-		code := models.VerificationCode{
+		code := clearPhoneCode{
 			Code:      "123456",
 			Attempts:  1, // already at the cap: the next attempt takes the remove-phone branch
 			CreatedAt: time.Now().Unix(),

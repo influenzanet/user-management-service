@@ -10,7 +10,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// F-09: an unverified claim held a number for good. Somebody mistypes a digit at signup, or
+// An unverified claim used to hold a number for good. Somebody mistypes a digit at signup, or
 // abandons the signup before using the code, and the number they never proved control of is
 // closed to the participant it actually belongs to, with no way back short of a database edit.
 //
@@ -22,25 +22,14 @@ const (
 	claimantCode   = "111111"
 )
 
-// storedPhoneCode reads back the code the service generated and sent, which the test needs in
-// order to complete a verification it did not seed by hand.
-func storedPhoneCode(t *testing.T, userID string) string {
-	t.Helper()
-	user, err := testUserDBService.GetUserByID(testInstanceID, userID)
-	if err != nil {
-		t.Fatalf("unexpected error: %s", err.Error())
-	}
-	return user.Account.PhoneVerificationCode.Code
-}
-
 func TestVerifyWhatsAppCodeReleasesUnverifiedClaims(t *testing.T) {
 	s := newRateLimitTestServer(&countingWhatsAppClient{})
 	s.Intervals.MaxVerificationAttempts = 3
 
 	// The claimant typed the number at signup and never verified it.
-	claimant := addVerifyCodeTestUser(t, "f09_claimant@test.com", contestedPhone, validCode(claimantCode), nil, nil)
+	claimant := addVerifyCodeTestUser(t, "claims_claimant@test.com", contestedPhone, validCode(claimantCode), nil, nil)
 	// The real owner registers the same number afterwards.
-	owner := addRateLimitTestUser(t, "f09_owner@test.com", nil)
+	owner := addRateLimitTestUser(t, "claims_owner@test.com", nil)
 
 	t.Run("the real owner can register a number somebody else only claimed", func(t *testing.T) {
 		if _, err := s.AddPhoneNumber(context.Background(), &api.PhoneMsg{Token: &owner, NewPhone: contestedPhone}); err != nil {
@@ -49,7 +38,7 @@ func TestVerifyWhatsAppCodeReleasesUnverifiedClaims(t *testing.T) {
 	})
 
 	t.Run("verifying it releases the claim and the code bound to it", func(t *testing.T) {
-		code := storedPhoneCode(t, owner.Id)
+		code := sentPhoneCode(t, &s, owner.Id)
 		if code == "" {
 			t.Fatal("no code was stored for the owner")
 		}
@@ -69,7 +58,7 @@ func TestVerifyWhatsAppCodeReleasesUnverifiedClaims(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %s", err.Error())
 		}
-		if claimantUser.Account.PhoneVerificationCode.Code != "" {
+		if claimantUser.Account.PhoneVerificationCode.CodeHash != "" {
 			t.Errorf("the released claim kept a usable code: %+v", claimantUser.Account.PhoneVerificationCode)
 		}
 	})
@@ -86,7 +75,7 @@ func TestVerifyWhatsAppCodeReleasesUnverifiedClaims(t *testing.T) {
 
 	t.Run("a number verified by somebody else is refused at verification", func(t *testing.T) {
 		// Adding it sends the code like any other number; proving it is what is refused.
-		latecomer := addRateLimitTestUser(t, "f09_latecomer@test.com", nil)
+		latecomer := addRateLimitTestUser(t, "claims_latecomer@test.com", nil)
 		if _, err := s.AddPhoneNumber(context.Background(), &api.PhoneMsg{Token: &latecomer, NewPhone: contestedPhone}); err != nil {
 			t.Fatalf("adding the number must send the code: %v", err)
 		}
@@ -106,8 +95,8 @@ func TestVerifyWhatsAppCodeKeepsOtherContacts(t *testing.T) {
 	const ownPhone = "+393230001102"
 	const bystanderPhone = "+393230001103"
 
-	bystander := addVerifyCodeTestUser(t, "f09_bystander@test.com", bystanderPhone, validCode("222222"), nil, nil)
-	token := addVerifyCodeTestUser(t, "f09_verifier@test.com", ownPhone, validCode("333333"), nil, nil)
+	bystander := addVerifyCodeTestUser(t, "claims_bystander@test.com", bystanderPhone, validCode("222222"), nil, nil)
+	token := addVerifyCodeTestUser(t, "claims_verifier@test.com", ownPhone, validCode("333333"), nil, nil)
 
 	if _, err := s.VerifyWhatsAppCode(context.Background(), &api.VerifyWhatsAppCodeReq{Token: &token, Code: "333333"}); err != nil {
 		t.Fatalf("unexpected error: %s", err.Error())
@@ -121,7 +110,7 @@ func TestVerifyWhatsAppCodeKeepsOtherContacts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %s", err.Error())
 	}
-	if user.Account.PhoneVerificationCode.Code != "222222" {
+	if user.Account.PhoneVerificationCode.CodeHash != phoneCodeDigestOf(t, bystander.Id, "222222") {
 		t.Errorf("an unrelated code was reset: %+v", user.Account.PhoneVerificationCode)
 	}
 
@@ -130,24 +119,24 @@ func TestVerifyWhatsAppCodeKeepsOtherContacts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %s", err.Error())
 	}
-	if _, ok := verifier.FindContactInfoByTypeAndAddr(models.ContactTypeEmail, "f09_verifier@test.com"); !ok {
+	if _, ok := verifier.FindContactInfoByTypeAndAddr(models.ContactTypeEmail, "claims_verifier@test.com"); !ok {
 		t.Errorf("the verification removed the e-mail contact: %+v", verifier.ContactInfos)
 	}
 }
 
-// GAP1: the signup path, driven through SignupWithEmail itself.
+// The signup path, driven through SignupWithEmail itself.
 func TestSignupWithPhoneHeldUnverifiedByAnotherUser(t *testing.T) {
 	const claimedAtSignup = "+393230001201"
 	const verifiedAtSignup = "+393230001202"
 	s := newSignupTestServer(t)
 
 	t.Run("a number only claimed by somebody else no longer blocks registration", func(t *testing.T) {
-		addVerifyCodeTestUser(t, "f09_signup_claimant@test.com", claimedAtSignup, validCode("700001"), nil, nil)
+		addVerifyCodeTestUser(t, "claims_signup_claimant@test.com", claimedAtSignup, validCode("700001"), nil, nil)
 
-		if _, err := s.SignupWithEmail(context.Background(), signupReq("f09_signup_owner@test.com", claimedAtSignup)); err != nil {
+		if _, err := s.SignupWithEmail(context.Background(), signupReq("claims_signup_owner@test.com", claimedAtSignup)); err != nil {
 			t.Fatalf("signup refused a number nobody had proved control of: %s", err.Error())
 		}
-		user, err := testUserDBService.GetUserByAccountID(testInstanceID, "f09_signup_owner@test.com")
+		user, err := testUserDBService.GetUserByAccountID(testInstanceID, "claims_signup_owner@test.com")
 		if err != nil {
 			t.Fatalf("the account was not created: %s", err.Error())
 		}
@@ -158,15 +147,15 @@ func TestSignupWithPhoneHeldUnverifiedByAnotherUser(t *testing.T) {
 
 	t.Run("a number somebody has verified is stored unverified too", func(t *testing.T) {
 		// Signup does not ask who else holds the number.
-		owner := addVerifyCodeTestUser(t, "f09_signup_verified_owner@test.com", verifiedAtSignup, models.VerificationCode{}, nil, nil)
+		owner := addVerifyCodeTestUser(t, "claims_signup_verified_owner@test.com", verifiedAtSignup, clearPhoneCode{}, nil, nil)
 		if _, err := testUserDBService.FinalizePhoneVerification(testInstanceID, owner.Id, verifiedAtSignup); err != nil {
 			t.Fatalf("failed to seed the verified owner: %s", err.Error())
 		}
 
-		if _, err := s.SignupWithEmail(context.Background(), signupReq("f09_signup_second@test.com", verifiedAtSignup)); err != nil {
+		if _, err := s.SignupWithEmail(context.Background(), signupReq("claims_signup_second@test.com", verifiedAtSignup)); err != nil {
 			t.Fatalf("signup must accept the number: %s", err.Error())
 		}
-		user, err := testUserDBService.GetUserByAccountID(testInstanceID, "f09_signup_second@test.com")
+		user, err := testUserDBService.GetUserByAccountID(testInstanceID, "claims_signup_second@test.com")
 		if err != nil {
 			t.Fatalf("the account was not created: %s", err.Error())
 		}
@@ -179,21 +168,21 @@ func TestSignupWithPhoneHeldUnverifiedByAnotherUser(t *testing.T) {
 	})
 }
 
-// GAP2: the change-phone path reaches the same rule and the same release.
+// The change-phone path reaches the same rule and the same release.
 func TestEditPhoneNumberOverUnverifiedClaim(t *testing.T) {
 	const contested = "+393230001211"
 	const ownNumber = "+393230001212"
 	s := newRateLimitTestServer(&countingWhatsAppClient{})
 	s.Intervals.MaxVerificationAttempts = 3
 
-	claimant := addVerifyCodeTestUser(t, "f09_edit_claimant@test.com", contested, validCode("800001"), nil, nil)
-	mover := addVerifyCodeTestUser(t, "f09_edit_mover@test.com", ownNumber, models.VerificationCode{}, nil, nil)
+	claimant := addVerifyCodeTestUser(t, "claims_edit_claimant@test.com", contested, validCode("800001"), nil, nil)
+	mover := addVerifyCodeTestUser(t, "claims_edit_mover@test.com", ownNumber, clearPhoneCode{}, nil, nil)
 
 	if _, err := s.EditPhoneNumber(context.Background(), &api.PhoneMsg{Token: &mover, NewPhone: contested}); err != nil {
 		t.Fatalf("change-phone refused a number nobody had proved control of: %s", err.Error())
 	}
 
-	code := storedPhoneCode(t, mover.Id)
+	code := sentPhoneCode(t, &s, mover.Id)
 	if code == "" {
 		t.Fatal("no code was stored for the mover")
 	}
@@ -211,11 +200,11 @@ func TestEditPhoneNumberOverUnverifiedClaim(t *testing.T) {
 	// The other half of the rule: a number somebody has actually proved is still closed, at
 	// verification, and "phone number already taken" now means exactly that.
 	const verifiedElsewhere = "+393230001213"
-	owner := addVerifyCodeTestUser(t, "f09_edit_verified_owner@test.com", verifiedElsewhere, models.VerificationCode{}, nil, nil)
+	owner := addVerifyCodeTestUser(t, "claims_edit_verified_owner@test.com", verifiedElsewhere, clearPhoneCode{}, nil, nil)
 	if _, err := testUserDBService.FinalizePhoneVerification(testInstanceID, owner.Id, verifiedElsewhere); err != nil {
 		t.Fatalf("failed to seed the verified owner: %s", err.Error())
 	}
-	blocked := addVerifyCodeTestUser(t, "f09_edit_blocked@test.com", "+393230001214", models.VerificationCode{}, nil, nil)
+	blocked := addVerifyCodeTestUser(t, "claims_edit_blocked@test.com", "+393230001214", clearPhoneCode{}, nil, nil)
 
 	if _, err := s.EditPhoneNumber(context.Background(), &api.PhoneMsg{Token: &blocked, NewPhone: verifiedElsewhere}); err != nil {
 		t.Fatalf("changing to the number must send the code: %v", err)

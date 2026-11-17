@@ -10,9 +10,8 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-// F-02: a phone verification code is stored on the account without the number it was sent to,
-// so it confirms whichever unverified phone the account happens to carry when it is used. The
-// two writers of that state are guarded here: the code can only be stored while the number it
+// A phone verification code stored on the account without the number it was sent to confirms
+// whichever unverified phone the account happens to carry when it is used. The two writers of that state are guarded here: the code can only be stored while the number it
 // is meant for is still pending, and only that number can be confirmed with it.
 
 const (
@@ -22,9 +21,9 @@ const (
 	bindingPhoneFinalize = "+391230000709" // a number nobody else carries
 )
 
-func bindingCode(code string, phone string) models.VerificationCode {
+func bindingCode(code string, phone string) models.PhoneVerificationCode {
 	now := time.Now().Unix()
-	return models.VerificationCode{Code: code, CreatedAt: now, ExpiresAt: now + 300, Phone: phone}
+	return models.PhoneVerificationCode{CodeHash: code, CreatedAt: now, ExpiresAt: now + 300, Phone: phone}
 }
 
 func bindingUser(t *testing.T, accountID string, phone string, phoneConfirmedAt int64) string {
@@ -40,7 +39,7 @@ func bindingUser(t *testing.T, accountID string, phone string, phoneConfirmedAt 
 	return addReserveTestUser(t, accountID, []int64{}, contacts)
 }
 
-func storedCode(t *testing.T, id string) models.VerificationCode {
+func storedCode(t *testing.T, id string) models.PhoneVerificationCode {
 	t.Helper()
 	user, err := testDBService.GetUserByID(testInstanceID, id)
 	if err != nil {
@@ -55,7 +54,7 @@ func TestDbSetPhoneVerificationCodeRequiresPendingPhone(t *testing.T) {
 		if err := testDBService.SetPhoneVerificationCode(testInstanceID, id, bindingCode("111111", bindingPhoneSent)); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if got := storedCode(t, id); got.Code != "111111" || got.Phone != bindingPhoneSent {
+		if got := storedCode(t, id); got.CodeHash != "111111" || got.Phone != bindingPhoneSent {
 			t.Errorf("code not bound to the number it is for: %+v", got)
 		}
 	})
@@ -70,7 +69,7 @@ func TestDbSetPhoneVerificationCodeRequiresPendingPhone(t *testing.T) {
 		if !errors.Is(err, ErrPhoneNotPending) {
 			t.Errorf("expected ErrPhoneNotPending, got %v", err)
 		}
-		if got := storedCode(t, id); got.Code != "222222" {
+		if got := storedCode(t, id); got.CodeHash != "222222" {
 			t.Errorf("a refused store still overwrote the pending code: %+v", got)
 		}
 	})
@@ -163,7 +162,7 @@ func TestDbFinalizePhoneVerificationConfirmsOnlyTheMatchingNumber(t *testing.T) 
 	})
 }
 
-// The stale-write interleaving the finding describes, committed one DB operation at a time: the
+// The stale-write interleaving described at the top of this file, committed one DB operation at a time: the
 // request read the account while the number was still there, the number was replaced meanwhile,
 // and only then does the request store the code it is about to send to the old number.
 func TestDbStaleCodeCannotFollowAReplacedNumber(t *testing.T) {

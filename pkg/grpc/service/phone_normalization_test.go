@@ -174,9 +174,8 @@ func TestAddPhoneNumberFirstAddedThenAnotherFormByTheSecond(t *testing.T) {
 	if ci, _ := phoneOf(t, first.Id); ci.Phone != "+393476120300" {
 		t.Fatalf("stored %q", ci.Phone)
 	}
-	user, _ := testUserDBService.GetUserByID(testInstanceID, first.Id)
 	if _, err := s.VerifyWhatsAppCode(context.Background(), &api.VerifyWhatsAppCodeReq{
-		Token: &first, Code: user.Account.PhoneVerificationCode.Code,
+		Token: &first, Code: sentPhoneCode(t, &s, first.Id),
 	}); err != nil {
 		t.Fatalf("verification failed: %s", err.Error())
 	}
@@ -237,7 +236,7 @@ func TestEditPhoneNumberComparesNormalisedValues(t *testing.T) {
 	})
 
 	t.Run("verified number is not edited into itself", func(t *testing.T) {
-		token := addVerifyCodeTestUser(t, "e164_edit_verified@test.com", "+393476120510", models.VerificationCode{}, nil, nil)
+		token := addVerifyCodeTestUser(t, "e164_edit_verified@test.com", "+393476120510", clearPhoneCode{}, nil, nil)
 		if _, err := testUserDBService.FinalizePhoneVerification(testInstanceID, token.Id, "+393476120510"); err != nil {
 			t.Fatal(err)
 		}
@@ -249,7 +248,7 @@ func TestEditPhoneNumberComparesNormalisedValues(t *testing.T) {
 
 	t.Run("another account's verified number is refused at verification in any form", func(t *testing.T) {
 		seedPhoneOwner(t, "e164_edit_owner@test.com", "+393476120520")
-		token := addVerifyCodeTestUser(t, "e164_edit_taker@test.com", "+393476120521", models.VerificationCode{}, nil, nil)
+		token := addVerifyCodeTestUser(t, "e164_edit_taker@test.com", "+393476120521", clearPhoneCode{}, nil, nil)
 		if err := edit(&token, "0039 347 612 0520"); err != nil {
 			t.Fatalf("changing must send the code: %v", err)
 		}
@@ -257,7 +256,7 @@ func TestEditPhoneNumberComparesNormalisedValues(t *testing.T) {
 	})
 
 	t.Run("a new number is stored normalised", func(t *testing.T) {
-		token := addVerifyCodeTestUser(t, "e164_edit_new@test.com", "+393476120530", models.VerificationCode{}, nil, nil)
+		token := addVerifyCodeTestUser(t, "e164_edit_new@test.com", "+393476120530", clearPhoneCode{}, nil, nil)
 		if err := edit(&token, "+44 (0)7911 123457"); err != nil {
 			t.Fatalf("unexpected error: %s", err.Error())
 		}
@@ -275,9 +274,8 @@ func TestVerifyAfterTheNumberWasEnteredWithSeparators(t *testing.T) {
 	if err := addPhone(s, &token, "0039 347 612 0600"); err != nil {
 		t.Fatalf("unexpected error: %s", err.Error())
 	}
-	user, _ := testUserDBService.GetUserByID(testInstanceID, token.Id)
 	_, err := s.VerifyWhatsAppCode(context.Background(), &api.VerifyWhatsAppCodeReq{
-		Token: &token, Code: user.Account.PhoneVerificationCode.Code,
+		Token: &token, Code: sentPhoneCode(t, &s, token.Id),
 	})
 	if err != nil {
 		t.Fatalf("verification failed: %s", err.Error())
@@ -321,7 +319,7 @@ func TestResendContactVerificationMatchesTheAddressAsTheSameNumber(t *testing.T)
 	}
 	// ... and the code it issued verifies the number
 	if _, err := s.VerifyWhatsAppCode(context.Background(), &api.VerifyWhatsAppCodeReq{
-		Token: token, Code: user.Account.PhoneVerificationCode.Code,
+		Token: token, Code: sentPhoneCode(t, &s, token.Id),
 	}); err != nil {
 		t.Fatalf("verification failed: %s", err.Error())
 	}
@@ -466,8 +464,7 @@ func TestSameNumberInDifferentFormsBurstEndsOnOneAccount(t *testing.T) {
 		if !found || ci.Phone != e164 {
 			t.Fatalf("account %d stored %q, want %q", i, ci.Phone, e164)
 		}
-		user, _ := testUserDBService.GetUserByID(testInstanceID, tokens[i].Id)
-		verifyCodes[i] = user.Account.PhoneVerificationCode.Code
+		verifyCodes[i] = sentPhoneCode(t, &s, tokens[i].Id)
 	}
 
 	start = make(chan struct{})
@@ -520,9 +517,11 @@ func TestSameNumberInDifferentFormsStaggeredEndsOnOneAccount(t *testing.T) {
 				t.Errorf("account %d: adding must send the code whoever holds the number: %s", i, err.Error())
 				return
 			}
-			user, _ := testUserDBService.GetUserByID(testInstanceID, tokens[i].Id)
+			// An account whose claim another verification has released has no code left;
+			// it submits nothing, as before.
+			code, _ := lookupSentPhoneCode(&s, tokens[i].Id)
 			_, _ = s.VerifyWhatsAppCode(context.Background(), &api.VerifyWhatsAppCodeReq{
-				Token: &tokens[i], Code: user.Account.PhoneVerificationCode.Code,
+				Token: &tokens[i], Code: code,
 			})
 		}(i)
 	}

@@ -28,11 +28,11 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// f03FindBarrier stops an endpoint immediately after Mongo has answered its first user find.
+// findBarrier stops an endpoint immediately after Mongo has answered its first user find.
 // The reply (and therefore the stale snapshot) already exists at that point, while the callback
 // still prevents the endpoint from decoding it and progressing to its write. Mutations use the
 // package's ordinary, separate DB client, so they can complete while the endpoint is suspended.
-type f03FindBarrier struct {
+type findBarrier struct {
 	mu        sync.Mutex
 	armed     bool
 	requestID int64
@@ -40,14 +40,14 @@ type f03FindBarrier struct {
 	release   chan struct{}
 }
 
-func newF03FindBarrier() *f03FindBarrier {
-	return &f03FindBarrier{
+func newFindBarrier() *findBarrier {
+	return &findBarrier{
 		reached: make(chan struct{}),
 		release: make(chan struct{}),
 	}
 }
 
-func (b *f03FindBarrier) monitor() *event.CommandMonitor {
+func (b *findBarrier) monitor() *event.CommandMonitor {
 	return &event.CommandMonitor{
 		Started: func(_ context.Context, evt *event.CommandStartedEvent) {
 			b.mu.Lock()
@@ -71,13 +71,13 @@ func (b *f03FindBarrier) monitor() *event.CommandMonitor {
 	}
 }
 
-func (b *f03FindBarrier) arm() {
+func (b *findBarrier) arm() {
 	b.mu.Lock()
 	b.armed = true
 	b.mu.Unlock()
 }
 
-func (b *f03FindBarrier) wait(t *testing.T) {
+func (b *findBarrier) wait(t *testing.T) {
 	t.Helper()
 	select {
 	case <-b.reached:
@@ -87,7 +87,7 @@ func (b *f03FindBarrier) wait(t *testing.T) {
 	}
 }
 
-func newF03MonitoredUserDB(t *testing.T, barrier *f03FindBarrier) *userdb.UserDBService {
+func newMonitoredUserDB(t *testing.T, barrier *findBarrier) *userdb.UserDBService {
 	t.Helper()
 
 	timeout, err := strconv.Atoi(os.Getenv("DB_TIMEOUT"))
@@ -138,15 +138,15 @@ func newF03MonitoredUserDB(t *testing.T, barrier *f03FindBarrier) *userdb.UserDB
 	return db
 }
 
-var f03FinalizeSeq int64
+var writeIsolationFinalizeSeq int64
 
-type f03MutationCase struct {
+type concurrentMutationCase struct {
 	name  string
 	setup func(*models.User)
 	run   func(*testing.T, string)
 }
 
-func f03MutationCases() []f03MutationCase {
+func concurrentMutationCases() []concurrentMutationCase {
 	newPhone := func(number string, confirmedAt int64) models.ContactInfo {
 		return models.ContactInfo{
 			ID:          primitive.NewObjectID(),
@@ -156,17 +156,18 @@ func f03MutationCases() []f03MutationCase {
 		}
 	}
 	// A pending code carries the number it was sent to, so every case names it.
-	code := func(value string, attempts int64, phone string) models.VerificationCode {
+	// The digest is opaque to the database, so a marker string stands in for it.
+	code := func(digest string, attempts int64, phone string) models.PhoneVerificationCode {
 		now := time.Now().Unix()
-		return models.VerificationCode{
-			Code: value, Attempts: attempts, CreatedAt: now, ExpiresAt: now + 300, Phone: phone,
+		return models.PhoneVerificationCode{
+			CodeHash: digest, Attempts: attempts, CreatedAt: now, ExpiresAt: now + 300, Phone: phone,
 		}
 	}
 
 	// Only one account can hold a verified number, and every table finalizes one: each gets its own.
-	finalizeNumber := fmt.Sprintf("+3932301%04d", atomic.AddInt64(&f03FinalizeSeq, 1))
+	finalizeNumber := fmt.Sprintf("+3932301%04d", atomic.AddInt64(&writeIsolationFinalizeSeq, 1))
 
-	return []f03MutationCase{
+	return []concurrentMutationCase{
 		{
 			name: "reserve_slot_and_replace_code",
 			setup: func(user *models.User) {
@@ -252,7 +253,7 @@ func f03MutationCases() []f03MutationCase {
 	}
 }
 
-func f03SeedUser(t *testing.T, accountID, hashedPassword string, mutation f03MutationCase) models.User {
+func seedIsolationUser(t *testing.T, accountID, hashedPassword string, mutation concurrentMutationCase) models.User {
 	t.Helper()
 	email := models.ContactInfo{
 		ID:          primitive.NewObjectID(),
@@ -284,12 +285,12 @@ func f03SeedUser(t *testing.T, accountID, hashedPassword string, mutation f03Mut
 	mutation.setup(&user)
 	users, err := addTestUsers([]models.User{user})
 	if err != nil {
-		t.Fatalf("seed F-03 test user: %v", err)
+		t.Fatalf("seed write-isolation test user: %v", err)
 	}
 	return users[0]
 }
 
-func f03PhoneContacts(user models.User) []models.ContactInfo {
+func phoneContactsOf(user models.User) []models.ContactInfo {
 	phones := make([]models.ContactInfo, 0, 1)
 	for _, contact := range user.ContactInfos {
 		if contact.Type == models.ContactTypePhone {
@@ -299,7 +300,7 @@ func f03PhoneContacts(user models.User) []models.ContactInfo {
 	return phones
 }
 
-func f03AssertProtectedDBState(t *testing.T, got, want models.User) {
+func assertProtectedDBState(t *testing.T, got, want models.User) {
 	t.Helper()
 	if !reflect.DeepEqual(got.Account.PhoneVerificationCode, want.Account.PhoneVerificationCode) {
 		t.Errorf("phone verification code was overwritten: got %+v, want %+v", got.Account.PhoneVerificationCode, want.Account.PhoneVerificationCode)
@@ -307,7 +308,7 @@ func f03AssertProtectedDBState(t *testing.T, got, want models.User) {
 	if !reflect.DeepEqual(got.Account.PhoneVerificationAttempts, want.Account.PhoneVerificationAttempts) {
 		t.Errorf("phone verification ledger was overwritten: got %v, want %v", got.Account.PhoneVerificationAttempts, want.Account.PhoneVerificationAttempts)
 	}
-	if gotPhones, wantPhones := f03PhoneContacts(got), f03PhoneContacts(want); !reflect.DeepEqual(gotPhones, wantPhones) {
+	if gotPhones, wantPhones := phoneContactsOf(got), phoneContactsOf(want); !reflect.DeepEqual(gotPhones, wantPhones) {
 		t.Errorf("phone contact infos were overwritten: got %+v, want %+v", gotPhones, wantPhones)
 	}
 	if !reflect.DeepEqual(got.ContactPreferences.PreferredChannels, want.ContactPreferences.PreferredChannels) {
@@ -315,7 +316,7 @@ func f03AssertProtectedDBState(t *testing.T, got, want models.User) {
 	}
 }
 
-func f03AssertProtectedAPIState(t *testing.T, got *api.User, want models.User) {
+func assertProtectedAPIState(t *testing.T, got *api.User, want models.User) {
 	t.Helper()
 	if got == nil {
 		t.Fatal("endpoint returned a nil user")
@@ -341,9 +342,9 @@ func f03AssertProtectedAPIState(t *testing.T, got *api.User, want models.User) {
 	}
 }
 
-func f03RunWhileSnapshotBlocked(
+func runWhileSnapshotBlocked(
 	t *testing.T,
-	barrier *f03FindBarrier,
+	barrier *findBarrier,
 	call func() (*api.User, error),
 	mutate func(),
 ) *api.User {
@@ -378,9 +379,9 @@ func f03RunWhileSnapshotBlocked(
 	}
 }
 
-func f03RunErrorWhileSnapshotBlocked(
+func runErrorWhileSnapshotBlocked(
 	t *testing.T,
-	barrier *f03FindBarrier,
+	barrier *findBarrier,
 	call func() error,
 	mutate func(),
 ) error {
@@ -402,19 +403,19 @@ func f03RunErrorWhileSnapshotBlocked(
 	}
 }
 
-func TestF03LoginPreservesConcurrentWhatsAppWrites(t *testing.T) {
+func TestLoginPreservesConcurrentWhatsAppWrites(t *testing.T) {
 	const password = "SuperSecurePassword123!§$"
 	hashedPassword, err := pwhash.HashPassword(password)
 	if err != nil {
 		t.Fatalf("hash password: %v", err)
 	}
 
-	for index, mutation := range f03MutationCases() {
+	for index, mutation := range concurrentMutationCases() {
 		t.Run(mutation.name, func(t *testing.T) {
-			accountID := fmt.Sprintf("f03-login-%02d@test.com", index)
-			seeded := f03SeedUser(t, accountID, hashedPassword, mutation)
-			barrier := newF03FindBarrier()
-			monitoredDB := newF03MonitoredUserDB(t, barrier)
+			accountID := fmt.Sprintf("isolation-login-%02d@test.com", index)
+			seeded := seedIsolationUser(t, accountID, hashedPassword, mutation)
+			barrier := newFindBarrier()
+			monitoredDB := newMonitoredUserDB(t, barrier)
 			mockCtrl := gomock.NewController(t)
 			loggingClient := loggingMock.NewMockLoggingServiceApiClient(mockCtrl)
 			loggingClient.EXPECT().SaveLogEvent(gomock.Any(), gomock.Any()).Return(nil, nil)
@@ -426,7 +427,7 @@ func TestF03LoginPreservesConcurrentWhatsAppWrites(t *testing.T) {
 			}
 
 			var want models.User
-			responseUser := f03RunWhileSnapshotBlocked(t, barrier, func() (*api.User, error) {
+			responseUser := runWhileSnapshotBlocked(t, barrier, func() (*api.User, error) {
 				response, err := server.LoginWithEmail(context.Background(), &api.LoginWithEmailMsg{
 					Email: accountID, Password: password, InstanceId: testInstanceID, AsParticipant: true,
 				})
@@ -447,20 +448,20 @@ func TestF03LoginPreservesConcurrentWhatsAppWrites(t *testing.T) {
 			if err != nil {
 				t.Fatalf("read state after login: %v", err)
 			}
-			f03AssertProtectedDBState(t, got, want)
-			f03AssertProtectedAPIState(t, responseUser, want)
+			assertProtectedDBState(t, got, want)
+			assertProtectedAPIState(t, responseUser, want)
 		})
 	}
 }
 
-func TestF03AddEmailPreservesConcurrentWhatsAppWrites(t *testing.T) {
-	for index, mutation := range f03MutationCases() {
+func TestAddEmailPreservesConcurrentWhatsAppWrites(t *testing.T) {
+	for index, mutation := range concurrentMutationCases() {
 		t.Run(mutation.name, func(t *testing.T) {
-			accountID := fmt.Sprintf("f03-add-email-%02d@test.com", index)
-			newEmail := fmt.Sprintf("f03-added-%02d@test.com", index)
-			seeded := f03SeedUser(t, accountID, "unused-password", mutation)
-			barrier := newF03FindBarrier()
-			monitoredDB := newF03MonitoredUserDB(t, barrier)
+			accountID := fmt.Sprintf("isolation-add-email-%02d@test.com", index)
+			newEmail := fmt.Sprintf("isolation-added-%02d@test.com", index)
+			seeded := seedIsolationUser(t, accountID, "unused-password", mutation)
+			barrier := newFindBarrier()
+			monitoredDB := newMonitoredUserDB(t, barrier)
 			mockCtrl := gomock.NewController(t)
 			messagingClient := messageMock.NewMockMessagingServiceApiClient(mockCtrl)
 			messagingClient.EXPECT().SendInstantEmail(gomock.Any(), gomock.Any()).Return(nil, nil)
@@ -472,7 +473,7 @@ func TestF03AddEmailPreservesConcurrentWhatsAppWrites(t *testing.T) {
 			token := api_types.TokenInfos{Id: seeded.ID.Hex(), InstanceId: testInstanceID}
 
 			var want models.User
-			responseUser := f03RunWhileSnapshotBlocked(t, barrier, func() (*api.User, error) {
+			responseUser := runWhileSnapshotBlocked(t, barrier, func() (*api.User, error) {
 				return server.AddEmail(context.Background(), &api.ContactInfoMsg{
 					Token: &token,
 					ContactInfo: &api.ContactInfo{
@@ -492,8 +493,8 @@ func TestF03AddEmailPreservesConcurrentWhatsAppWrites(t *testing.T) {
 			if err != nil {
 				t.Fatalf("read state after AddEmail: %v", err)
 			}
-			f03AssertProtectedDBState(t, got, want)
-			f03AssertProtectedAPIState(t, responseUser, want)
+			assertProtectedDBState(t, got, want)
+			assertProtectedAPIState(t, responseUser, want)
 			if _, found := got.FindContactInfoByTypeAndAddr(models.ContactTypeEmail, newEmail); !found {
 				t.Errorf("AddEmail lost its intended non-phone mutation: %s was not stored", newEmail)
 			}
@@ -501,12 +502,12 @@ func TestF03AddEmailPreservesConcurrentWhatsAppWrites(t *testing.T) {
 	}
 }
 
-func f03PreferenceMutationCases() []f03MutationCase {
-	all := f03MutationCases()
-	return []f03MutationCase{all[4], all[5]} // delete and finalize
+func preferenceMutationCases() []concurrentMutationCase {
+	all := concurrentMutationCases()
+	return []concurrentMutationCase{all[4], all[5]} // delete and finalize
 }
 
-func f03SeedSubscribedUser(t *testing.T, accountID string, mutation f03MutationCase) models.User {
+func seedSubscribedIsolationUser(t *testing.T, accountID string, mutation concurrentMutationCase) models.User {
 	t.Helper()
 	setup := mutation.setup
 	mutation.setup = func(user *models.User) {
@@ -514,10 +515,10 @@ func f03SeedSubscribedUser(t *testing.T, accountID string, mutation f03MutationC
 		user.ContactPreferences.SubscribedToNewsletter = true
 		user.ContactPreferences.SubscribedToWeekly = false
 	}
-	return f03SeedUser(t, accountID, "unused-password", mutation)
+	return seedIsolationUser(t, accountID, "unused-password", mutation)
 }
 
-func f03TempToken(t *testing.T, userID, purpose string) string {
+func isolationTempToken(t *testing.T, userID, purpose string) string {
 	t.Helper()
 	token, err := testGlobalDBService.AddTempToken(models.TempToken{
 		UserID: userID, InstanceID: testInstanceID, Purpose: purpose,
@@ -529,19 +530,19 @@ func f03TempToken(t *testing.T, userID, purpose string) string {
 	return token
 }
 
-func TestF03UnsubscribePreservesConcurrentPhoneFinalizationAndDeletion(t *testing.T) {
-	for index, mutation := range f03PreferenceMutationCases() {
+func TestUnsubscribePreservesConcurrentPhoneFinalizationAndDeletion(t *testing.T) {
+	for index, mutation := range preferenceMutationCases() {
 		t.Run(mutation.name, func(t *testing.T) {
-			seeded := f03SeedSubscribedUser(t, fmt.Sprintf("f03-unsubscribe-%02d@test.com", index), mutation)
-			token := f03TempToken(t, seeded.ID.Hex(), constants.TOKEN_PURPOSE_UNSUBSCRIBE_NEWSLETTER)
-			barrier := newF03FindBarrier()
+			seeded := seedSubscribedIsolationUser(t, fmt.Sprintf("isolation-unsubscribe-%02d@test.com", index), mutation)
+			token := isolationTempToken(t, seeded.ID.Hex(), constants.TOKEN_PURPOSE_UNSUBSCRIBE_NEWSLETTER)
+			barrier := newFindBarrier()
 			server := userManagementServer{
-				userDBservice:   newF03MonitoredUserDB(t, barrier),
+				userDBservice:   newMonitoredUserDB(t, barrier),
 				globalDBService: testGlobalDBService,
 			}
 
 			var want models.User
-			err := f03RunErrorWhileSnapshotBlocked(t, barrier, func() error {
+			err := runErrorWhileSnapshotBlocked(t, barrier, func() error {
 				_, err := server.UseUnsubscribeToken(context.Background(), &api.TempToken{Token: token})
 				return err
 			}, func() {
@@ -559,7 +560,7 @@ func TestF03UnsubscribePreservesConcurrentPhoneFinalizationAndDeletion(t *testin
 			if err != nil {
 				t.Fatalf("read state after unsubscribe: %v", err)
 			}
-			f03AssertProtectedDBState(t, got, want)
+			assertProtectedDBState(t, got, want)
 			if got.ContactPreferences.SubscribedToNewsletter {
 				t.Error("unsubscribe did not persist its intended subscription change")
 			}
@@ -567,19 +568,19 @@ func TestF03UnsubscribePreservesConcurrentPhoneFinalizationAndDeletion(t *testin
 	}
 }
 
-func TestF03InvitationResetPreservesConcurrentPhoneFinalizationAndDeletion(t *testing.T) {
-	for index, mutation := range f03PreferenceMutationCases() {
+func TestInvitationResetPreservesConcurrentPhoneFinalizationAndDeletion(t *testing.T) {
+	for index, mutation := range preferenceMutationCases() {
 		t.Run(mutation.name, func(t *testing.T) {
-			seeded := f03SeedSubscribedUser(t, fmt.Sprintf("f03-invitation-reset-%02d@test.com", index), mutation)
-			token := f03TempToken(t, seeded.ID.Hex(), constants.TOKEN_PURPOSE_INVITATION)
-			barrier := newF03FindBarrier()
+			seeded := seedSubscribedIsolationUser(t, fmt.Sprintf("isolation-invitation-reset-%02d@test.com", index), mutation)
+			token := isolationTempToken(t, seeded.ID.Hex(), constants.TOKEN_PURPOSE_INVITATION)
+			barrier := newFindBarrier()
 			mockCtrl := gomock.NewController(t)
 			messagingClient := messageMock.NewMockMessagingServiceApiClient(mockCtrl)
 			loggingClient := loggingMock.NewMockLoggingServiceApiClient(mockCtrl)
 			messagingClient.EXPECT().SendInstantEmail(gomock.Any(), gomock.Any()).Return(nil, nil)
 			loggingClient.EXPECT().SaveLogEvent(gomock.Any(), gomock.Any()).Return(nil, nil)
 			server := userManagementServer{
-				userDBservice:   newF03MonitoredUserDB(t, barrier),
+				userDBservice:   newMonitoredUserDB(t, barrier),
 				globalDBService: testGlobalDBService,
 				clients: &models.APIClients{
 					MessagingService: messagingClient, LoggingService: loggingClient,
@@ -587,7 +588,7 @@ func TestF03InvitationResetPreservesConcurrentPhoneFinalizationAndDeletion(t *te
 			}
 
 			var want models.User
-			err := f03RunErrorWhileSnapshotBlocked(t, barrier, func() error {
+			err := runErrorWhileSnapshotBlocked(t, barrier, func() error {
 				_, err := server.ResetPassword(context.Background(), &api.ResetPasswordMsg{
 					Token: token, NewPassword: "AnotherSecurePassword123!",
 				})
@@ -607,7 +608,7 @@ func TestF03InvitationResetPreservesConcurrentPhoneFinalizationAndDeletion(t *te
 			if err != nil {
 				t.Fatalf("read state after invitation reset: %v", err)
 			}
-			f03AssertProtectedDBState(t, got, want)
+			assertProtectedDBState(t, got, want)
 			if !got.ContactPreferences.SubscribedToNewsletter || !got.ContactPreferences.SubscribedToWeekly {
 				t.Errorf("invitation reset did not enable its intended subscriptions: %+v", got.ContactPreferences)
 			}
@@ -615,9 +616,9 @@ func TestF03InvitationResetPreservesConcurrentPhoneFinalizationAndDeletion(t *te
 	}
 }
 
-func TestF03ExplicitPreferencesRejectConcurrentPhoneDeletionOrReplacement(t *testing.T) {
-	all := f03MutationCases()
-	mutations := []f03MutationCase{all[3], all[4]} // replace and delete
+func TestExplicitPreferencesRejectConcurrentPhoneDeletionOrReplacement(t *testing.T) {
+	all := concurrentMutationCases()
+	mutations := []concurrentMutationCase{all[3], all[4]} // replace and delete
 	for index, mutation := range mutations {
 		t.Run(mutation.name, func(t *testing.T) {
 			setup := mutation.setup
@@ -626,16 +627,16 @@ func TestF03ExplicitPreferencesRejectConcurrentPhoneDeletionOrReplacement(t *tes
 				user.ContactPreferences.SubscribedToNewsletter = false
 				user.ContactPreferences.SubscribedToWeekly = false
 			}
-			seeded := f03SeedUser(t, fmt.Sprintf("f03-explicit-prefs-%02d@test.com", index), "unused-password", mutation)
-			barrier := newF03FindBarrier()
+			seeded := seedIsolationUser(t, fmt.Sprintf("isolation-explicit-prefs-%02d@test.com", index), "unused-password", mutation)
+			barrier := newFindBarrier()
 			server := userManagementServer{
-				userDBservice:   newF03MonitoredUserDB(t, barrier),
+				userDBservice:   newMonitoredUserDB(t, barrier),
 				globalDBService: testGlobalDBService,
 			}
 			token := api_types.TokenInfos{Id: seeded.ID.Hex(), InstanceId: testInstanceID}
 
 			var want models.User
-			err := f03RunErrorWhileSnapshotBlocked(t, barrier, func() error {
+			err := runErrorWhileSnapshotBlocked(t, barrier, func() error {
 				_, err := server.UpdateContactPreferences(context.Background(), &api.ContactPreferencesMsg{
 					Token: &token,
 					ContactPreferences: &api.ContactPreferences{
@@ -663,7 +664,7 @@ func TestF03ExplicitPreferencesRejectConcurrentPhoneDeletionOrReplacement(t *tes
 			if !reflect.DeepEqual(got.ContactPreferences, want.ContactPreferences) {
 				t.Errorf("rejected preferences update committed partial fields: got %+v, want %+v", got.ContactPreferences, want.ContactPreferences)
 			}
-			f03AssertProtectedDBState(t, got, want)
+			assertProtectedDBState(t, got, want)
 		})
 	}
 }

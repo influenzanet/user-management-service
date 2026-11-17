@@ -13,7 +13,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// F-09 removed the rule that made a number exclusive before anybody had proved anything, so for
+// Releasing unverified claims removed the rule that made a number exclusive before anybody had proved anything, so for
 // the first time two accounts can hold the same number, both unverified, both with a live code,
 // and verify it at the same moment. That is a deliberate residual, not an oversight: settling it
 // needs uniqueness kept outside the contact array (a collection keyed by the number, written with
@@ -21,8 +21,8 @@ import (
 // array would not do, since partial filters apply per document, not per element. A residual that
 // is only asserted in a commit message is worth nothing, so this test states where its edges are.
 //
-// There is no seam to hold open: both ends of the window are database calls. So, like the F-02
-// concurrency test, this overlaps the operation many times over and asserts the invariants that
+// There is no seam to hold open: both ends of the window are database calls. So, like
+// TestConcurrentChangePhoneAndResendCannotConfirmForeignNumber, this overlaps the operation many times over and asserts the invariants that
 // must hold whatever order the writes landed in, rather than a particular interleaving.
 //
 // Enforced on every round, and this is what bounds the damage:
@@ -67,10 +67,10 @@ func TestVerifyWhatsAppCodeConcurrentClaimsOnOneNumber(t *testing.T) {
 		codeA := "500001"
 		codeB := "500002"
 
-		first := addVerifyCodeTestUser(t, fmt.Sprintf("f09_race_a_%d@test.com", round), phone, validCode(codeA), nil, nil)
-		second := addVerifyCodeTestUser(t, fmt.Sprintf("f09_race_b_%d@test.com", round), phone, validCode(codeB), nil, nil)
+		first := addVerifyCodeTestUser(t, fmt.Sprintf("claims_race_a_%d@test.com", round), phone, validCode(codeA), nil, nil)
+		second := addVerifyCodeTestUser(t, fmt.Sprintf("claims_race_b_%d@test.com", round), phone, validCode(codeB), nil, nil)
 
-		// Both hold the number unverified before the race: that is the state F-09 allows and
+		// Both hold the number unverified before the race: that is the state the claim rule allows and
 		// the earlier rule forbade.
 		for _, token := range []*api_types.TokenInfos{&first, &second} {
 			if ci, found := phoneOf(t, token.Id); !found || ci.Phone != phone || ci.ConfirmedAt != 0 {
@@ -132,7 +132,7 @@ func TestVerifyWhatsAppCodeConcurrentClaimsOnOneNumber(t *testing.T) {
 			// legitimately hold no contact and a code that has not been cleared yet. Not
 			// exploitable — a verify in that window fails at finalize, the contact being gone —
 			// but it is only reliably empty once the winner's handler has returned.
-			if user.Account.PhoneVerificationCode.Code != "" && !holdsPhone {
+			if user.Account.PhoneVerificationCode.CodeHash != "" && !holdsPhone {
 				t.Errorf("round %d: a released claim kept a usable code: %+v", round, user.Account.PhoneVerificationCode)
 			}
 		}
@@ -173,11 +173,11 @@ func TestReleaseNeverStripsAVerifiedContactUnderLoad(t *testing.T) {
 	const phone = "+393230001320"
 	const parallelReleases = 8
 
-	owner := addVerifyCodeTestUser(t, "f09_release_load_owner@test.com", phone, models.VerificationCode{}, nil, nil)
+	owner := addVerifyCodeTestUser(t, "claims_release_load_owner@test.com", phone, clearPhoneCode{}, nil, nil)
 	if _, err := testUserDBService.FinalizePhoneVerification(testInstanceID, owner.Id, phone); err != nil {
 		t.Fatalf("failed to seed the verified owner: %s", err.Error())
 	}
-	claimant := addVerifyCodeTestUser(t, "f09_release_load_claimant@test.com", phone, validCode("600001"), nil, nil)
+	claimant := addVerifyCodeTestUser(t, "claims_release_load_claimant@test.com", phone, validCode("600001"), nil, nil)
 
 	start := make(chan struct{})
 	var wg sync.WaitGroup
@@ -215,8 +215,8 @@ func TestConcurrentAddPhoneNumberOnOneNumber(t *testing.T) {
 	s := newRateLimitTestServer(&countingWhatsAppClient{})
 	s.Intervals.MaxVerificationAttempts = 3
 
-	first := addRateLimitTestUser(t, "f09_addrace_a@test.com", nil)
-	second := addRateLimitTestUser(t, "f09_addrace_b@test.com", nil)
+	first := addRateLimitTestUser(t, "claims_addrace_a@test.com", nil)
+	second := addRateLimitTestUser(t, "claims_addrace_b@test.com", nil)
 
 	start := make(chan struct{})
 	var wg sync.WaitGroup
@@ -246,8 +246,8 @@ func TestConcurrentAddPhoneNumberOnOneNumber(t *testing.T) {
 		}
 	}
 
-	winnerCode := storedPhoneCode(t, first.Id)
-	loserCode := storedPhoneCode(t, second.Id)
+	winnerCode := sentPhoneCode(t, &s, first.Id)
+	loserCode := sentPhoneCode(t, &s, second.Id)
 	if winnerCode == "" || loserCode == "" {
 		t.Fatal("both accounts should be holding a live code")
 	}
@@ -266,7 +266,7 @@ func TestConcurrentAddPhoneNumberOnOneNumber(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %s", err.Error())
 	}
-	if loser.Account.PhoneVerificationCode.Code != "" {
+	if loser.Account.PhoneVerificationCode.CodeHash != "" {
 		t.Errorf("the loser kept a usable code: %+v", loser.Account.PhoneVerificationCode)
 	}
 	_, err = s.VerifyWhatsAppCode(context.Background(), &api.VerifyWhatsAppCodeReq{Token: &second, Code: loserCode})
