@@ -10,11 +10,10 @@ import (
 
 func completeWhatsAppConfig() WhatsAppConfig {
 	return WhatsAppConfig{
-		ApiToken:                     "secret-wa-token",
-		PhoneNumberID:                "secret-phone-id",
-		VerificationTemplateName:     "verify_code",
-		VerificationTemplateLang:     "it",
-		VerificationTemplateCategory: "utility",
+		ApiToken:                 "secret-wa-token",
+		PhoneNumberID:            "secret-phone-id",
+		VerificationTemplateName: "verify_code",
+		VerificationTemplateLang: "it",
 	}
 }
 
@@ -41,9 +40,8 @@ func TestWhatsAppSettingsIsTheSingleDecision(t *testing.T) {
 
 func TestWhatsAppProblems(t *testing.T) {
 	complete := completeWhatsAppConfig()
-	withoutTokenAndCategory := complete
-	withoutTokenAndCategory.ApiToken = ""
-	withoutTokenAndCategory.VerificationTemplateCategory = ""
+	withoutToken := complete
+	withoutToken.ApiToken = ""
 
 	for _, tc := range []struct {
 		name       string
@@ -57,14 +55,16 @@ func TestWhatsAppProblems(t *testing.T) {
 		{name: "switch off, nothing configured", flag: "", conf: WhatsAppConfig{}, wantNone: true},
 		{name: "switch false, nothing configured", flag: "false", conf: WhatsAppConfig{}, wantNone: true},
 		{
-			name: "switch on, token and category missing", flag: "true", conf: withoutTokenAndCategory,
-			wantNamed:  []string{ENV_WHATSAPP_TOKEN, ENV_WHATSAPP_VERIFICATION_TEMPLATE_CATEGORY},
+			name: "switch on, token missing", flag: "true", conf: withoutToken,
+			wantNamed:  []string{ENV_WHATSAPP_TOKEN},
 			wantAbsent: []string{ENV_WHATSAPP_PHONE_NUMBER_ID, ENV_WHATSAPP_VERIFICATION_TEMPLATE_NAME},
 		},
 		{
 			name: "switch on, nothing configured", flag: "true", conf: WhatsAppConfig{},
 			wantNamed: []string{ENV_WHATSAPP_TOKEN, ENV_WHATSAPP_PHONE_NUMBER_ID, ENV_WHATSAPP_VERIFICATION_TEMPLATE_NAME,
-				ENV_WHATSAPP_VERIFICATION_TEMPLATE_LANG, ENV_WHATSAPP_VERIFICATION_TEMPLATE_CATEGORY},
+				ENV_WHATSAPP_VERIFICATION_TEMPLATE_LANG},
+			// The template category is not part of the configuration: Meta's send call takes none.
+			wantAbsent: []string{"WHATSAPP_VERIFICATION_TEMPLATE_CATEGORY"},
 		},
 		{name: "switch with other casing", flag: "TRUE", conf: complete, wantNamed: []string{ENV_WHATSAPP_ENABLED, `"TRUE"`}},
 		{name: "switch off, credentials left", flag: "false", conf: complete, wantNamed: []string{ENV_WHATSAPP_ENABLED}},

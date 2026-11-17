@@ -20,9 +20,8 @@ type WhatsAppConfig struct {
 	VerificationTemplateLang string
 	// Languages the verification template is approved in on Meta's side; always contains
 	// VerificationTemplateLang. A user's language outside this list falls back to it.
-	VerificationTemplateLangs    []string
-	VerificationTemplateCategory string
-	ApiVersion                   string
+	VerificationTemplateLangs []string
+	ApiVersion                string
 }
 type Config struct {
 	LogLevel    logger.LogLevel
@@ -62,7 +61,6 @@ func InitConfig() Config {
 	conf.WhatsApp.PhoneNumberID = os.Getenv(ENV_WHATSAPP_PHONE_NUMBER_ID)
 	conf.WhatsApp.VerificationTemplateName = os.Getenv(ENV_WHATSAPP_VERIFICATION_TEMPLATE_NAME)
 	conf.WhatsApp.VerificationTemplateLang = os.Getenv(ENV_WHATSAPP_VERIFICATION_TEMPLATE_LANG)
-	conf.WhatsApp.VerificationTemplateCategory = os.Getenv(ENV_WHATSAPP_VERIFICATION_TEMPLATE_CATEGORY)
 	conf.WhatsApp.ApiVersion = os.Getenv(ENV_WHATSAPP_API_VERSION)
 	conf.WhatsApp.VerificationTemplateLangs = verificationTemplateLangs(os.Getenv(ENV_WHATSAPP_VERIFICATION_TEMPLATE_LANGS), conf.WhatsApp.VerificationTemplateLang)
 
@@ -195,7 +193,7 @@ func whatsAppEnabled(flag string, conf WhatsAppConfig) bool {
 		return false
 	}
 	return conf.ApiToken != "" && conf.PhoneNumberID != "" && conf.VerificationTemplateName != "" &&
-		conf.VerificationTemplateLang != "" && conf.VerificationTemplateCategory != ""
+		conf.VerificationTemplateLang != ""
 }
 
 // verificationTemplateLangs parses the comma-separated list of languages the verification

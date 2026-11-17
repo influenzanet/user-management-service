@@ -40,7 +40,6 @@ func whatsAppProblems(flag string, conf WhatsAppConfig) []string {
 			{ENV_WHATSAPP_PHONE_NUMBER_ID, conf.PhoneNumberID},
 			{ENV_WHATSAPP_VERIFICATION_TEMPLATE_NAME, conf.VerificationTemplateName},
 			{ENV_WHATSAPP_VERIFICATION_TEMPLATE_LANG, conf.VerificationTemplateLang},
-			{ENV_WHATSAPP_VERIFICATION_TEMPLATE_CATEGORY, conf.VerificationTemplateCategory},
 		} {
 			if v.value == "" {
 				missing = append(missing, v.name)

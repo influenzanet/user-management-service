@@ -9,79 +9,6 @@ import (
 	"github.com/coneno/logger"
 )
 
-func TestWhatsAppConfigEnabled(t *testing.T) {
-	envVars := []string{
-		ENV_WHATSAPP_TOKEN,
-		ENV_WHATSAPP_PHONE_NUMBER_ID,
-		ENV_WHATSAPP_VERIFICATION_TEMPLATE_NAME,
-		ENV_WHATSAPP_VERIFICATION_TEMPLATE_LANG,
-		ENV_WHATSAPP_VERIFICATION_TEMPLATE_CATEGORY,
-	}
-
-	clearAll := func(t *testing.T) {
-		for _, v := range envVars {
-			t.Setenv(v, "")
-		}
-	}
-	setAll := func(t *testing.T) {
-		t.Setenv(ENV_WHATSAPP_TOKEN, "test-token")
-		t.Setenv(ENV_WHATSAPP_PHONE_NUMBER_ID, "123456")
-		t.Setenv(ENV_WHATSAPP_VERIFICATION_TEMPLATE_NAME, "verify_code")
-		t.Setenv(ENV_WHATSAPP_VERIFICATION_TEMPLATE_LANG, "it")
-		t.Setenv(ENV_WHATSAPP_VERIFICATION_TEMPLATE_CATEGORY, "utility")
-	}
-
-	t.Run("all vars present - enabled", func(t *testing.T) {
-		setAll(t)
-		conf := WhatsAppConfig{}
-		conf.ApiToken = "test-token"
-		conf.PhoneNumberID = "123456"
-		conf.VerificationTemplateName = "verify_code"
-		conf.VerificationTemplateLang = "it"
-		conf.VerificationTemplateCategory = "utility"
-
-		if conf.ApiToken == "" || conf.PhoneNumberID == "" || conf.VerificationTemplateName == "" || conf.VerificationTemplateLang == "" || conf.VerificationTemplateCategory == "" {
-			t.Error("expected all fields non-empty")
-		}
-		conf.Enabled = true
-		if !conf.Enabled {
-			t.Error("expected Enabled=true when all vars present")
-		}
-	})
-
-	t.Run("missing vars - disabled and no crash", func(t *testing.T) {
-		clearAll(t)
-		conf := WhatsAppConfig{}
-		// Enabled defaults to false (zero value)
-		if conf.Enabled {
-			t.Error("expected Enabled=false when vars missing")
-		}
-	})
-
-	t.Run("partial vars - disabled", func(t *testing.T) {
-		clearAll(t)
-		conf := WhatsAppConfig{
-			ApiToken:      "test-token",
-			PhoneNumberID: "123456",
-			// missing template vars
-		}
-		if conf.VerificationTemplateName != "" {
-			t.Error("expected VerificationTemplateName empty")
-		}
-		// Enabled should remain false
-		if conf.Enabled {
-			t.Error("expected Enabled=false when config incomplete")
-		}
-	})
-
-	t.Run("zero value is safe default", func(t *testing.T) {
-		conf := WhatsAppConfig{}
-		if conf.Enabled {
-			t.Error("zero-value WhatsAppConfig must have Enabled=false")
-		}
-	})
-}
-
 func TestWhatsAppAPIVersionIsReadFromEnv(t *testing.T) {
 	// InitConfig exits on missing DB credentials and counters, so give it the minimum it needs.
 	for name, value := range map[string]string{
@@ -135,7 +62,6 @@ func initConfigEnv(t *testing.T) {
 		ENV_WHATSAPP_PHONE_NUMBER_ID:                "123456",
 		ENV_WHATSAPP_VERIFICATION_TEMPLATE_NAME:     "verify_code",
 		ENV_WHATSAPP_VERIFICATION_TEMPLATE_LANG:     "it",
-		ENV_WHATSAPP_VERIFICATION_TEMPLATE_CATEGORY: "utility",
 	} {
 		t.Setenv(name, value)
 	}
@@ -182,16 +108,19 @@ func TestInitConfigWhatsAppNeedsTheEnabledSwitch(t *testing.T) {
 
 func TestWhatsAppEnabledDecision(t *testing.T) {
 	complete := WhatsAppConfig{
-		ApiToken:                     "test-token",
-		PhoneNumberID:                "123456",
-		VerificationTemplateName:     "verify_code",
-		VerificationTemplateLang:     "it",
-		VerificationTemplateCategory: "utility",
+		ApiToken:                 "test-token",
+		PhoneNumberID:            "123456",
+		VerificationTemplateName: "verify_code",
+		VerificationTemplateLang: "it",
 	}
 	withoutToken := complete
 	withoutToken.ApiToken = ""
-	withoutCategory := complete
-	withoutCategory.VerificationTemplateCategory = ""
+	withoutPhoneNumberID := complete
+	withoutPhoneNumberID.PhoneNumberID = ""
+	withoutTemplateName := complete
+	withoutTemplateName.VerificationTemplateName = ""
+	withoutTemplateLang := complete
+	withoutTemplateLang.VerificationTemplateLang = ""
 
 	for _, tc := range []struct {
 		name string
@@ -205,12 +134,35 @@ func TestWhatsAppEnabledDecision(t *testing.T) {
 		{"switch with other casing", "True", complete, false},
 		{"switch with spaces", " true", complete, false},
 		{"switch on, token missing", "true", withoutToken, false},
-		{"switch on, category missing", "true", withoutCategory, false},
+		{"switch on, phone number id missing", "true", withoutPhoneNumberID, false},
+		{"switch on, template name missing", "true", withoutTemplateName, false},
+		{"switch on, template language missing", "true", withoutTemplateLang, false},
 		{"switch on, empty configuration", "true", WhatsAppConfig{}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := whatsAppEnabled(tc.flag, tc.conf); got != tc.want {
 				t.Errorf("whatsAppEnabled(%q, ...) = %v, want %v", tc.flag, got, tc.want)
+			}
+		})
+	}
+}
+
+// The verification template's category is not configuration: Meta's send call takes none, and
+// nothing in the service reads it. A deployment that never sets the old variable gets WhatsApp,
+// and one that still sets it is neither refused nor warned.
+func TestInitConfigWhatsAppNeedsNoTemplateCategory(t *testing.T) {
+	for _, category := range []string{"", "AUTHENTICATION"} {
+		t.Run("WHATSAPP_VERIFICATION_TEMPLATE_CATEGORY="+category, func(t *testing.T) {
+			initConfigEnv(t)
+			t.Setenv(ENV_WHATSAPP_ENABLED, "true")
+			t.Setenv("WHATSAPP_VERIFICATION_TEMPLATE_CATEGORY", category)
+			var conf Config
+			out := captureWarning(func() { conf = InitConfig() })
+			if !conf.WhatsApp.Enabled {
+				t.Fatalf("WhatsApp disabled with the switch on and every required variable set; warnings: %q", out)
+			}
+			if strings.Contains(out, "WhatsApp") {
+				t.Errorf("InitConfig warns about WhatsApp with a complete configuration: %q", out)
 			}
 		})
 	}
