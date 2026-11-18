@@ -21,6 +21,9 @@ const (
 	LOG_EVENT_PHONE_DELETE       = "PHONE DELETE"
 	LOG_EVENT_PHONE_VERIFICATION = "PHONE VERIFICATION"
 	LOG_EVENT_CHANNELS_CHANGED   = "NOTIFICATION CHANNELS CHANGED"
+	// The participant opted out of WhatsApp through WhatsApp itself, or Meta reported the number
+	// as unreachable, and the channel was removed without their acting in the settings.
+	LOG_EVENT_WHATSAPP_CHANNEL_REMOVED = "WHATSAPP CHANNEL REMOVED"
 )
 
 // Outcomes set explicitly where the returned error does not tell them apart.
