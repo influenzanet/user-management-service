@@ -12,7 +12,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// Audit events of the phone number and the notification channels. The message of each
+// Audit events of the phone number, the notification channels and the subscriptions. The message of each
 // event is "outcome=<outcome>", followed by the number masked, never in full.
 const (
 	LOG_EVENT_PHONE_ADD          = "PHONE ADD"
@@ -24,6 +24,9 @@ const (
 	// The participant opted out of WhatsApp through WhatsApp itself, or Meta reported the number
 	// as unreachable, and the channel was removed without their acting in the settings.
 	LOG_EVENT_WHATSAPP_CHANNEL_REMOVED = "WHATSAPP CHANNEL REMOVED"
+	// The participant turned a subscription off with the unsubscribe link of a message, without
+	// logging in. The message is "subscription=<name> outcome=<outcome>".
+	LOG_EVENT_UNSUBSCRIBE_LINK = "UNSUBSCRIBE LINK"
 )
 
 // Outcomes set explicitly where the returned error does not tell them apart.

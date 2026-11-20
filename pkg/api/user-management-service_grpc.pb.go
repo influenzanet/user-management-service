@@ -50,6 +50,7 @@ const (
 	UserManagementApi_SaveProfile_FullMethodName               = "/influenzanet.user_management_api.UserManagementApi/SaveProfile"
 	UserManagementApi_RemoveProfile_FullMethodName             = "/influenzanet.user_management_api.UserManagementApi/RemoveProfile"
 	UserManagementApi_UseUnsubscribeToken_FullMethodName       = "/influenzanet.user_management_api.UserManagementApi/UseUnsubscribeToken"
+	UserManagementApi_UnsubscribeWithToken_FullMethodName      = "/influenzanet.user_management_api.UserManagementApi/UnsubscribeWithToken"
 	UserManagementApi_UpdateContactPreferences_FullMethodName  = "/influenzanet.user_management_api.UserManagementApi/UpdateContactPreferences"
 	UserManagementApi_AddEmail_FullMethodName                  = "/influenzanet.user_management_api.UserManagementApi/AddEmail"
 	UserManagementApi_RemoveEmail_FullMethodName               = "/influenzanet.user_management_api.UserManagementApi/RemoveEmail"
@@ -104,7 +105,12 @@ type UserManagementApiClient interface {
 	SaveProfile(ctx context.Context, in *ProfileRequest, opts ...grpc.CallOption) (*User, error)
 	RemoveProfile(ctx context.Context, in *ProfileRequest, opts ...grpc.CallOption) (*User, error)
 	// Contacts:
+	// Newsletter only; kept for existing callers. UnsubscribeWithToken does the same for any
+	// subscription.
 	UseUnsubscribeToken(ctx context.Context, in *TempToken, opts ...grpc.CallOption) (*ServiceStatus, error)
+	// Turns one subscription off with the participant's unsubscribe token, the one in the links of
+	// the messages, without a login.
+	UnsubscribeWithToken(ctx context.Context, in *UnsubscribeWithTokenReq, opts ...grpc.CallOption) (*ServiceStatus, error)
 	UpdateContactPreferences(ctx context.Context, in *ContactPreferencesMsg, opts ...grpc.CallOption) (*User, error)
 	AddEmail(ctx context.Context, in *ContactInfoMsg, opts ...grpc.CallOption) (*User, error)
 	RemoveEmail(ctx context.Context, in *ContactInfoMsg, opts ...grpc.CallOption) (*User, error)
@@ -394,6 +400,15 @@ func (c *userManagementApiClient) UseUnsubscribeToken(ctx context.Context, in *T
 	return out, nil
 }
 
+func (c *userManagementApiClient) UnsubscribeWithToken(ctx context.Context, in *UnsubscribeWithTokenReq, opts ...grpc.CallOption) (*ServiceStatus, error) {
+	out := new(ServiceStatus)
+	err := c.cc.Invoke(ctx, UserManagementApi_UnsubscribeWithToken_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *userManagementApiClient) UpdateContactPreferences(ctx context.Context, in *ContactPreferencesMsg, opts ...grpc.CallOption) (*User, error) {
 	out := new(User)
 	err := c.cc.Invoke(ctx, UserManagementApi_UpdateContactPreferences_FullMethodName, in, out, opts...)
@@ -573,7 +588,12 @@ type UserManagementApiServer interface {
 	SaveProfile(context.Context, *ProfileRequest) (*User, error)
 	RemoveProfile(context.Context, *ProfileRequest) (*User, error)
 	// Contacts:
+	// Newsletter only; kept for existing callers. UnsubscribeWithToken does the same for any
+	// subscription.
 	UseUnsubscribeToken(context.Context, *TempToken) (*ServiceStatus, error)
+	// Turns one subscription off with the participant's unsubscribe token, the one in the links of
+	// the messages, without a login.
+	UnsubscribeWithToken(context.Context, *UnsubscribeWithTokenReq) (*ServiceStatus, error)
 	UpdateContactPreferences(context.Context, *ContactPreferencesMsg) (*User, error)
 	AddEmail(context.Context, *ContactInfoMsg) (*User, error)
 	RemoveEmail(context.Context, *ContactInfoMsg) (*User, error)
@@ -685,6 +705,9 @@ func (UnimplementedUserManagementApiServer) RemoveProfile(context.Context, *Prof
 }
 func (UnimplementedUserManagementApiServer) UseUnsubscribeToken(context.Context, *TempToken) (*ServiceStatus, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UseUnsubscribeToken not implemented")
+}
+func (UnimplementedUserManagementApiServer) UnsubscribeWithToken(context.Context, *UnsubscribeWithTokenReq) (*ServiceStatus, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UnsubscribeWithToken not implemented")
 }
 func (UnimplementedUserManagementApiServer) UpdateContactPreferences(context.Context, *ContactPreferencesMsg) (*User, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateContactPreferences not implemented")
@@ -1260,6 +1283,24 @@ func _UserManagementApi_UseUnsubscribeToken_Handler(srv interface{}, ctx context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _UserManagementApi_UnsubscribeWithToken_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UnsubscribeWithTokenReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(UserManagementApiServer).UnsubscribeWithToken(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: UserManagementApi_UnsubscribeWithToken_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(UserManagementApiServer).UnsubscribeWithToken(ctx, req.(*UnsubscribeWithTokenReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _UserManagementApi_UpdateContactPreferences_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ContactPreferencesMsg)
 	if err := dec(in); err != nil {
@@ -1619,6 +1660,10 @@ var UserManagementApi_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UseUnsubscribeToken",
 			Handler:    _UserManagementApi_UseUnsubscribeToken_Handler,
+		},
+		{
+			MethodName: "UnsubscribeWithToken",
+			Handler:    _UserManagementApi_UnsubscribeWithToken_Handler,
 		},
 		{
 			MethodName: "UpdateContactPreferences",

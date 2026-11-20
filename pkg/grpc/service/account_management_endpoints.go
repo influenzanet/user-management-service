@@ -456,33 +456,82 @@ func resolvePreferredChannels(requested []string, user models.User) ([]string, e
 	return channels, nil
 }
 
+// tokenSubscriptions are the subscriptions the participant's unsubscribe token can turn off.
+// There is one token per participant, so a link from any of their messages works for each.
+var tokenSubscriptions = map[api.Subscription]struct {
+	// name is how the audit event names the subscription.
+	name string
+	// field is the stored flag, flag the same flag in the model.
+	field string
+	flag  func(*models.ContactPreferences) *bool
+	// messageType is the type of the queued WhatsApp messages the subscription sends.
+	messageType string
+}{
+	api.Subscription_SUBSCRIPTION_NEWSLETTER: {
+		name:        "newsletter",
+		field:       "contactPreferences.subscribedToNewsletter",
+		flag:        func(p *models.ContactPreferences) *bool { return &p.SubscribedToNewsletter },
+		messageType: constants.EMAIL_TYPE_NEWSLETTER,
+	},
+	api.Subscription_SUBSCRIPTION_WEEKLY: {
+		name:        "weekly",
+		field:       "contactPreferences.subscribedToWeekly",
+		flag:        func(p *models.ContactPreferences) *bool { return &p.SubscribedToWeekly },
+		messageType: constants.EMAIL_TYPE_WEEKLY,
+	},
+}
+
 func (s *userManagementServer) UseUnsubscribeToken(ctx context.Context, req *api.TempToken) (*api.ServiceStatus, error) {
 	if req == nil || req.Token == "" {
 		return nil, status.Error(codes.InvalidArgument, "missing argument")
 	}
-	tokenInfos, err := s.ValidateTempToken(req.Token, []string{constants.TOKEN_PURPOSE_UNSUBSCRIBE_NEWSLETTER})
+	return s.unsubscribeWithToken("UseUnsubscribeToken", req.Token, api.Subscription_SUBSCRIPTION_NEWSLETTER)
+}
+
+func (s *userManagementServer) UnsubscribeWithToken(ctx context.Context, req *api.UnsubscribeWithTokenReq) (*api.ServiceStatus, error) {
+	if req == nil || req.Token == "" {
+		return nil, status.Error(codes.InvalidArgument, "missing argument")
+	}
+	return s.unsubscribeWithToken("UnsubscribeWithToken", req.Token, req.Subscription)
+}
+
+// unsubscribeWithToken turns the subscription off for the owner of the unsubscribe token and
+// cancels their queued WhatsApp messages of that subscription. Turning off a subscription that
+// is already off succeeds too, so a link opened twice gives the same answer.
+func (s *userManagementServer) unsubscribeWithToken(endpoint, token string, subscription api.Subscription) (*api.ServiceStatus, error) {
+	sub, ok := tokenSubscriptions[subscription]
+	if !ok {
+		return nil, status.Error(codes.InvalidArgument, "unknown subscription")
+	}
+	tokenInfos, err := s.ValidateTempToken(token, []string{constants.TOKEN_PURPOSE_UNSUBSCRIBE_NEWSLETTER})
 	if err != nil {
-		logger.Error.Printf("UseUnsubscribeToken: %s", err.Error())
+		logger.Error.Printf("%s: %s", endpoint, err.Error())
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
 	user, err := s.userDBservice.GetUserByID(tokenInfos.InstanceID, tokenInfos.UserID)
 	if err != nil {
-		logger.Error.Printf("UseUnsubscribeToken: %s", err.Error())
+		logger.Error.Printf("%s: %s", endpoint, err.Error())
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	wasSubscribed := user.ContactPreferences.SubscribedToNewsletter
-	user.ContactPreferences.SubscribedToNewsletter = false
+	flag := sub.flag(&user.ContactPreferences)
+	wasSubscribed := *flag
+	*flag = false
 
-	_, err = s.userDBservice.UpdateUser(tokenInfos.InstanceID, user, "contactPreferences.subscribedToNewsletter")
-	if err != nil {
-		logger.Error.Printf("UseUnsubscribeToken: %s", err.Error())
+	if _, err = s.userDBservice.UpdateUser(tokenInfos.InstanceID, user, sub.field); err != nil {
+		logger.Error.Printf("%s: %s", endpoint, err.Error())
+		s.SaveLogEvent(tokenInfos.InstanceID, tokenInfos.UserID, loggingAPI.LogEventType_ERROR, LOG_EVENT_UNSUBSCRIBE_LINK,
+			"subscription="+sub.name+" outcome=error")
 		return nil, status.Error(codes.Internal, err.Error())
 	}
+	outcome := "not_subscribed"
 	if wasSubscribed {
-		s.whatsAppQueue.CancelInBackground(tokenInfos.InstanceID, tokenInfos.UserID, []string{constants.EMAIL_TYPE_NEWSLETTER}, false)
+		outcome = "unsubscribed"
+		s.whatsAppQueue.CancelInBackground(tokenInfos.InstanceID, tokenInfos.UserID, []string{sub.messageType}, false)
 	}
+	s.SaveLogEvent(tokenInfos.InstanceID, tokenInfos.UserID, loggingAPI.LogEventType_LOG, LOG_EVENT_UNSUBSCRIBE_LINK,
+		"subscription="+sub.name+" outcome="+outcome)
 	return &api.ServiceStatus{
 		Status: api.ServiceStatus_NORMAL,
 		Msg:    "unsubscribed",
