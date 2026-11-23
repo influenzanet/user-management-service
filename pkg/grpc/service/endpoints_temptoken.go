@@ -35,30 +35,31 @@ func (s *userManagementServer) GetOrCreateTemptoken(ctx context.Context, t *api_
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	resp := &api.TempToken{}
-
-	if len(tList) < 1 {
-		tempToken := models.TempToken{
-			UserID:     t.UserId,
-			InstanceID: t.InstanceId,
-			Purpose:    t.Purpose,
-			Info:       t.Info,
-			Expiration: t.Expiration,
+	// An expired token can still be stored: the cleanup above runs in the background and only
+	// removes tokens expired for an hour. Handing one out would put a dead link in a message.
+	for _, existing := range tList {
+		if existing.Expiration >= now {
+			return &api.TempToken{Token: existing.Token}, nil
 		}
-
-		if tempToken.Expiration == 0 {
-			tempToken.Expiration = tokens.GetExpirationTime(time.Hour * 24 * 10)
-		}
-
-		token, err := s.globalDBService.AddTempToken(tempToken)
-		if err != nil {
-			return nil, status.Error(codes.Internal, err.Error())
-		}
-		resp.Token = token
-	} else {
-		resp.Token = tList[0].Token
 	}
-	return resp, nil
+
+	tempToken := models.TempToken{
+		UserID:     t.UserId,
+		InstanceID: t.InstanceId,
+		Purpose:    t.Purpose,
+		Info:       t.Info,
+		Expiration: t.Expiration,
+	}
+
+	if tempToken.Expiration == 0 {
+		tempToken.Expiration = tokens.GetExpirationTime(time.Hour * 24 * 10)
+	}
+
+	token, err := s.globalDBService.AddTempToken(tempToken)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return &api.TempToken{Token: token}, nil
 }
 
 func (s *userManagementServer) GenerateTempToken(ctx context.Context, t *api_types.TempTokenInfo) (*api.TempToken, error) {

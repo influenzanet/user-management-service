@@ -3,11 +3,15 @@ package clients
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/coneno/logger"
@@ -159,7 +163,40 @@ func (c *WhatsAppClient) SendVerificationCode(ctx context.Context, toPhoneNumber
 		logger.Error.Printf("WhatsApp SendVerificationCode failed status=%d %s", resp.StatusCode, metaErrorFields(respObj))
 		return parseSendError(resp.StatusCode, respObj)
 	}
-	logger.Info.Println("WhatsApp SendVerificationCode: delivered to API")
+	// Meta reports the delivery statuses of this message to the webhook too; messaging-service
+	// logs them under the same reference, as a message it did not send.
+	logger.Info.Printf("WhatsApp SendVerificationCode: delivered to API, wamid_ref=%s", wamidLogRef(acceptedMessageID(resp.Body)))
 
 	return nil
+}
+
+// maxAcceptedResponseBytes bounds how much of an accepted send's response is read for the
+// message id. Meta's answer is a few hundred bytes.
+const maxAcceptedResponseBytes = 64 << 10
+
+// acceptedMessageID reads the message id from the response to an accepted send,
+// {"messages":[{"id":"wamid..."}], ...}, or returns "" when the response names none.
+func acceptedMessageID(body io.Reader) string {
+	var accepted struct {
+		Messages []struct {
+			ID string `json:"id"`
+		} `json:"messages"`
+	}
+	if err := json.NewDecoder(io.LimitReader(body, maxAcceptedResponseBytes)).Decode(&accepted); err != nil || len(accepted.Messages) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(accepted.Messages[0].ID)
+}
+
+// wamidLogRef is the form in which a WhatsApp message id (wamid) goes into the logs: the first
+// 12 hex digits of its SHA-256, or "none" for an empty id. A wamid is the recipient's full
+// phone number and a random part, base64-encoded, so the id itself must not be logged.
+// messaging-service computes the same reference (types.WAMIDLogRef) for the messages it sends
+// and the statuses its webhook receives: keep the two the same.
+func wamidLogRef(wamid string) string {
+	if wamid == "" {
+		return "none"
+	}
+	sum := sha256.Sum256([]byte(wamid))
+	return hex.EncodeToString(sum[:6])
 }

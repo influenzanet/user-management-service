@@ -85,6 +85,56 @@ func TestGetOrCreateTemptokenEndpoint(t *testing.T) {
 			return
 		}
 	})
+
+	// The background cleanup leaves tokens expired for less than an hour in place: they must
+	// not be handed out, since the link carrying them would not work.
+	addToken := func(t *testing.T, userID string, expiration int64) string {
+		t.Helper()
+		token, err := testGlobalDBService.AddTempToken(models.TempToken{
+			UserID: userID, InstanceID: testInstanceID, Purpose: testTempToken.Purpose, Expiration: expiration,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return token
+	}
+	getOrCreate := func(t *testing.T, userID string, expiration int64) string {
+		t.Helper()
+		resp, err := s.GetOrCreateTemptoken(context.Background(), &api_types.TempTokenInfo{
+			Purpose: testTempToken.Purpose, UserId: userID, InstanceId: testInstanceID, Expiration: expiration,
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		return resp.Token
+	}
+
+	t.Run("with only an expired token: a new one", func(t *testing.T) {
+		expired := addToken(t, "user_with_expired_token", time.Now().Unix()-60)
+		want := time.Now().Unix() + 600
+		got := getOrCreate(t, "user_with_expired_token", want)
+		if got == expired {
+			t.Fatal("the expired token was handed out")
+		}
+		info, err := s.ValidateTempToken(got, []string{testTempToken.Purpose})
+		if err != nil {
+			t.Fatalf("the new token does not validate: %v", err)
+		}
+		if info.Expiration != want || info.UserID != "user_with_expired_token" {
+			t.Errorf("unexpected new token %+v", info)
+		}
+		if again := getOrCreate(t, "user_with_expired_token", want); again != got {
+			t.Errorf("the next call made another token: %s, want %s", again, got)
+		}
+	})
+
+	t.Run("with an expired and a valid token: the valid one", func(t *testing.T) {
+		addToken(t, "user_with_both_tokens", time.Now().Unix()-60)
+		valid := addToken(t, "user_with_both_tokens", time.Now().Unix()+600)
+		if got := getOrCreate(t, "user_with_both_tokens", time.Now().Unix()+600); got != valid {
+			t.Errorf("got %s, want the valid token %s", got, valid)
+		}
+	})
 }
 
 func TestGenerateTempTokenEndpoint(t *testing.T) {
