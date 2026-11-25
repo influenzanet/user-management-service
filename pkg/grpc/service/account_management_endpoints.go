@@ -918,6 +918,34 @@ func (s *userManagementServer) DeletePhoneNumber(ctx context.Context, req *api_t
 	return updatedUser.ToAPI(), nil
 }
 
+// afterVerificationCodeReadHook, when set, runs in VerifyWhatsAppCode once the pending code has
+// been read and checked, before any attempt is charged. Tests set it to hold requests there
+// while another one verifies; it is nil otherwise.
+var afterVerificationCodeReadHook func(userID string)
+
+// answerSupersededVerification answers a request whose code the account no longer holds: it
+// was verified, replaced or deleted after the request read it, so the request has charged
+// nothing and changed nothing. When the submitted code is the one the request read and the
+// account now holds that number verified, the request is a repeat of a verification that
+// succeeded (a double submit, a client retry) and gets the same answer, the account; the audit
+// event says so. Otherwise it gets the answer for a code with nothing to verify.
+func (s *userManagementServer) answerSupersededVerification(req *api.VerifyWhatsAppCodeReq, readCode models.PhoneVerificationCode, submitted string, audit *phoneAudit) (*api.User, error) {
+	if !tokens.SamePhoneCodeDigest(readCode.CodeHash, submitted) {
+		return nil, status.Error(codes.InvalidArgument, "no phone verification in progress")
+	}
+	current, err := s.userDBservice.GetUserByID(req.Token.InstanceId, req.Token.Id)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "user not found")
+	}
+	for _, ci := range current.ContactInfos {
+		if ci.Type == models.ContactTypePhone && ci.Phone == readCode.Phone && ci.ConfirmedAt > 0 {
+			audit.outcome = "already_verified"
+			return current.ToAPI(), nil
+		}
+	}
+	return nil, status.Error(codes.InvalidArgument, "no phone verification in progress")
+}
+
 func (s *userManagementServer) VerifyWhatsAppCode(ctx context.Context, req *api.VerifyWhatsAppCodeReq) (_ *api.User, err error) {
 	if req == nil || utils.IsTokenEmpty(req.Token) || req.Code == "" {
 		return nil, status.Error(codes.InvalidArgument, "missing argument")
@@ -973,32 +1001,48 @@ func (s *userManagementServer) VerifyWhatsAppCode(ctx context.Context, req *api.
 		return nil, status.Error(codes.Internal, "could not check the verification code")
 	}
 
-	// Atomically increment attempts via $inc with a filter that caps at max.
-	// This prevents race conditions: concurrent requests each get a distinct counter value.
+	if afterVerificationCodeReadHook != nil {
+		afterVerificationCodeReadHook(req.Token.Id)
+	}
+
+	// Every write below is bound to the code read above: the same digest, number and creation
+	// time. The attempts belong to that code, so a request that read it before it was verified,
+	// replaced or deleted charges nothing, to it or to the code that came after it, and cannot
+	// remove the number. The increment is atomic, with a filter that caps at max, so
+	// concurrent requests each get a distinct counter value.
+	readCode := pending.Account.PhoneVerificationCode
 	user, err := s.userDBservice.IncrementVerificationCodeAttempts(
-		req.Token.InstanceId, req.Token.Id, s.Intervals.MaxVerificationAttempts,
+		req.Token.InstanceId, req.Token.Id, readCode, s.Intervals.MaxVerificationAttempts,
 	)
 	if err == mongo.ErrNoDocuments {
-		// Limit reached — remove the phone with the targeted delete, which also drops the
-		// whatsapp channel and clears the code, instead of saving a user read a moment ago:
-		// a full document save would carry a stale attempts ledger and drop the slots
-		// reserved by concurrent sends.
-		audit.outcome = "removed_after_failed_attempts"
-		if _, updErr := s.userDBservice.DeletePhoneNumber(req.Token.InstanceId, req.Token.Id); updErr != nil {
-			logger.Error.Printf("VerifyWhatsAppCode: failed to remove phone: %v", updErr)
+		// Either this code has used up its attempts, or the account no longer holds it. The
+		// removal tells the two apart in the same write that acts on the first: it only removes
+		// the number while the account still holds this code, at the cap, with the number
+		// unverified. It is the targeted delete, which also drops the whatsapp channel and
+		// clears the code, rather than a save of the user read above, which would carry a stale
+		// attempts ledger and drop the slots reserved by concurrent sends.
+		removed, delErr := s.userDBservice.DeletePhoneAfterFailedAttempts(
+			req.Token.InstanceId, req.Token.Id, readCode, s.Intervals.MaxVerificationAttempts,
+		)
+		if delErr != nil {
+			// The database could not say which of the two it is, so nothing is claimed: the
+			// participant tries again, and the request charged nothing.
+			logger.Error.Printf("VerifyWhatsAppCode: failed to remove phone: %v", delErr)
 			audit.outcome = "removal_after_failed_attempts_failed"
-		} else {
-			s.whatsAppQueue.CancelInBackground(req.Token.InstanceId, req.Token.Id, nil, false)
+			return nil, status.Error(codes.Internal, "could not check the verification code")
 		}
-		return nil, status.Error(codes.PermissionDenied, "too many attempts, phone number removed")
+		if removed {
+			audit.outcome = "removed_after_failed_attempts"
+			s.whatsAppQueue.CancelInBackground(req.Token.InstanceId, req.Token.Id, nil, false)
+			return nil, status.Error(codes.PermissionDenied, "too many attempts, phone number removed")
+		}
+		return s.answerSupersededVerification(req, readCode, submitted, audit)
 	}
 	if err != nil {
 		return nil, status.Error(codes.Internal, "user not found")
 	}
 
-	// Compare against the document the increment returned rather than the one read above: a
-	// resend running in between replaces the code, and the participant is typing the new one.
-	if !tokens.SamePhoneCodeDigest(user.Account.PhoneVerificationCode.CodeHash, submitted) {
+	if !tokens.SamePhoneCodeDigest(readCode.CodeHash, submitted) {
 		return nil, status.Error(codes.PermissionDenied, "invalid verification code")
 	}
 

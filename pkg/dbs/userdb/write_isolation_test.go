@@ -57,8 +57,13 @@ func TestStaleUserDoesNotOverwritePhoneState(t *testing.T) {
 			case "code":
 				err = testDBService.SetPhoneVerificationCode(testInstanceID, id, models.PhoneVerificationCode{CodeHash: "654321", Attempts: 2, Phone: "+391234567890"})
 			case "attempts":
+				// Attempts are charged to a code the account holds, so it gets one first.
+				code := models.PhoneVerificationCode{CodeHash: "attempts-code", CreatedAt: 1, ExpiresAt: 2, Phone: "+391234567890"}
+				if err = testDBService.SetPhoneVerificationCode(testInstanceID, id, code); err != nil {
+					t.Fatal(err)
+				}
 				for i := 0; i < 3; i++ {
-					_, err = testDBService.IncrementVerificationCodeAttempts(testInstanceID, id, 3)
+					_, err = testDBService.IncrementVerificationCodeAttempts(testInstanceID, id, code, 3)
 					if err != nil {
 						t.Fatal(err)
 					}

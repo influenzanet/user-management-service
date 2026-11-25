@@ -193,7 +193,12 @@ func concurrentMutationCases() []concurrentMutationCase {
 				user.Account.PhoneVerificationCode = code("attempt-code", 0, "+393230010002")
 			},
 			run: func(t *testing.T, userID string) {
-				if _, err := testUserDBService.IncrementVerificationCodeAttempts(testInstanceID, userID, 3); err != nil {
+				// Attempts are charged to the code the account holds, read as the endpoint reads it.
+				current, err := testUserDBService.GetUserByID(testInstanceID, userID)
+				if err != nil {
+					t.Fatalf("read the phone verification code: %v", err)
+				}
+				if _, err := testUserDBService.IncrementVerificationCodeAttempts(testInstanceID, userID, current.Account.PhoneVerificationCode, 3); err != nil {
 					t.Fatalf("increment phone verification attempts: %v", err)
 				}
 			},

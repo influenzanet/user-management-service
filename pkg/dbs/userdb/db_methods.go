@@ -1154,15 +1154,63 @@ func (dbService *UserDBService) ReleaseUnverifiedPhoneClaims(instanceID string, 
 // DeletePhoneNumber removes the user's phone number, the whatsapp channel it stood for and any
 // pending code, and releases the claim on the number (see releaseClaimsNoLongerHeld).
 func (dbService *UserDBService) DeletePhoneNumber(instanceID, userID string) (models.User, error) {
-	ctx, cancel := dbService.getContext()
-	defer cancel()
-
 	userObjID, err := primitive.ObjectIDFromHex(userID)
 	if err != nil {
 		return models.User{}, err
 	}
+	return dbService.deletePhoneWhere(instanceID, userObjID, bson.M{"_id": userObjID})
+}
 
-	filter := bson.M{"_id": userObjID}
+// DeletePhoneAfterFailedAttempts removes the phone of an account whose verification code has
+// used up its attempts, as DeletePhoneNumber does, but only while the account is still in that
+// state: its code is the one given (same digest, number and creation time), its attempts are
+// at maxAttempts or above, and the number the code was sent to is still unverified. The check
+// and the removal are one write, so a request that read the code before it was verified,
+// replaced or deleted cannot remove a number on the strength of attempts that belong to another
+// code, or to none. removed is false, with no error, when the account is no longer in that state.
+func (dbService *UserDBService) DeletePhoneAfterFailedAttempts(instanceID, userID string, code models.PhoneVerificationCode, maxAttempts int) (removed bool, err error) {
+	userObjID, err := primitive.ObjectIDFromHex(userID)
+	if err != nil {
+		return false, err
+	}
+	if code.CodeHash == "" || code.Phone == "" {
+		return false, nil
+	}
+	filter := phoneVerificationCodeFilter(userObjID, code)
+	filter["account.phoneVerificationCode.attempts"] = bson.M{"$gte": maxAttempts}
+	filter["contactInfos"] = bson.M{"$elemMatch": bson.M{
+		"type":        models.ContactTypePhone,
+		"phone":       code.Phone,
+		"confirmedAt": bson.M{"$not": bson.M{"$gt": 0}},
+	}}
+	if _, err := dbService.deletePhoneWhere(instanceID, userObjID, filter); err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+// phoneVerificationCodeFilter selects the account while it still holds code: the same digest,
+// sent to the same number, created at the same time. A code that was verified, replaced or
+// deleted since it was read no longer matches.
+func phoneVerificationCodeFilter(userObjID primitive.ObjectID, code models.PhoneVerificationCode) bson.M {
+	return bson.M{
+		"_id":                                     userObjID,
+		"account.phoneVerificationCode.codeHash":  code.CodeHash,
+		"account.phoneVerificationCode.phone":     code.Phone,
+		"account.phoneVerificationCode.createdAt": code.CreatedAt,
+	}
+}
+
+// deletePhoneWhere applies the phone removal of DeletePhoneNumber to the account filter selects,
+// and releases the claim on the number. It returns mongo.ErrNoDocuments when filter selects
+// nothing.
+func (dbService *UserDBService) deletePhoneWhere(instanceID string, userObjID primitive.ObjectID, filter bson.M) (models.User, error) {
+	ctx, cancel := dbService.getContext()
+	defer cancel()
+
 	// One aggregation-pipeline update: the phone and the whatsapp channel go together in a single
 	// atomic write on the document. A $pull of each in separate writes would leave a window with
 	// whatsapp enabled and no phone, and a read-modify-write (UpdateUser) would silently revert a
@@ -1180,7 +1228,7 @@ func (dbService *UserDBService) DeletePhoneNumber(instanceID, userID string) (mo
 	}
 
 	var updatedUser models.User
-	err = dbService.collectionRefUsers(instanceID).FindOneAndUpdate(
+	err := dbService.collectionRefUsers(instanceID).FindOneAndUpdate(
 		ctx,
 		filter,
 		update,
@@ -1195,11 +1243,14 @@ func (dbService *UserDBService) DeletePhoneNumber(instanceID, userID string) (mo
 	return updatedUser, nil
 }
 
-// IncrementVerificationCodeAttempts atomically increments the verification code
-// attempt counter. The filter ensures the increment only happens if attempts < maxAttempts,
-// preventing race conditions between concurrent requests.
-// Returns mongo.ErrNoDocuments if the limit has been reached.
-func (dbService *UserDBService) IncrementVerificationCodeAttempts(instanceID, userID string, maxAttempts int) (models.User, error) {
+// IncrementVerificationCodeAttempts atomically charges one attempt to code, the verification
+// code the caller read. The filter ensures the increment only happens while the account still
+// holds that code and its attempts are below maxAttempts, so concurrent requests each get a
+// distinct counter value and a request that read a code since verified, replaced or deleted
+// charges nothing, to that code or to the next one.
+// Returns mongo.ErrNoDocuments when the limit has been reached or the account no longer holds
+// code; DeletePhoneAfterFailedAttempts tells the two apart.
+func (dbService *UserDBService) IncrementVerificationCodeAttempts(instanceID, userID string, code models.PhoneVerificationCode, maxAttempts int) (models.User, error) {
 	ctx, cancel := dbService.getContext()
 	defer cancel()
 
@@ -1208,10 +1259,8 @@ func (dbService *UserDBService) IncrementVerificationCodeAttempts(instanceID, us
 		return models.User{}, err
 	}
 
-	filter := bson.M{
-		"_id":                                    userObjID,
-		"account.phoneVerificationCode.attempts": bson.M{"$lt": maxAttempts},
-	}
+	filter := phoneVerificationCodeFilter(userObjID, code)
+	filter["account.phoneVerificationCode.attempts"] = bson.M{"$lt": maxAttempts}
 	update := bson.M{
 		"$inc": bson.M{"account.phoneVerificationCode.attempts": 1},
 	}
