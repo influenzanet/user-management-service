@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"sync/atomic"
 	"time"
 
 	api_types "github.com/influenzanet/go-utils/pkg/api_types"
@@ -14,9 +15,18 @@ import (
 
 const deleteTempTokensMinInterval = 10 * 60
 
-var (
-	lastTempTokenDeleteTime int64
-)
+// lastTempTokenCleanup is when this process last started the cleanup of expired temp tokens.
+// Both token endpoints run concurrently, so it is only read and written through
+// tempTokenCleanupDue.
+var lastTempTokenCleanup atomic.Int64
+
+// tempTokenCleanupDue reports whether this call is the one that starts the cleanup of expired
+// temp tokens: at most one call per deleteTempTokensMinInterval gets true, however many arrive
+// at once. Each process keeps its own interval.
+func tempTokenCleanupDue(now int64) bool {
+	last := lastTempTokenCleanup.Load()
+	return last+deleteTempTokensMinInterval < now && lastTempTokenCleanup.CompareAndSwap(last, now)
+}
 
 func (s *userManagementServer) GetOrCreateTemptoken(ctx context.Context, t *api_types.TempTokenInfo) (*api.TempToken, error) {
 	if t == nil || t.Purpose == "" || t.UserId == "" || t.InstanceId == "" {
@@ -25,9 +35,8 @@ func (s *userManagementServer) GetOrCreateTemptoken(ctx context.Context, t *api_
 
 	// Cleanup temptokens if this was not done recently:
 	now := time.Now().Unix()
-	if lastTempTokenDeleteTime+deleteTempTokensMinInterval < now {
+	if tempTokenCleanupDue(now) {
 		go s.CleanExpiredTemptokens(3600)
-		lastTempTokenDeleteTime = now
 	}
 
 	tList, err := s.globalDBService.GetTempTokenForUser(t.InstanceId, t.UserId, t.Purpose)
@@ -69,9 +78,8 @@ func (s *userManagementServer) GenerateTempToken(ctx context.Context, t *api_typ
 
 	// Cleanup temptokens if this was not done recently:
 	now := time.Now().Unix()
-	if lastTempTokenDeleteTime+deleteTempTokensMinInterval < now {
+	if tempTokenCleanupDue(now) {
 		go s.CleanExpiredTemptokens(3600)
-		lastTempTokenDeleteTime = now
 	}
 
 	tempToken := models.TempToken{
